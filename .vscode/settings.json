@@ -1,0 +1,27 @@
+{
+  "files.associations": {
+    "*.cjson": "jsonc",
+    "*.wxss": "css",
+    "*.wxs": "javascript",
+    "*.cpp": "cpp",
+    "stm32f10x_iwdg.h": "c",
+    "stm32f10x_flash.h": "c",
+    "stm32f10x_gpio.h": "c",
+    "stm32f10x_bkp.h": "c",
+    "stm32f10x_usart.h": "c",
+    "spi_helper.h": "c",
+    "stm32f10x_spi.h": "c",
+    "stm32f10x.h": "c",
+    "shift_register.h": "c",
+    "clock.h": "c",
+    "shift_register_input.h": "c",
+    "motor_ctrl.h": "c",
+    "delay.h": "c",
+    "main.h": "c",
+    "max31855.h": "c",
+    "time.h": "c",
+    "stepmotor.h": "c",
+    "stm32f10x_tim.h": "c",
+    "stm32f10x_wwdg.h": "c"
+  }
+}

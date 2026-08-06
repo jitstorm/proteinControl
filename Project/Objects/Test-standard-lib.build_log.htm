@@ -1,0 +1,68 @@
+<html>
+<body>
+<pre>
+<h1>µVision Build Log</h1>
+<h2>Tool Versions:</h2>
+IDE-Version: ¦ÌVision V5.16a
+Copyright (C) 2015 ARM Ltd and ARM Germany GmbH. All rights reserved.
+License Information: zzz ÄúºÃ£¡, zz, LIC=PE7DL-03ZH6-CXLU6-DWG31-KDDA9-Q0KG5
+ 
+Tool Versions:
+Toolchain:       MDK-ARM Standard  Version: 5.16a
+Toolchain Path:  F:\software\keil5\ARM\ARMCC\Bin
+C Compiler:      Armcc.exe V5.06 (build 20)
+Assembler:       Armasm.exe V5.06 (build 20)
+Linker/Locator:  ArmLink.exe V5.06 (build 20)
+Library Manager: ArmAr.exe V5.06 (build 20)
+Hex Converter:   FromElf.exe V5.06 (build 20)
+CPU DLL:         SARMCM3.DLL V5.16a
+Dialog DLL:      DARMSTM.DLL V1.65.0.0
+Target DLL:      UL2CM3.DLL V1.155.12.0
+Dialog DLL:      TARMSTM.DLL V1.64.0.0
+ 
+<h2>Project:</h2>
+F:\test\test-stm32-standard-lib\Project\Test-standard-lib.uvprojx
+Project File Date:  04/10/2025
+
+<h2>Output:</h2>
+*** Using Compiler 'V5.06 (build 20)', folder: 'F:\software\keil5\ARM\ARMCC\Bin'
+Rebuild target 'Target 1'
+Error instantiating RTE components
+Error #542: API '::CMSIS Driver.CAN:1.0(API)' required by component 'Keil::CMSIS Driver:CAN:1.10' is missing
+
+<h2>Software Packages used:</h2>
+
+Package Vendor: ARM
+                http://www.keil.com/pack/ARM.CMSIS.4.3.0.pack
+                ARM::CMSIS:CORE:4.1.0
+                CMSIS (Cortex Microcontroller Software Interface Standard)
+   * Component: CORE Version: 4.1.0
+
+Package Vendor: Keil
+                https://www.keil.com/pack/Keil.STM32F1xx_DFP.2.4.1.pack
+                Keil::Device:GPIO:1.3
+                STMicroelectronics STM32F1 Series Device Support, Drivers and Examples
+   * Component: GPIO Version: 1.3
+   * Component: CAN Version: 1.10
+
+<h2>Collection of Component include folders:</h2>
+  F:\test\test-stm32-standard-lib\Project\RTE
+  F:\software\keil5\ARM\PACK\ARM\CMSIS\4.3.0\CMSIS\Include
+  F:\software\keil5\ARM\PACK\Keil\STM32F1xx_DFP\2.4.1\Device\Include
+  F:\software\keil5\ARM\PACK\Keil\STM32F1xx_DFP\2.4.1\RTE_Driver
+
+<h2>Collection of Component Files used:</h2>
+
+   * Component: ARM::CMSIS:CORE:4.1.0
+
+   * Component: Keil::Device:GPIO:1.3
+      Source file:   RTE_Driver\GPIO_STM32F10x.c
+      Include file:  RTE_Driver\GPIO_STM32F10x.h
+
+   * Component: Keil::CMSIS Driver:CAN:1.10
+      Source file:   RTE_Driver\CAN_STM32F10x.c
+Target not created.
+Build Time Elapsed:  00:00:02
+</pre>
+</body>
+</html>

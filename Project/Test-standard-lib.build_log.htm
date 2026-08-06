@@ -1,0 +1,97 @@
+<html>
+<body>
+<pre>
+<h1>礦ision Build Log</h1>
+<h2>Tool Versions:</h2>
+IDE-Version: μVision V5.16a
+Copyright (C) 2015 ARM Ltd and ARM Germany GmbH. All rights reserved.
+License Information: zzz 您好！, zz, LIC=PE7DL-03ZH6-CXLU6-DWG31-KDDA9-Q0KG5
+ 
+Tool Versions:
+Toolchain:       MDK-ARM Standard  Version: 5.16a
+Toolchain Path:  F:\software\keil5\ARM\ARMCC\Bin
+C Compiler:      Armcc.exe V5.06 (build 20)
+Assembler:       Armasm.exe V5.06 (build 20)
+Linker/Locator:  ArmLink.exe V5.06 (build 20)
+Library Manager: ArmAr.exe V5.06 (build 20)
+Hex Converter:   FromElf.exe V5.06 (build 20)
+CPU DLL:         SARMCM3.DLL V5.16a
+Dialog DLL:      DCM.DLL V1.13.2.0
+Target DLL:      STLink\ST-LINKIII-KEIL_SWO.dll V2.0.17.0
+Dialog DLL:      TCM.DLL V1.14.5.0
+ 
+<h2>Project:</h2>
+C:\Users\您好！\Desktop\单片机\小棉花机\CottonMCU\Project\Test-standard-lib.uvprojx
+Project File Date:  07/03/2026
+
+<h2>Output:</h2>
+*** Using Compiler 'V5.06 (build 20)', folder: 'F:\software\keil5\ARM\ARMCC\Bin'
+Rebuild target 'Target 1'
+compiling CLOCK.c...
+compiling stm32f10x_it.c...
+compiling time.c...
+compiling shift_register.c...
+compiling main.c...
+..\User\main.c(23): warning:  #69-D: integer conversion resulted in truncation
+  stepMotor stepMotorA = {
+PIOB, 
+PIO_Pin_12, 0, 0, 1, 9, 1000, 1000, 0, 0, 100, 0, 0, 0, 0, 0, 4, 2000, 0};
+..\User\main.c(24): warning:  #69-D: integer conversion resulted in truncation
+  stepMotor stepMotorB = {
+PIOB, 
+PIO_Pin_13, 0, 0, 1, 9, 1000, 1000, 0, 0, 100, 0, 0, 0, 0, 0, 3, 2000, 0};
+..\User\main.c: 2 warnings, 0 errors
+compiling spi_helper.c...
+compiling PWM.c...
+compiling shift_register_input.c...
+compiling motor_ctrl.c...
+compiling DELAY.c...
+..\User\DELAY.c(4): warning:  #550-D: variable "fac_ms" was set but never used
+  static uint16_t fac_ms = 0; // ms寤?鏃?鍊?涔?鏁?
+..\User\DELAY.c: 1 warning, 0 errors
+compiling protocol.c...
+..\User\protocol.c(122): warning:  #223-D: function "millis" declared implicitly
+      now = millis();
+..\User\protocol.c(954): warning:  #223-D: function "millis" declared implicitly
+          dbg_usart2_tx_last_begin_ms = millis();
+..\User\protocol.c(976): warning:  #223-D: function "millis" declared implicitly
+      tx_wait_start = millis();
+..\User\protocol.c: 3 warnings, 0 errors
+compiling max31855.c...
+compiling stepMotor.c...
+..\User\stepMotor.c(166): warning:  #177-D: variable "reply" was declared but never referenced
+    Packet reply;
+..\User\stepMotor.c: 1 warning, 0 errors
+compiling USART.c...
+compiling step_dma.c...
+..\User\step_dma.c(912): warning:  #188-D: enumerated type mixed with another type
+      NVIC_DisableIRQ(
+MA2_Channel3_IRQn);
+..\User\step_dma.c(915): warning:  #188-D: enumerated type mixed with another type
+      NVIC_EnableIRQ(
+MA2_Channel3_IRQn);
+..\User\step_dma.c: 2 warnings, 0 errors
+assembling startup_stm32f10x_hd.s...
+compiling core_cm3.c...
+compiling misc.c...
+compiling system_stm32f10x.c...
+compiling stm32f10x_gpio.c...
+compiling stm32f10x_rcc.c...
+compiling stm32f10x_dma.c...
+compiling stm32f10x_spi.c...
+compiling stm32f10x_usart.c...
+compiling stm32f10x_tim.c...
+linking...
+Program Size: Code=20708 RO-data=336 RW-data=460 ZI-data=11228  
+FromELF: creating hex file...
+".\Test-standard-lib.axf" - 0 Error(s), 9 Warning(s).
+
+<h2>Collection of Component include folders:</h2>
+  C:\Users\您好！\Desktop\单片机\小棉花机\CottonMCU\Project\RTE
+  F:\software\keil5\ARM\PACK\Keil\STM32F1xx_DFP\2.4.1\Device\Include
+
+<h2>Collection of Component Files used:</h2>
+Build Time Elapsed:  00:00:03
+</pre>
+</body>
+</html>
