@@ -248,7 +248,7 @@ int main(void)
     RobotArm_Init();
     GPIO_Config();
     TIM1_PWM_CH2N_Config(1000 - 1, 71, 0);
-    PWM_PA0_PA1_PA11_Init();
+    // PWM_PA0_PA1_PA11_Init();
     GPIO_SetBits(GPIOB, GPIO_Pin_1);
     USART1_Init();
     Protocol_InitTxDiagnostics();

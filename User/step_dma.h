@@ -33,6 +33,10 @@ void stepdma_pb11_stop(void);
 
 /* 是否正在运行（1=跑步中，0=已停止） */
 uint8_t stepdma_pb11_is_running(void);
+/** 获取 PB11 梯形运动已经完成的整段步数。 */
+uint32_t stepdma_pb11_get_completed_steps(void);
+/** 获取 PB11 梯形运动尚未完成的步数。 */
+uint32_t stepdma_pb11_get_remaining_steps(void);
 /* PB10 : TIM6 + DMA2_Channel3 */
 void stepdma_pb10_init(uint32_t tim6_clk_hz);
 void stepdma_pb10_stop(void);
@@ -74,5 +78,9 @@ uint8_t PU3_Stepper_Start(uint32_t steps, uint8_t direction,
 void PU3_Stepper_Stop(void);
 /** 查询 PU3 是否正在输出 DMA 步进脉冲。 */
 uint8_t PU3_Stepper_IsRunning(void);
+/** 获取 PU3 已经完成的整段步数。 */
+uint32_t PU3_Stepper_GetCompletedSteps(void);
+/** 获取 PU3 尚未完成的步数。 */
+uint32_t PU3_Stepper_GetRemainingSteps(void);
 
 #endif

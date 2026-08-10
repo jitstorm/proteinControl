@@ -90,3 +90,35 @@ uint8_t RobotArmDriver_IsBusy(RobotAxisId_t axis)
         return 0u;
     }
 }
+
+/** 获取指定轴尚未完成的整段步数。 */
+uint32_t RobotArmDriver_GetRemainingSteps(RobotAxisId_t axis)
+{
+    switch (axis)
+    {
+    case ROBOT_AXIS_X:
+        return stepdma_pb11_get_remaining_steps();
+    case ROBOT_AXIS_Y:
+        return Stepper2_GetRemainingSteps();
+    case ROBOT_AXIS_Z:
+        return PU3_Stepper_GetRemainingSteps();
+    default:
+        return 0u;
+    }
+}
+
+/** 获取指定轴已经完成的整段步数。 */
+uint32_t RobotArmDriver_GetCompletedSteps(RobotAxisId_t axis)
+{
+    switch (axis)
+    {
+    case ROBOT_AXIS_X:
+        return stepdma_pb11_get_completed_steps();
+    case ROBOT_AXIS_Y:
+        return Stepper2_GetCompletedSteps();
+    case ROBOT_AXIS_Z:
+        return PU3_Stepper_GetCompletedSteps();
+    default:
+        return 0u;
+    }
+}

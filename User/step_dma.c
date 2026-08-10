@@ -103,7 +103,8 @@ typedef struct
     uint32_t decel_steps; /* 减速段步数：从 v_peak 减速到 0 */
 } TrapProfile;
 
-static TrapProfile s_trap;
+/* 主循环通过只读接口审计完成原因，ISR 更新字段必须保持可见。 */
+static volatile TrapProfile s_trap;
 
 void stepdma_pb11_request_trap(uint32_t steps,
                                uint32_t f_start,
@@ -322,6 +323,19 @@ static void dma_start_edges(uint16_t edges)
 uint8_t stepdma_pb11_is_running(void)
 {
     return s_running;
+}
+
+/** 获取 PB11 梯形运动已经完成的整段步数。 */
+uint32_t stepdma_pb11_get_completed_steps(void)
+{
+    return s_trap.steps_done;
+}
+
+/** 获取 PB11 梯形运动尚未完成的步数。 */
+uint32_t stepdma_pb11_get_remaining_steps(void)
+{
+    return (s_trap.steps_total > s_trap.steps_done) ?
+               (s_trap.steps_total - s_trap.steps_done) : 0u;
 }
 
 /* =========================
@@ -1507,6 +1521,12 @@ void PU3_Stepper_Stop(void)
 
 /** 查询 PU3 是否正在输出 DMA 步进脉冲。 */
 uint8_t PU3_Stepper_IsRunning(void) { return s_pu3.running; }
+
+/** 获取 PU3 已经完成的整段步数。 */
+uint32_t PU3_Stepper_GetCompletedSteps(void) { return s_pu3.completed_steps; }
+
+/** 获取 PU3 尚未完成的步数。 */
+uint32_t PU3_Stepper_GetRemainingSteps(void) { return s_pu3.remaining_steps; }
 
 void DMA2_Channel4_5_IRQHandler(void)
 {

@@ -1,6 +1,7 @@
 #include "shift_register_input.h"
 #include "spi_helper.h"
 #include "pb10_sensor_stop.h"
+#include "robot_arm_sensor.h"
 
 // 74HC165 控制引脚
 #define LOAD_PIN GPIO_Pin_4
@@ -43,6 +44,8 @@ void ShiftRegisterInput_ReadAll(uint8_t *data)
     data[i] = ~(SPI_I2S_ReceiveData(SPI1)); // 通常为低有效
   }
 
+  /* 完整快照生成后再交给机械臂，避免状态机读取到半轮数据。 */
+  RobotArmSensor_UpdateSnapshot(data);
   /* 只在一轮 HC165 数据全部刷新后判断，避免使用混合快照。 */
   Protocol_CheckPb10StopSensor(data);
 }
