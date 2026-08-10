@@ -12,7 +12,7 @@
 #define MOSI_PIN GPIO_Pin_7
 #define MOSI_PORT GPIOA // PA7 → SER（数据）
 
-uint8_t HC595Data[SHIFT_REGISTER_COUNT] = {0x00, 0x00, 0x00, 0x00}; // 示例数据
+uint8_t HC595Data[SHIFT_REGISTER_COUNT] = {0x00,0x00,0x00,0x00}; // 示例数据
 MotorCtrl_t MotorCtrl[MOTOR_NUM];
 void ShiftRegister_Init(void)
 {

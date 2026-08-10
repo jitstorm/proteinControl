@@ -25,5 +25,4 @@ void SystemClock_Config(void)
     
     // 使能USART1时钟（APB2总线）
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_USART1, ENABLE);
-    RCC_APB1PeriphClockCmd(RCC_APB1Periph_USART2, ENABLE);
 }

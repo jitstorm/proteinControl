@@ -1,0 +1,19 @@
+#ifndef __ROBOT_ARM_CONFIG_H__
+#define __ROBOT_ARM_CONFIG_H__
+
+#include <stdint.h>
+
+/* 管理层内部坐标统一使用 STEP；当前未确认机械软限位，保留完整 int32 范围。 */
+#define ROBOT_ARM_X_MIN_POSITION INT32_MIN
+#define ROBOT_ARM_X_MAX_POSITION INT32_MAX
+#define ROBOT_ARM_Y_MIN_POSITION INT32_MIN
+#define ROBOT_ARM_Y_MAX_POSITION INT32_MAX
+#define ROBOT_ARM_Z_MIN_POSITION INT32_MIN
+#define ROBOT_ARM_Z_MAX_POSITION INT32_MAX
+
+/* 适配现有 DMA 驱动的默认速度，单位均为 steps/s。 */
+#define ROBOT_ARM_X_DEFAULT_SPEED 1000u
+#define ROBOT_ARM_Y_DEFAULT_SPEED 1000u
+#define ROBOT_ARM_Z_DEFAULT_SPEED 1000u
+
+#endif

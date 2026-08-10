@@ -56,4 +56,23 @@ uint32_t Stepper2_GetCompletedSteps(void);
 /** 获取第二轴尚未完成的步数。 */
 uint32_t Stepper2_GetRemainingSteps(void);
 
+/* PU3 资源集中定义，TIM7 更新事件触发 DMA 写 GPIOB->BSRR。 */
+#define PU3_STEP_GPIO GPIOB
+#define PU3_STEP_PIN GPIO_Pin_13
+#define PU3_TIMER TIM7
+#define PU3_DMA_CHANNEL DMA2_Channel4
+#define PU3_DMA_IRQn DMA2_Channel4_5_IRQn
+
+/** 初始化 PU3 的 PB13、TIM7 和 DMA2 通道4。 */
+void PU3_Stepper_Init(void);
+/** 启动 PU3 梯形加减速运动；运行中或零步数时返回 0。 */
+uint8_t PU3_Stepper_Start(uint32_t steps, uint8_t direction,
+                          uint32_t start_frequency,
+                          uint32_t maximum_frequency,
+                          uint32_t acceleration);
+/** 停止 PU3，并将 PB13 保持为低电平。 */
+void PU3_Stepper_Stop(void);
+/** 查询 PU3 是否正在输出 DMA 步进脉冲。 */
+uint8_t PU3_Stepper_IsRunning(void);
+
 #endif

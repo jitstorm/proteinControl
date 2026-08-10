@@ -32,7 +32,10 @@ void USART_SendBuffer(USART_TypeDef* USARTx, uint8_t *buffer, uint16_t length);
 unsigned char UART1GetByte(unsigned char *GetData);
 void UART1Test(void);
 uint16_t USART1_GetRemoteTemperature(void);
-uint8_t USART2_TakeFrame(uint8_t *frame);
+/**
+ * @brief 从串口1的485接收队列取出一帧主机协议数据。
+ */
+uint8_t USART1_TakeFrame(uint8_t *frame);
 extern volatile uint8_t frame_ready;
 extern uint8_t rx_buffer[10];
 extern USART_RxStats usart1_rx_stats;

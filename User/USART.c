@@ -8,8 +8,7 @@
 #define FRAME_HEADER 0xA5
 #define FRAME_END 0x55
 #define RX_BUFFER_SIZE 10
-#define USART2_RX_RING_SIZE 64
-#define USART2_FRAME_QUEUE_SIZE 4
+#define USART1_FRAME_QUEUE_SIZE 4
 #define USART2_TX_WAIT_TIMEOUT_MS 5u
 #define USART_PROTOCOL_HEADER 0xAAu
 #define USART_PROTOCOL_TAIL 0x55u
@@ -34,14 +33,10 @@ uint8_t rx_buffer[RX_BUFFER_SIZE];
 uint8_t rx_index = 0;
 uint8_t receiving = 0;
 volatile uint8_t frame_ready = 0;
-static volatile uint8_t usart2_rx_ring[USART2_RX_RING_SIZE];
-static volatile uint8_t usart2_rx_head = 0;
-static volatile uint8_t usart2_rx_tail = 0;
-static volatile uint8_t usart2_rx_count = 0;
-static volatile uint8_t usart2_frame_queue[USART2_FRAME_QUEUE_SIZE][RX_BUFFER_SIZE];
-static volatile uint8_t usart2_frame_head = 0;
-static volatile uint8_t usart2_frame_tail = 0;
-static volatile uint8_t usart2_frame_count = 0;
+static volatile uint8_t usart1_frame_queue[USART1_FRAME_QUEUE_SIZE][RX_BUFFER_SIZE];
+static volatile uint8_t usart1_frame_head = 0;
+static volatile uint8_t usart1_frame_tail = 0;
+static volatile uint8_t usart1_frame_count = 0;
 #define USART1_TEMP_FRAME_SIZE 5
 #define USART1_TEMP_HEADER 0xA9
 #define USART1_TEMP_TAIL 0x55
@@ -276,7 +271,6 @@ void USART1_Init(void)
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);  // GPIOA
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB, ENABLE);  // GPIOA
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_USART1, ENABLE); // USART1 �?APB2
-    RCC_APB1PeriphClockCmd(RCC_APB1Periph_USART2, ENABLE); // USART2 �?APB1
     // 2. GPIO 配置
     // USART1 TX (PA9)
     GPIO_InitStructure.GPIO_Pin = GPIO_Pin_9;
@@ -300,16 +294,6 @@ void USART1_Init(void)
     GPIO_InitStructure.GPIO_Pin = RS485_EN3_PIN;
     GPIO_Init(GPIOB, &GPIO_InitStructure);
     RS485_SetReceive(USART3);
-
-    // USART2 TX (PA2)
-    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_2;
-    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
-    GPIO_Init(GPIOA, &GPIO_InitStructure);
-
-    // USART2 RX (PA3)
-    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_3;
-    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING;
-    GPIO_Init(GPIOA, &GPIO_InitStructure);
 
     /*
      * PB10/PB11 已被步进 DMA 占用，因此串口 3 部分重映射到 PC10/PC11。
@@ -341,13 +325,6 @@ void USART1_Init(void)
     USART_ITConfig(USART1, USART_IT_PE, ENABLE);
     USART_Cmd(USART1, ENABLE);
 
-    // 5. 初始�?USART2
-    USART_Init(USART2, &USART_InitStructure);
-    USART_ITConfig(USART2, USART_IT_RXNE, ENABLE);
-    USART_ITConfig(USART2, USART_IT_ERR, ENABLE);
-    USART_ITConfig(USART2, USART_IT_PE, ENABLE);
-    USART_Cmd(USART2, ENABLE);
-
     /* 串口 3 使用 PB15 控制 485 收发方向。 */
     USART_Init(USART3, &USART_InitStructure);
     USART_ITConfig(USART3, USART_IT_RXNE, ENABLE);
@@ -358,12 +335,6 @@ void USART1_Init(void)
 
     NVIC_InitStructure.NVIC_IRQChannel = USART1_IRQn;
     NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;
-    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
-    NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
-    NVIC_Init(&NVIC_InitStructure);
-
-NVIC_InitStructure.NVIC_IRQChannel = USART2_IRQn;
-    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 2;
     NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
     NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
     NVIC_Init(&NVIC_InitStructure);
@@ -397,11 +368,11 @@ void USART3_IRQHandler(void)
     USART_RxIrqHandler(USART3, &usart3_rx_ring, &usart3_rx_stats);
 }
 
-static void USART2_QueueFrame(uint8_t *frame)
+static void USART1_QueueFrame(uint8_t *frame)
 {
     uint8_t i;
 
-    if (usart2_frame_count >= USART2_FRAME_QUEUE_SIZE)
+    if (usart1_frame_count >= USART1_FRAME_QUEUE_SIZE)
     {
         /* ???????????????????????? */
         dbg_frame_queue_overflow++;
@@ -410,61 +381,23 @@ static void USART2_QueueFrame(uint8_t *frame)
 
     for (i = 0; i < RX_BUFFER_SIZE; i++)
     {
-        usart2_frame_queue[usart2_frame_tail][i] = frame[i];
+        usart1_frame_queue[usart1_frame_tail][i] = frame[i];
     }
-    usart2_frame_tail++;
-    if (usart2_frame_tail >= USART2_FRAME_QUEUE_SIZE)
+    usart1_frame_tail++;
+    if (usart1_frame_tail >= USART1_FRAME_QUEUE_SIZE)
     {
-        usart2_frame_tail = 0;
+        usart1_frame_tail = 0;
     }
-    usart2_frame_count++;
+    usart1_frame_count++;
     frame_ready = 1;
 }
 
-static void USART2_QueueRxByte(uint8_t byte)
-{
-    if (usart2_rx_count >= USART2_RX_RING_SIZE)
-    {
-        /* ?????????????????????????????? */
-        dbg_frame_queue_overflow++;
-        return;
-    }
-
-    usart2_rx_ring[usart2_rx_tail] = byte;
-    usart2_rx_tail++;
-    if (usart2_rx_tail >= USART2_RX_RING_SIZE)
-    {
-        usart2_rx_tail = 0;
-    }
-    usart2_rx_count++;
-}
-
-static uint8_t USART2_TakeRxByte(uint8_t *byte)
-{
-    __disable_irq();
-    if (usart2_rx_count == 0)
-    {
-        __enable_irq();
-        return 0;
-    }
-
-    *byte = usart2_rx_ring[usart2_rx_head];
-    usart2_rx_head++;
-    if (usart2_rx_head >= USART2_RX_RING_SIZE)
-    {
-        usart2_rx_head = 0;
-    }
-    usart2_rx_count--;
-    __enable_irq();
-
-    return 1;
-}
-
-static void USART2_ProcessRxBytes(void)
+static void USART1_ProcessRxBytes(void)
 {
     uint8_t byte;
 
-    while (USART2_TakeRxByte(&byte))
+    /* 中断生产、主循环消费，协议解析不在中断中执行。 */
+    while (RingBuffer_ReadByte(&usart1_rx_ring, &byte))
     {
         if (!receiving)
         {
@@ -484,21 +417,21 @@ static void USART2_ProcessRxBytes(void)
         if (rx_index >= RX_BUFFER_SIZE)
         {
             /* ???????? 10 ???????????? parse_frame ??? */
-            USART2_QueueFrame(rx_buffer);
+            USART1_QueueFrame(rx_buffer);
             rx_index = 0;
             receiving = 0;
         }
     }
 }
 
-uint8_t USART2_TakeFrame(uint8_t *frame)
+uint8_t USART1_TakeFrame(uint8_t *frame)
 {
     uint8_t i;
 
-    USART2_ProcessRxBytes();
+    USART1_ProcessRxBytes();
 
     __disable_irq();
-    if (usart2_frame_count == 0)
+    if (usart1_frame_count == 0)
     {
         frame_ready = 0;
         __enable_irq();
@@ -507,15 +440,15 @@ uint8_t USART2_TakeFrame(uint8_t *frame)
 
     for (i = 0; i < RX_BUFFER_SIZE; i++)
     {
-        frame[i] = usart2_frame_queue[usart2_frame_head][i];
+        frame[i] = usart1_frame_queue[usart1_frame_head][i];
     }
-    usart2_frame_head++;
-    if (usart2_frame_head >= USART2_FRAME_QUEUE_SIZE)
+    usart1_frame_head++;
+    if (usart1_frame_head >= USART1_FRAME_QUEUE_SIZE)
     {
-        usart2_frame_head = 0;
+        usart1_frame_head = 0;
     }
-    usart2_frame_count--;
-    frame_ready = (usart2_frame_count > 0) ? 1 : 0;
+    usart1_frame_count--;
+    frame_ready = (usart1_frame_count > 0) ? 1 : 0;
     __enable_irq();
 
     return 1;
@@ -524,7 +457,6 @@ uint8_t USART2_TakeFrame(uint8_t *frame)
 void USART2_IRQHandler(void)
 {
     uint16_t status;
-    uint8_t byte;
 
     status = USART2->SR;
 
@@ -559,8 +491,8 @@ void USART2_IRQHandler(void)
 
     if (status & USART_SR_RXNE)
     {
-        byte = (uint8_t)USART2->DR;
-        USART2_QueueRxByte(byte);
+        /* USART2 已不参与主机通讯，仅清空数据寄存器。 */
+        (void)USART2->DR;
     }
 }
 /**
@@ -568,7 +500,50 @@ void USART2_IRQHandler(void)
  */
 void USART1_IRQHandler(void)
 {
-    USART_RxIrqHandler(USART1, &usart1_rx_ring, &usart1_rx_stats);
+    uint16_t status;
+    uint8_t byte;
+
+    status = USART1->SR;
+
+    if (status & USART_SR_RXNE)
+    {
+        dbg_usart_rx_bytes++;
+    }
+    if (status & USART_SR_ORE)
+    {
+        dbg_usart_ore++;
+    }
+    if (status & USART_SR_FE)
+    {
+        dbg_usart_fe++;
+    }
+    if (status & USART_SR_NE)
+    {
+        dbg_usart_ne++;
+    }
+    if (status & USART_SR_PE)
+    {
+        dbg_usart_pe++;
+    }
+
+    if (status & (USART_SR_ORE | USART_SR_FE | USART_SR_NE | USART_SR_PE))
+    {
+        /* 按 STM32F1 规定读取 SR 与 DR，清除串口错误状态。 */
+        (void)USART1->SR;
+        (void)USART1->DR;
+        return;
+    }
+
+    if (status & USART_SR_RXNE)
+    {
+        byte = (uint8_t)USART1->DR;
+        /* USART1 的485数据进入专用环形缓冲区，由主循环组帧。 */
+        if (!RingBuffer_WriteByte(&usart1_rx_ring, byte))
+        {
+            usart1_rx_stats.rx_overflow_count++;
+            dbg_frame_queue_overflow++;
+        }
+    }
 }
 
 /**
@@ -643,7 +618,7 @@ void USART_SendByte(USART_TypeDef *USARTx, uint8_t data)
     while (USART_GetFlagStatus(USARTx, USART_FLAG_TXE) == RESET)
     {
         /* timeout 现场由协议层统一原子记录，正常发送时序保持不变。 */
-        if (USARTx == USART2 &&
+        if (USARTx == USART1 &&
             (millis() - tx_wait_start) >= USART2_TX_WAIT_TIMEOUT_MS)
         {
             Protocol_RecordUsart2TxTimeout(1u);

@@ -18,11 +18,11 @@
 #include "step_dma.h"
 #include "single_motor.h"
 #include "reversible_motor.h"
+#include "robot_arm.h"
 
 #define MAIN_LOOP_PROCESS_LIMIT 8u
 
 stepMotor stepMotorA = {GPIOB, GPIO_Pin_12, 0, 0, 1, 9, 1000, 1000, 0, 0, 100, 0, 0, 0, 0, 0, 4, 2000, 0};
-stepMotor stepMotorB = {GPIOB, GPIO_Pin_13, 0, 0, 1, 9, 1000, 1000, 0, 0, 100, 0, 0, 0, 0, 0, 3, 2000, 0};
 
 extern MotorCtrl_t MotorCtrl[MOTOR_NUM]; // 595 输出电机控制状态
 extern volatile char motor_tick_pending;
@@ -55,7 +55,7 @@ static void task_uart_frames(void)
     uint8_t count = 0;
 
     /* 限制单轮处理量，避免串口持续有数据时阻塞其他任务。 */
-    while (count < MAIN_LOOP_PROCESS_LIMIT && USART2_TakeFrame(frame))
+    while (count < MAIN_LOOP_PROCESS_LIMIT && USART1_TakeFrame(frame))
     {
         parse_frame(frame);
         count++;
@@ -76,16 +76,16 @@ static void task_protocol_commands(void)
     }
 }
 
-static void task_step_done_report(void)
-{
-    uint8_t data[6] = {0};
+// static void task_step_done_report(void)
+// {
+//     uint8_t data[6] = {0};
 
-    if (stepdma_pb10_take_done_report())
-    {
-        data[0] = 1;
-        send_frame_event(0x1F, data);
-    }
-}
+//     if (stepdma_pb10_take_done_report())
+//     {
+//         data[0] = 1;
+//         send_frame_event(0x1F, data);
+//     }
+// }
 
 static void task_165_input_scan(void)
 {
@@ -234,8 +234,7 @@ int main(void)
     SingleMotor_Init();
     ReversibleMotor_Init();
     last_single_motor_task_ms = millis();
-    /* 输出启动时的初始 74HC595 状态。 */
-    ShiftRegister_WriteAll(HC595Data);
+
     SPI_GPIO_Init();
     SPI1_InitOnce();
     Timer2_Init();
@@ -244,24 +243,29 @@ int main(void)
     TIM4_10us_Init();
     stepdma_pb11_init(72000000);
     Stepper2_Init();
+    PU3_Stepper_Init();
+    /* 管理层仅初始化逻辑状态，绝不会在上电时输出 STEP。 */
+    RobotArm_Init();
     GPIO_Config();
     TIM1_PWM_CH2N_Config(1000 - 1, 71, 0);
     PWM_PA0_PA1_PA11_Init();
     GPIO_SetBits(GPIOB, GPIO_Pin_1);
     USART1_Init();
     Protocol_InitTxDiagnostics();
-
+    /* 输出启动时的初始 74HC595 状态。 */
+    ShiftRegister_WriteAll(HC595Data);
     while (1)
     {
-        /* 串口 1/3 仅由中断入队，协议帧在主循环中统一解析。 */
-        USART1_Process();
+        /* 串口1的485协议帧仅由中断入队，在主循环中统一解析。 */
         USART3_Process();
         task_temperature_report();
         task_uart_frames();
         task_protocol_commands();
-        task_step_done_report();
+        // task_step_done_report();
         task_165_input_scan();
         task_input_change_report();
         task_single_motor();
+        /* 在主循环推进动作完成，不在 DMA 中断内执行业务状态机。 */
+        RobotArm_Task();
     }
 }

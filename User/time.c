@@ -13,7 +13,6 @@ volatile char motor_tick_pending;
 char handle_step_motor1;
 char handle_step_motor2;
 extern stepMotor stepMotorA;
-extern stepMotor stepMotorB;
 TIM_TimeBaseInitTypeDef TIM_TimeBaseStructure;
 NVIC_InitTypeDef NVIC_InitStructure;
 volatile uint16_t pwm_counter = 0;

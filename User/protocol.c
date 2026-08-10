@@ -16,6 +16,7 @@
 #include "single_motor.h"
 #include "reversible_motor.h"
 #include "time.h"
+#include "robot_arm.h"
 
 #define PROTOCOL_MAX_SIZE (SHIFT_REGISTER_COUNT + 3)
 #define PROTOCOL_HEADER 0xAA
@@ -29,7 +30,6 @@
 #define STEP_DIR_RESERVED4_595_BIT 7u
 extern MotorCtrl_t MotorCtrl[MOTOR_NUM]; // �?这是声明
 extern stepMotor stepMotorA;
-extern stepMotor stepMotorB;
 uint8_t pwm_duty;
 uint16_t pwm_duty0;
 int temperature;
@@ -244,11 +244,11 @@ void createHandshakeReply(Packet *pkt)
     pkt->DATA4 = 0x00;
     pkt->DATA5 = 0x00;
     pkt->DATA6 = 0x00;
-    // USART_SendData(USART2, pkt->SUM);
+    // USART_SendData(USART1, pkt->SUM);
     computeChecksum(pkt);
 
-    // USART_SendData(USART2, pkt->SUM);
-    while (USART_GetFlagStatus(USART2, USART_FLAG_TXE) == RESET)
+    // USART_SendData(USART1, pkt->SUM);
+    while (USART_GetFlagStatus(USART1, USART_FLAG_TXE) == RESET)
         ;
 }
 
@@ -283,7 +283,7 @@ void USART_ProtocolHandler(uint8_t *buffer)
     int i;
     for (i = 0; i < PROTOCOL_MAX_SIZE; i++)
     {
-        USART_SendByte(USART2, buffer[i]);
+        USART_SendByte(USART1, buffer[i]);
         buffer[i] = 0x00;
     }
 }
@@ -583,309 +583,6 @@ void send_motor16_timeout_event(uint8_t motor_id, uint8_t direction)
     send_frame_event(0x16, data);
 }
 
-#if 0
-/* 旧非步进命令处理逻辑保留，避免丢失历史实现；新协议在下方重新分发。 */
-void handle_command(uint8_t cmd, uint8_t *data)
-{
-    uint8_t index;
-
-    /* ????? CMD ????????/????????? */
-    dbg_handle_cmd_count[cmd]++;
-
-    switch (cmd)
-    {
-    case 0x00:
-        break;
-    case 0x01:
-        send_165DataSource(TX_SOURCE_ACK);
-        break;
-    case 0x7E:
-        Protocol_SendDebugCounter(data);
-        break;
-    case 0x03:
-        send_frame(cmd, data);
-        if (data[0] < 3)
-        {
-            Motor_Control(data[0], data[1], data[2]);
-            if (data[2] > 0)
-            {
-                motors[data[0] - 1].enabled = 1;
-            }
-            else
-            {
-                motors[data[0] - 1].enabled = 0;
-            }
-            motors[data[0] - 1].HC165Index = 0;
-            motors[data[0] - 1].HC165Value = 0;
-        }
-        else if (data[0] < 6)
-        {
-            Motor4And5_Control(data[0], data[1], data[2]);
-        }
-        else if (data[0] < 8)
-        {
-            Motor6And7_Control(data[0], data[1], data[2]);
-        }
-        break;
-    case 0x04:
-        if (data[0] < 3)
-        {
-            send_frame(cmd, data);
-            if (data[0] != 2)
-            {
-                Motor_Control(data[0], data[1], data[2]);
-            }
-            else
-            {
-                pwm_duty0 = data[3];
-            }
-            motors[data[0] - 1].timer_ms = data[2];
-            motors[data[0] - 1].direction = data[1];
-            motors[data[0] - 1].HC165Index = 0;
-            motors[data[0] - 1].HC165Value = 0;
-
-            if (data[2] > 0)
-            {
-                motors[data[0] - 1].enabled = 1;
-                if (data[0] == 2)
-                {
-                    pwm_duty0 = 0;
-                }
-            }
-            else
-            {
-                if (data[0] == 2)
-                {
-                    pwm_duty0 = 0;
-                }
-                motors[data[0] - 1].enabled = 0;
-            }
-        }
-        else if (data[0] < 6)
-        {
-            send_frame(cmd, data);
-            Motor4And5_Control(data[0], data[1], data[2]);
-            motors1[data[0] - 4].timer_ms = data[2];
-            motors1[data[0] - 4].direction = data[1];
-            if (data[2] > 0)
-            {
-                motors1[data[0] - 4].enabled = 1;
-            }
-            else
-            {
-                motors1[data[0] - 4].enabled = 0;
-            }
-        }
-        else if (data[0] < 8)
-        {
-            send_frame(cmd, data);
-            Motor6And7_Control(data[0], data[1], data[2]);
-            motor16_timeout_report[data[0] - 6] = 0;
-            motors2[data[0] - 6].timer_ms = data[2];
-            motors2[data[0] - 6].direction = data[1];
-            if (data[2] > 0)
-            {
-                motors2[data[0] - 6].enabled = 1;
-            }
-            else
-            {
-                motors2[data[0] - 6].enabled = 0;
-            }
-        }
-        break;
-    case 0x0D:
-        data[1] = 0;
-        data[2] = 0;
-        data[0] = 0;
-        data[0] = motors[0].enabled;
-        data[1] = motors[1].enabled;
-        data[2] = motors[2].enabled;
-        send_frame(cmd, data);
-        break;
-    case 0x05:
-        send_frame(cmd, data);
-        Motor595_SingleDir_Control(data[0], data[1]);
-        break;
-    case 0x06:
-        /* 先校验通道，避免定时状态数组因非法命令越界。 */
-        if (data[0] < MOTOR_NUM)
-        {
-            send_frame(cmd, data);
-            Motor595_SingleDir_Control(data[0], data[1]);
-            MotorCtrl[data[0]].timer_ms = data[1];
-            if (data[1] > 0)
-            {
-                MotorCtrl[data[0]].enabled = 1;
-            }
-            else
-            {
-                MotorCtrl[data[0]].enabled = 0;
-            }
-        }
-        break;
-    case 0x07:
-        data[0] = HC595Data[0];
-        data[1] = HC595Data[1];
-        data[2] = HC595Data[2];
-        data[3] = HC595Data[3];
-        data[4] = PWM_GetMotorRunStatus();
-        data[5] = 0;
-        send_frame(cmd, data);
-        break;
-    case 0x11:
-        data[0] = temperature;
-        send_frame(cmd, data);
-        break;
-    case 0x13:
-        send_frame(cmd, data);
-        PWM_SetExtraDuty(data[0], data[1]);
-        break;
-    case 0x14:
-        send_frame(cmd, data);
-        HC595Data[1] = (HC595Data[1] & 0x81) | (data[0] & 0x7e);
-        HC595Data[2] = (HC595Data[2] & 0x81) | (data[1] & 0x7e);
-        ShiftRegister_WriteAll(HC595Data);
-        break;
-    case 0x15:
-        if (data[0] < 4)
-        {
-            send_frame(cmd, data);
-            motors[data[0] - 1].timer_ms = data[2];
-            motors[data[0] - 1].direction = data[1];
-            if (data[2] > 0)
-            {
-                motors[data[0] - 1].enabled = 1;
-            }
-            else
-            {
-                motors[data[0] - 1].enabled = 0;
-            }
-            if (data[3] <= SHIFT_REGISTER_INPUT_CHANNEL_COUNT && data[2])
-            {
-                getHc165IndexByData(data[0], data[3]);
-            }
-            Motor_Control(data[0], data[1], data[2]);
-            pwm_duty0 = data[4];
-            if (motors[data[0] - 1].HC165Value > 0 && (inputData[motors[data[0] - 1].HC165Index] & motors[data[0] - 1].HC165Value))
-            {
-                motors[data[0] - 1].timer_ms = 0;
-                motors[data[0] - 1].enabled = 0;
-                Motor_Control(data[0], motors[data[0] - 1].direction, 0);
-                motors[data[0] - 1].HC165Index = 0;
-                motors[data[0] - 1].HC165Value = 0;
-            }
-        }
-        break;
-    case 0x16:
-        if (data[0] >= 6 && data[0] < 8)
-        {
-            index = data[0] - 6;
-
-            motors2[index].timer_ms = data[2];
-            motors2[index].direction = data[1];
-            motor16_timeout_report[index] = (data[2] > 0) ? 1 : 0;
-            motors2[index].HC165Index = 0;
-            motors2[index].HC165Value = 0;
-
-            if (data[2] > 0)
-            {
-                motors2[index].enabled = 1;
-                if (data[3] > 0 && data[3] <= SHIFT_REGISTER_INPUT_CHANNEL_COUNT)
-                {
-                    getHc165IndexForMotorFull(&motors2[index], data[3]);
-                }
-            }
-            else
-            {
-                motors2[index].enabled = 0;
-            }
-
-            send_frame(cmd, data);
-            Motor6And7_Control(data[0], data[1], data[2]);
-
-            if (motors2[index].HC165Value > 0 && (inputData[motors2[index].HC165Index] & motors2[index].HC165Value))
-            {
-                motors2[index].timer_ms = 0;
-                motors2[index].enabled = 0;
-                Motor6And7_Control(data[0], motors2[index].direction, 0);
-                motors2[index].HC165Index = 0;
-                motors2[index].HC165Value = 0;
-                motor16_timeout_report[index] = 0;
-            }
-        }
-        break;
-    case 0x17:
-        send_frame(cmd, data);
-        pwm_duty = data[0];
-        if (pwm_duty > 100)
-        {
-            pwm_duty = 100;
-        }
-        motors[2].enabled = 1;
-        if (pwm_duty == 0)
-        {
-            motors[2].enabled = 0;
-        }
-        PWM_SetPB0_Duty(pwm_duty);
-        break;
-    case 0x19:
-        send_frame(cmd, data);
-        PWM_SetPC14_Duty(data[0]);
-        break;
-    case 0x1A:
-        send_frame(cmd, data);
-        PWM_SetPC15_Motor(data[0]);
-        break;
-    case 0x1D:
-        send_frame(cmd, data);
-        PWM_SetPC1_Motor(data[0]);
-        break;
-    case 0x1E:
-        send_frame(cmd, data);
-        PWM_SetPC2_Motor(data[0]);
-        break;
-    case 0x1B:
-        send_frame(cmd, data);
-        HC595Data[2] = (HC595Data[2] & ~(1 << 7)) | ((data[2] & 0x01) << 7);
-        ShiftRegister_WriteAll(HC595Data);
-        stepdma_pb11_request_trap(data[0] << 8 | data[1], 500, data[3] * 200, 100000);
-        break;
-    case 0x1C:
-        Protocol_DisablePb10StopSensor();
-        send_frame(cmd, data);
-        HC595Data[2] = (HC595Data[2] & ~(1 << 0)) | ((data[2] & 0x01) << 0);
-        ShiftRegister_WriteAll(HC595Data);
-        stepdma_pb10_request_trap(data[0] << 8 | data[1], 500, data[3] * 200, 100000);
-        break;
-    case 0x20:
-        if (Protocol_ConfigurePb10StopSensor(data[4], data[5]))
-        {
-            send_frame(cmd, data);
-            HC595Data[2] = (HC595Data[2] & ~(1 << 0)) | ((data[2] & 0x01) << 0);
-            ShiftRegister_WriteAll(HC595Data);
-            stepdma_pb10_request_trap(data[0] << 8 | data[1], 500, data[3] * 200, 100000);
-        }
-        else
-        {
-            data[4] = 0;
-            send_frame(cmd, data);
-        }
-        break;
-    case 0x1F:
-        data[0] = stepdma_pb10_is_running() ? 0 : 1;
-        data[1] = 0;
-        data[2] = 0;
-        data[3] = 0;
-        data[4] = 0;
-        data[5] = 0;
-        send_frame(cmd, data);
-        break;
-
-    default:
-        break;
-    }
-}
-#endif
 
 #define SINGLE_MOTOR_RESULT_OK 0x00u
 #define SINGLE_MOTOR_RESULT_INVALID_MOTOR 0x01u
@@ -938,6 +635,17 @@ static uint8_t Protocol_IsAllZero(const uint8_t *data, uint8_t start_index)
     return 1u;
 }
 
+/* 协议仅定义停止、正转和反转；换向死区时实际输出已停止，因此按停止上报。 */
+static uint8_t Protocol_GetReversibleMotorStateForResponse(ReversibleMotorState state)
+{
+    if (state == REV_MOTOR_DEADTIME)
+    {
+        return (uint8_t)REV_MOTOR_STOPPED;
+    }
+
+    return (uint8_t)state;
+}
+
 /**
  * @brief 分发当前协议命令。
  * @param cmd 已完成校验的命令字。
@@ -963,16 +671,20 @@ void handle_command(uint8_t cmd, uint8_t *data)
     case 0x05:
         if (data[0] < 1u || data[0] > SINGLE_MOTOR_COUNT)
         {
-            Protocol_SendSingleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_MOTOR);
+            /* 05 的回应格式固定回显请求字段，错误仅保留在内部诊断。 */
+            SingleMotor_RecordError(SINGLE_MOTOR_RESULT_INVALID_MOTOR);
+            send_frame(cmd, data);
             break;
         }
         if (data[1] > 1u || !Protocol_IsAllZero(data, 2u))
         {
-            Protocol_SendSingleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_ACTION);
+            SingleMotor_RecordError(SINGLE_MOTOR_RESULT_INVALID_ACTION);
+            send_frame(cmd, data);
             break;
         }
         SingleMotor_Immediate(data[0], data[1]);
-        Protocol_SendSingleMotorResult(cmd, SINGLE_MOTOR_RESULT_OK);
+        /* 成功回应按协议保留电机编号与动作字段。 */
+        send_frame(cmd, data);
         break;
     case 0x06:
         if (data[0] < 1u || data[0] > SINGLE_MOTOR_COUNT)
@@ -980,13 +692,13 @@ void handle_command(uint8_t cmd, uint8_t *data)
             Protocol_SendSingleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_MOTOR);
             break;
         }
-        if (data[5] != 0u)
+        if (!Protocol_IsAllZero(data, 2u))
         {
             Protocol_SendSingleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_ACTION);
             break;
         }
-        duration_ms = (uint32_t)data[1] | ((uint32_t)data[2] << 8) |
-                      ((uint32_t)data[3] << 16) | ((uint32_t)data[4] << 24);
+        /* 文档约定 DATA2 为 100ms 单位的单字节定时时间。 */
+        duration_ms = (uint32_t)data[1] * 100u;
         if (duration_ms == 0u)
         {
             Protocol_SendSingleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_TIME);
@@ -1041,19 +753,23 @@ void handle_command(uint8_t cmd, uint8_t *data)
         /* 立即控制仅接受已配置的正反转电机编号和停止/正转/反转动作。 */
         if (data[0] < 1u || data[0] > REVERSIBLE_MOTOR_COUNT)
         {
-            Protocol_SendReversibleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_MOTOR);
+            /* 09 的回应格式固定回显请求字段，错误仅保留在内部诊断。 */
+            ReversibleMotor_RecordError(SINGLE_MOTOR_RESULT_INVALID_MOTOR);
+            send_frame(cmd, data);
             break;
         }
         if (data[1] > 2u || !Protocol_IsAllZero(data, 2u))
         {
-            Protocol_SendReversibleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_ACTION);
+            ReversibleMotor_RecordError(SINGLE_MOTOR_RESULT_INVALID_ACTION);
+            send_frame(cmd, data);
             break;
         }
         ReversibleMotor_Immediate(data[0], data[1]);
-        Protocol_SendReversibleMotorResult(cmd, SINGLE_MOTOR_RESULT_OK);
+        /* 成功回应按协议保留电机编号与动作字段。 */
+        send_frame(cmd, data);
         break;
     case 0x0A:
-        /* D2..D5 为小端毫秒时长；定时运行不接受停止动作。 */
+        /* 文档约定 DATA3 为 100ms 单位的单字节定时时间。 */
         if (data[0] < 1u || data[0] > REVERSIBLE_MOTOR_COUNT)
         {
             Protocol_SendReversibleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_MOTOR);
@@ -1064,8 +780,12 @@ void handle_command(uint8_t cmd, uint8_t *data)
             Protocol_SendReversibleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_ACTION);
             break;
         }
-        duration_ms = (uint32_t)data[2] | ((uint32_t)data[3] << 8) |
-                      ((uint32_t)data[4] << 16) | ((uint32_t)data[5] << 24);
+        if (!Protocol_IsAllZero(data, 3u))
+        {
+            Protocol_SendReversibleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_ACTION);
+            break;
+        }
+        duration_ms = (uint32_t)data[2] * 100u;
         if (duration_ms == 0u)
         {
             Protocol_SendReversibleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_TIME);
@@ -1110,22 +830,24 @@ void handle_command(uint8_t cmd, uint8_t *data)
             Protocol_SendReversibleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_ACTION);
             break;
         }
-        /* 状态和停止原因均从任务状态机读取，保证查询结果与控制逻辑一致。 */
-        data[0] = (uint8_t)g_reversible_motors[0].state;
-        data[1] = (uint8_t)g_reversible_motors[1].state;
-        data[2] = (uint8_t)g_reversible_motors[0].stop_reason;
-        data[3] = (uint8_t)g_reversible_motors[1].stop_reason;
-        data[4] = 0u;
+        /* 文档约定 D0..D4 分别返回五路电机状态，D5 保留。 */
+        data[0] = Protocol_GetReversibleMotorStateForResponse(g_reversible_motors[0].state);
+        data[1] = Protocol_GetReversibleMotorStateForResponse(g_reversible_motors[1].state);
+        data[2] = Protocol_GetReversibleMotorStateForResponse(g_reversible_motors[2].state);
+        data[3] = Protocol_GetReversibleMotorStateForResponse(g_reversible_motors[3].state);
+        data[4] = Protocol_GetReversibleMotorStateForResponse(g_reversible_motors[4].state);
         data[5] = 0u;
         send_frame(cmd, data);
         break;
     case 0x1B:
         send_frame(cmd, data);
-        /* X 轴方向使用 595[1] 的 DIR1，不再占用单向电机的 595[2]。 */
+        /* PU1 仅修改 DIR1，确保同片 DIR2、DIR3 等输出保持不变。 */
         HC595Data[1] = (HC595Data[1] & ~(1 << STEP_DIR_X_595_BIT)) |
                        ((data[2] & 0x01) << STEP_DIR_X_595_BIT);
         ShiftRegister_WriteAll(HC595Data);
-        stepdma_pb11_request_trap(data[0] << 8 | data[1], 500, data[3] * 200, 100000);
+        stepdma_pb11_request_trap(data[0] << 8 | data[1], 500u, data[3] * 200u, 100000u);
+        /* 旧调试命令绕过管理层，完成后坐标不可再作为绝对位置依据。 */
+        RobotArm_InvalidatePosition(ROBOT_AXIS_X);
         break;
     case 0x1C:
         Protocol_DisablePb10StopSensor();
@@ -1138,6 +860,16 @@ void handle_command(uint8_t cmd, uint8_t *data)
         Stepper2_SetDirection(data[2]);
         Delay_us(2u);
         stepdma_pb10_request_trap(data[0] << 8 | data[1], 500, data[3] * 200, 100000);
+        /* 保持旧帧行为，仅使管理层放弃该轴的旧坐标。 */
+        RobotArm_InvalidatePosition(ROBOT_AXIS_Y);
+        break;
+    case 0x1E:
+        /* PU3 沿用两轴步进参数格式，方向由 U86 的 DIR3(Q6) 独立控制。 */
+        send_frame(cmd, data);
+        (void)PU3_Stepper_Start(data[0] << 8 | data[1], data[2], 500u,
+                                 data[3] * 200u, 100000u);
+        /* 旧调试命令直接控制 PU3，必须失效化管理层 Z 坐标。 */
+        RobotArm_InvalidatePosition(ROBOT_AXIS_Z);
         break;
     case 0x1F:
         data[0] = stepdma_pb10_is_running() ? 0 : 1;
@@ -1160,6 +892,8 @@ void handle_command(uint8_t cmd, uint8_t *data)
             Stepper2_SetDirection(data[2]);
             Delay_us(2u);
             stepdma_pb10_request_trap(data[0] << 8 | data[1], 500, data[3] * 200, 100000);
+            /* 带传感器停止的旧命令同样不向管理层报告精确执行步数。 */
+            RobotArm_InvalidatePosition(ROBOT_AXIS_Y);
         }
         else
         {
@@ -1258,7 +992,7 @@ static void send_frame_internal(uint8_t cmd, uint8_t *data, TxSource source)
     {
         /* 写每个字节前先发布当前帧内位置。 */
         dbg_usart2_tx_current_byte_index = (uint8_t)j;
-        USART_SendByte(USART2, frame[j]);
+        USART_SendByte(USART1, frame[j]);
         if (dbg_usart2_tx_timeout != timeout_before)
         {
             dbg_usart2_tx_current_byte_index = 0xFFu;
@@ -1273,7 +1007,7 @@ static void send_frame_internal(uint8_t cmd, uint8_t *data, TxSource source)
     /* TXE 只表示 DR 已空，最后继续等待物理发送完成。 */
     dbg_usart2_tx_current_byte_index = 9u;
     tx_wait_start = millis();
-    while (USART_GetFlagStatus(USART2, USART_FLAG_TC) == RESET)
+    while (USART_GetFlagStatus(USART1, USART_FLAG_TC) == RESET)
     {
         if ((millis() - tx_wait_start) >= USART2_TX_WAIT_TIMEOUT_MS)
         {
@@ -1344,6 +1078,6 @@ void send_frame2(uint8_t cmd, uint8_t *data)
     frame[9] = checksum;
     for (j = 0; j < 10; j++)
     {
-        USART_SendByte(USART2, frame[j]);
+        USART_SendByte(USART1, frame[j]);
     }
 }

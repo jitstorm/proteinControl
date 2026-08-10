@@ -234,7 +234,7 @@ static uint32_t trap_get_f(uint32_t step_index)
          */
         if (remain > 0u && v < 1u)
             v = 1u;
-        
+
         if (v > s_trap.v_peak)
             v = s_trap.v_peak;
         return v;
@@ -581,13 +581,15 @@ void DMA2_Channel2_IRQHandler(void)
     uint32_t accel_new;
 
     /* 只处理 DMA2 Channel2 的 TC 中断 */
-    if (DMA_GetITStatus(DMA2_IT_TC2) == RESET) {
+    if (DMA_GetITStatus(DMA2_IT_TC2) == RESET)
+    {
         return;
     }
     DMA_ClearITPendingBit(DMA2_IT_TC2);
 
     /* 如果外部已停止，安全收尾 */
-    if (!s_running) {
+    if (!s_running)
+    {
         stepdma_pb11_stop();
         return;
     }
@@ -605,25 +607,34 @@ void DMA2_Channel2_IRQHandler(void)
      * - 直接重建 s_trap profile
      * - 立刻启动下一段 chunk
      */
-    if (s_pending.valid) {
+    if (s_pending.valid)
+    {
 
-        steps_new   = s_pending.steps;
+        steps_new = s_pending.steps;
         f_start_new = s_pending.f_start;
-        f_max_new   = s_pending.f_max;
-        accel_new   = s_pending.accel;
+        f_max_new = s_pending.f_max;
+        accel_new = s_pending.accel;
         s_pending.valid = 0;
 
         /* 如果当前速度有效，则用它做平滑接续起步 */
-        if (s_cur_f > 0u) {
+        if (s_cur_f > 0u)
+        {
             f_start_new = s_cur_f;
-            if (f_start_new > f_max_new) f_start_new = f_max_new;
-            if (f_start_new < 1u) f_start_new = 1u;
-        } else {
-            if (f_start_new < 1u) f_start_new = 1u;
-            if (f_start_new > f_max_new) f_start_new = f_max_new;
+            if (f_start_new > f_max_new)
+                f_start_new = f_max_new;
+            if (f_start_new < 1u)
+                f_start_new = 1u;
+        }
+        else
+        {
+            if (f_start_new < 1u)
+                f_start_new = 1u;
+            if (f_start_new > f_max_new)
+                f_start_new = f_max_new;
         }
 
-        if (steps_new == 0u) {
+        if (steps_new == 0u)
+        {
             /* 视为停机命令 */
             stepdma_pb11_stop();
             return;
@@ -631,10 +642,10 @@ void DMA2_Channel2_IRQHandler(void)
 
         /* ---------- 重建梯形 profile（末端减到0） ---------- */
         s_trap.steps_total = steps_new;
-        s_trap.steps_done  = 0u;
-        s_trap.f_start     = f_start_new;
-        s_trap.f_max       = (f_max_new < 1u) ? 1u : f_max_new;
-        s_trap.accel       = (accel_new < 1u) ? 1u : accel_new;
+        s_trap.steps_done = 0u;
+        s_trap.f_start = f_start_new;
+        s_trap.f_max = (f_max_new < 1u) ? 1u : f_max_new;
+        s_trap.accel = (accel_new < 1u) ? 1u : accel_new;
 
         /* 计算 v_peak / accel_steps / decel_steps */
         {
@@ -647,8 +658,10 @@ void DMA2_Channel2_IRQHandler(void)
             vpeak2 = (2ull * (uint64_t)s_trap.accel * (uint64_t)s_trap.steps_total + f02) / 2ull;
             vpeak = isqrt_u64(vpeak2);
 
-            if (vpeak > s_trap.f_max) vpeak = s_trap.f_max;
-            if (vpeak < 1u) vpeak = 1u;
+            if (vpeak > s_trap.f_max)
+                vpeak = s_trap.f_max;
+            if (vpeak < 1u)
+                vpeak = 1u;
 
             s_trap.v_peak = vpeak;
 
@@ -659,7 +672,8 @@ void DMA2_Channel2_IRQHandler(void)
             /* decel_steps = v^2/(2a) */
             s_trap.decel_steps =
                 (uint32_t)(((uint64_t)vpeak * (uint64_t)vpeak) / (2ull * (uint64_t)s_trap.accel));
-            if (s_trap.decel_steps < 1u) s_trap.decel_steps = 1u;
+            if (s_trap.decel_steps < 1u)
+                s_trap.decel_steps = 1u;
         }
 
         /* 切到梯形模式继续跑 */
@@ -668,7 +682,8 @@ void DMA2_Channel2_IRQHandler(void)
 
         /* 首段速度 */
         f = trap_get_f(0u);
-        if (f < 1u) f = 1u;
+        if (f < 1u)
+            f = 1u;
         s_cur_f = f;
 
         fev = 2u * f;
@@ -676,8 +691,8 @@ void DMA2_Channel2_IRQHandler(void)
 
         /* 首段长度 */
         remain_steps = s_trap.steps_total - s_trap.steps_done;
-        chunk_steps  = (remain_steps > CHUNK_STEPS) ? CHUNK_STEPS : remain_steps;
-        chunk_edges  = chunk_steps * 2u;
+        chunk_steps = (remain_steps > CHUNK_STEPS) ? CHUNK_STEPS : remain_steps;
+        chunk_edges = chunk_steps * 2u;
 
         dma_start_edges((uint16_t)chunk_edges);
         return;
@@ -686,14 +701,17 @@ void DMA2_Channel2_IRQHandler(void)
     /* =========================================================
      * ② 常速模式：继续输出剩余 edges
      * ========================================================= */
-    if (s_mode == MODE_CONST) {
-        if (s_edges_left == 0u) {
+    if (s_mode == MODE_CONST)
+    {
+        if (s_edges_left == 0u)
+        {
             stepdma_pb11_stop();
             return;
         }
 
         next_edges = s_edges_left;
-        if (next_edges > CHUNK_EDGES) next_edges = CHUNK_EDGES;
+        if (next_edges > CHUNK_EDGES)
+            next_edges = CHUNK_EDGES;
         s_edges_left -= next_edges;
 
         /* 常速模式下，当前速度可认为固定（如果你有保存的话） */
@@ -706,23 +724,26 @@ void DMA2_Channel2_IRQHandler(void)
     /* =========================================================
      * ③ 梯形模式：推进步数 -> 更新速度 -> 发下一段
      * ========================================================= */
-    if (s_mode == MODE_TRAP) {
+    if (s_mode == MODE_TRAP)
+    {
 
         /* 计算上一段步数长度（与启动逻辑一致） */
         remain_steps = s_trap.steps_total - s_trap.steps_done;
-        chunk_steps  = (remain_steps > CHUNK_STEPS) ? CHUNK_STEPS : remain_steps;
+        chunk_steps = (remain_steps > CHUNK_STEPS) ? CHUNK_STEPS : remain_steps;
 
         /* 推进已完成步数 */
         s_trap.steps_done += chunk_steps;
 
-        if (s_trap.steps_done >= s_trap.steps_total) {
+        if (s_trap.steps_done >= s_trap.steps_total)
+        {
             stepdma_pb11_stop();
             return;
         }
 
         /* 下一段速度（末端到0公式由 trap_get_f() 内部完成） */
         f = trap_get_f(s_trap.steps_done);
-        if (f < 1u) f = 1u;
+        if (f < 1u)
+            f = 1u;
         s_cur_f = f;
 
         fev = 2u * f;
@@ -730,8 +751,8 @@ void DMA2_Channel2_IRQHandler(void)
 
         /* 下一段长度 */
         remain_steps = s_trap.steps_total - s_trap.steps_done;
-        chunk_steps  = (remain_steps > CHUNK_STEPS) ? CHUNK_STEPS : remain_steps;
-        chunk_edges  = chunk_steps * 2u;
+        chunk_steps = (remain_steps > CHUNK_STEPS) ? CHUNK_STEPS : remain_steps;
+        chunk_edges = chunk_steps * 2u;
 
         dma_start_edges((uint16_t)chunk_edges);
         return;
@@ -749,7 +770,7 @@ void DMA2_Channel2_IRQHandler(void)
  * ============================================================ */
 
 #define STEP10_GPIO GPIOB
-#define STEP10_PIN  10
+#define STEP10_PIN 10
 #define STEP10_MASK (1u << STEP10_PIN)
 #define STEPPER2_DIR_595_INDEX 2u
 #define STEPPER2_DIR_BIT 5u
@@ -845,11 +866,12 @@ static uint32_t trap10_get_f(uint32_t step_index)
 
     if (done < s10_trap.accel_steps)
     {
-        v2 = (uint64_t)s10_trap.f_start * (uint64_t)s10_trap.f_start
-           + 2ull * (uint64_t)s10_trap.accel * (uint64_t)done;
+        v2 = (uint64_t)s10_trap.f_start * (uint64_t)s10_trap.f_start + 2ull * (uint64_t)s10_trap.accel * (uint64_t)done;
         v = isqrt_u64(v2);
-        if (v > s10_trap.v_peak) v = s10_trap.v_peak;
-        if (v < 1u) v = 1u;
+        if (v > s10_trap.v_peak)
+            v = s10_trap.v_peak;
+        if (v < 1u)
+            v = 1u;
         return v;
     }
 
@@ -857,8 +879,10 @@ static uint32_t trap10_get_f(uint32_t step_index)
     {
         v2 = 2ull * (uint64_t)s10_trap.accel * (uint64_t)remain;
         v = isqrt_u64(v2);
-        if (remain > 0u && v < 1u) v = 1u;
-        if (v > s10_trap.v_peak) v = s10_trap.v_peak;
+        if (remain > 0u && v < 1u)
+            v = 1u;
+        if (v > s10_trap.v_peak)
+            v = s10_trap.v_peak;
         return v;
     }
     return s10_trap.v_peak;
@@ -882,12 +906,15 @@ static void tim6_set_edge_freq(uint32_t fev_hz)
     if (arr > 0xFFFFu)
     {
         psc = s10_tim6_clk / (fev_hz * 65536u);
-        if (psc > 0xFFFFu) psc = 0xFFFFu;
+        if (psc > 0xFFFFu)
+            psc = 0xFFFFu;
 
         tmp = s10_tim6_clk / ((psc + 1u) * fev_hz);
-        if (tmp == 0u) tmp = 1u;
+        if (tmp == 0u)
+            tmp = 1u;
         arr = tmp - 1u;
-        if (arr > 0xFFFFu) arr = 0xFFFFu;
+        if (arr > 0xFFFFu)
+            arr = 0xFFFFu;
     }
 
     TIM_PrescalerConfig(TIM6, (uint16_t)psc, TIM_PSCReloadMode_Immediate);
@@ -959,8 +986,6 @@ void stepdma_pb10_init(uint32_t tim6_clk_hz)
 
     DMA_ITConfig(DMA2_Channel3, DMA_IT_TC, ENABLE);
 
-
-
     /* 你的 startup 有 DMA2_Channel3_IRQHandler，所以这里用 DMA2_Channel3_IRQn */
     ni.NVIC_IRQChannel = DMA2_Channel3_IRQn;
     ni.NVIC_IRQChannelPreemptionPriority = 1;
@@ -1002,15 +1027,18 @@ void stepdma_pb10_move_steps(uint32_t steps, uint32_t fstep_hz)
     uint32_t first_edges;
     uint32_t fev;
 
-    if (steps == 0u) return;
-    if (fstep_hz < 1u) fstep_hz = 1u;
+    if (steps == 0u)
+        return;
+    if (fstep_hz < 1u)
+        fstep_hz = 1u;
 
     edges_total = steps * 2u;
     fev = 2u * fstep_hz;
     tim6_set_edge_freq(fev);
 
     first_edges = edges_total;
-    if (first_edges > CHUNK_EDGES) first_edges = CHUNK_EDGES;
+    if (first_edges > CHUNK_EDGES)
+        first_edges = CHUNK_EDGES;
 
     s10_edges_left = edges_total - first_edges;
     s10_completed_steps = 0u;
@@ -1035,44 +1063,53 @@ void stepdma_pb10_move_trap(uint32_t steps, uint32_t f_start, uint32_t f_max, ui
     uint32_t chunk_steps;
     uint32_t chunk_edges;
 
-    if (steps == 0u) return;
+    if (steps == 0u)
+        return;
 
-    if (f_max < 1u)  f_max = 1u;
-    if (f_start < 1u) f_start = 1u;
-    if (f_start > f_max) f_start = f_max;
-    if (accel < 1u) accel = 1u;
+    if (f_max < 1u)
+        f_max = 1u;
+    if (f_start < 1u)
+        f_start = 1u;
+    if (f_start > f_max)
+        f_start = f_max;
+    if (accel < 1u)
+        accel = 1u;
 
     s10_trap.steps_total = steps;
-    s10_trap.steps_done  = 0u;
+    s10_trap.steps_done = 0u;
     s10_completed_steps = 0u;
     s10_remaining_steps = steps;
     s10_trap.f_start = f_start;
-    s10_trap.f_max   = f_max;
-    s10_trap.accel   = accel;
+    s10_trap.f_max = f_max;
+    s10_trap.accel = accel;
 
     f02 = (uint64_t)f_start * (uint64_t)f_start;
     vpeak2 = (2ull * (uint64_t)accel * (uint64_t)steps + f02) / 2ull;
     vpeak = isqrt_u64(vpeak2);
 
-    if (vpeak > f_max) vpeak = f_max;
-    if (vpeak < 1u) vpeak = 1u;
+    if (vpeak > f_max)
+        vpeak = f_max;
+    if (vpeak < 1u)
+        vpeak = 1u;
 
     s10_trap.v_peak = vpeak;
 
     s10_trap.accel_steps = (uint32_t)(((uint64_t)vpeak * (uint64_t)vpeak - f02) / (2ull * (uint64_t)accel));
     s10_trap.decel_steps = (uint32_t)(((uint64_t)vpeak * (uint64_t)vpeak) / (2ull * (uint64_t)accel));
-    if (s10_trap.decel_steps < 1u) s10_trap.decel_steps = 1u;
+    if (s10_trap.decel_steps < 1u)
+        s10_trap.decel_steps = 1u;
 
     f = trap10_get_f(0u);
-    if (f < 1u) f = 1u;
+    if (f < 1u)
+        f = 1u;
     s10_cur_f = f;
 
     fev = 2u * f;
     tim6_set_edge_freq(fev);
 
     remain_steps = s10_trap.steps_total - s10_trap.steps_done;
-    chunk_steps  = (remain_steps > CHUNK_STEPS) ? CHUNK_STEPS : remain_steps;
-    chunk_edges  = chunk_steps * 2u;
+    chunk_steps = (remain_steps > CHUNK_STEPS) ? CHUNK_STEPS : remain_steps;
+    chunk_edges = chunk_steps * 2u;
 
     s10_running = 1;
     s10_mode = MODE10_TRAP;
@@ -1084,23 +1121,29 @@ void stepdma_pb10_request_trap(uint32_t steps, uint32_t f_start, uint32_t f_max,
 {
     uint8_t running_now;
 
-    if (steps == 0u) {
+    if (steps == 0u)
+    {
         stepdma_pb10_stop();
         return;
     }
-    if (f_max < 1u)  f_max = 1u;
-    if (f_start < 1u) f_start = 1u;
-    if (f_start > f_max) f_start = f_max;
-    if (accel < 1u) accel = 1u;
+    if (f_max < 1u)
+        f_max = 1u;
+    if (f_start < 1u)
+        f_start = 1u;
+    if (f_start > f_max)
+        f_start = f_max;
+    if (accel < 1u)
+        accel = 1u;
 
-    s10_pending.steps   = steps;
+    s10_pending.steps = steps;
     s10_pending.f_start = f_start;
-    s10_pending.f_max   = f_max;
-    s10_pending.accel   = accel;
-    s10_pending.valid   = 1u;
+    s10_pending.f_max = f_max;
+    s10_pending.accel = accel;
+    s10_pending.valid = 1u;
 
     running_now = s10_running;
-    if (!running_now) {
+    if (!running_now)
+    {
         s10_pending.valid = 0u;
         stepdma_pb10_move_trap(steps, f_start, f_max, accel);
     }
@@ -1123,33 +1166,44 @@ void DMA2_Channel3_IRQHandler(void)
     uint32_t f_max_new;
     uint32_t accel_new;
 
-    if (DMA_GetITStatus(DMA2_IT_TC3) == RESET) {
+    if (DMA_GetITStatus(DMA2_IT_TC3) == RESET)
+    {
         return;
     }
     DMA_ClearITPendingBit(DMA2_IT_TC3);
 
-    if (!s10_running) {
+    if (!s10_running)
+    {
         stepdma_pb10_stop();
         return;
     }
 
-    if (s10_pending.valid) {
-        steps_new   = s10_pending.steps;
+    if (s10_pending.valid)
+    {
+        steps_new = s10_pending.steps;
         f_start_new = s10_pending.f_start;
-        f_max_new   = s10_pending.f_max;
-        accel_new   = s10_pending.accel;
+        f_max_new = s10_pending.f_max;
+        accel_new = s10_pending.accel;
         s10_pending.valid = 0;
 
-        if (s10_cur_f > 0u) {
+        if (s10_cur_f > 0u)
+        {
             f_start_new = s10_cur_f;
-            if (f_start_new > f_max_new) f_start_new = f_max_new;
-            if (f_start_new < 1u) f_start_new = 1u;
-        } else {
-            if (f_start_new < 1u) f_start_new = 1u;
-            if (f_start_new > f_max_new) f_start_new = f_max_new;
+            if (f_start_new > f_max_new)
+                f_start_new = f_max_new;
+            if (f_start_new < 1u)
+                f_start_new = 1u;
+        }
+        else
+        {
+            if (f_start_new < 1u)
+                f_start_new = 1u;
+            if (f_start_new > f_max_new)
+                f_start_new = f_max_new;
         }
 
-        if (steps_new == 0u) {
+        if (steps_new == 0u)
+        {
             stepdma_pb10_stop();
             return;
         }
@@ -1158,50 +1212,57 @@ void DMA2_Channel3_IRQHandler(void)
         return;
     }
 
-    if (s10_mode == MODE10_CONST) {
+    if (s10_mode == MODE10_CONST)
+    {
         chunk_steps = (CHUNK_EDGES / 2u);
-        if (s10_remaining_steps < chunk_steps) {
+        if (s10_remaining_steps < chunk_steps)
+        {
             chunk_steps = s10_remaining_steps;
         }
         s10_completed_steps += chunk_steps;
         s10_remaining_steps -= chunk_steps;
-        if (s10_edges_left == 0u) {
+        if (s10_edges_left == 0u)
+        {
             stepdma_pb10_stop();
             return;
         }
 
         next_edges = s10_edges_left;
-        if (next_edges > CHUNK_EDGES) next_edges = CHUNK_EDGES;
+        if (next_edges > CHUNK_EDGES)
+            next_edges = CHUNK_EDGES;
         s10_edges_left -= next_edges;
 
         dma10_start_edges((uint16_t)next_edges);
         return;
     }
 
-    if (s10_mode == MODE10_TRAP) {
+    if (s10_mode == MODE10_TRAP)
+    {
 
         remain_steps = s10_trap.steps_total - s10_trap.steps_done;
-        chunk_steps  = (remain_steps > CHUNK_STEPS) ? CHUNK_STEPS : remain_steps;
+        chunk_steps = (remain_steps > CHUNK_STEPS) ? CHUNK_STEPS : remain_steps;
         s10_trap.steps_done += chunk_steps;
         s10_completed_steps = s10_trap.steps_done;
         s10_remaining_steps = s10_trap.steps_total - s10_trap.steps_done;
 
-        if (s10_trap.steps_done >= s10_trap.steps_total) {
-            
-            stepdma_pb10_stop(); 
+        if (s10_trap.steps_done >= s10_trap.steps_total)
+        {
+
+            stepdma_pb10_stop();
             return;
         }
 
         f = trap10_get_f(s10_trap.steps_done);
-        if (f < 1u) f = 1u;
+        if (f < 1u)
+            f = 1u;
         s10_cur_f = f;
 
         fev = 2u * f;
         tim6_set_edge_freq(fev);
 
         remain_steps = s10_trap.steps_total - s10_trap.steps_done;
-        chunk_steps  = (remain_steps > CHUNK_STEPS) ? CHUNK_STEPS : remain_steps;
-        chunk_edges  = chunk_steps * 2u;
+        chunk_steps = (remain_steps > CHUNK_STEPS) ? CHUNK_STEPS : remain_steps;
+        chunk_edges = chunk_steps * 2u;
 
         dma10_start_edges((uint16_t)chunk_edges);
         return;
@@ -1283,4 +1344,195 @@ uint32_t Stepper2_GetCompletedSteps(void)
 uint32_t Stepper2_GetRemainingSteps(void)
 {
     return s10_remaining_steps;
+}
+
+/* PU3 独立 DMA 步进状态；PB13 由 BSRR 写入，不占用任何定时器复用输出。 */
+#define PU3_CHUNK_STEPS 128u
+#define PU3_CHUNK_EDGES (PU3_CHUNK_STEPS * 2u)
+#define PU3_DIR_595_INDEX 1u
+#define PU3_DIR_595_MASK (1u << 6)
+
+typedef enum
+{
+    PU3_ACCEL_IDLE,
+    PU3_ACCEL_UP,
+    PU3_ACCEL_CRUISE,
+    PU3_ACCEL_DOWN
+} PU3_AccelState;
+typedef struct
+{
+    volatile uint8_t running;
+    volatile uint32_t remaining_steps;
+    volatile uint32_t current_chunk_steps;
+    volatile uint32_t current_speed;
+    volatile uint32_t target_speed;
+    volatile uint8_t direction;
+    volatile PU3_AccelState accel_state;
+    uint32_t total_steps;
+    uint32_t completed_steps;
+    uint32_t start_speed;
+    uint32_t acceleration;
+} PU3_State;
+static volatile PU3_State s_pu3;
+static uint32_t s_pu3_edges[PU3_CHUNK_EDGES];
+
+/* 只修改 DIR3 的 Q6，确保第二片 595 其余输出不被覆盖。 */
+static void PU3_SetDirection(uint8_t direction)
+{
+    if (direction)
+        HC595Data[PU3_DIR_595_INDEX] |= (uint8_t)PU3_DIR_595_MASK;
+    else
+        HC595Data[PU3_DIR_595_INDEX] &= (uint8_t)~PU3_DIR_595_MASK;
+    ShiftRegister_WriteAll(HC595Data);
+}
+
+static void PU3_SetEdgeFrequency(uint32_t edge_frequency)
+{
+    uint32_t divisor;
+    if (edge_frequency < 1u)
+        edge_frequency = 1u;
+    divisor = 72000000u / edge_frequency;
+    if (divisor < 1u)
+        divisor = 1u;
+    if (divisor > 65536u)
+        divisor = 65536u;
+    TIM_PrescalerConfig(PU3_TIMER, 0u, TIM_PSCReloadMode_Immediate);
+    TIM_SetAutoreload(PU3_TIMER, (uint16_t)(divisor - 1u));
+    TIM_SetCounter(PU3_TIMER, 0u);
+}
+
+static void PU3_LoadChunk(uint32_t steps)
+{
+    TIM_Cmd(PU3_TIMER, DISABLE);
+    DMA_Cmd(PU3_DMA_CHANNEL, DISABLE);
+    DMA_ClearITPendingBit(DMA2_IT_TC4);
+    TIM_ClearFlag(PU3_TIMER, TIM_FLAG_Update);
+    s_pu3.current_chunk_steps = steps;
+    PU3_DMA_CHANNEL->CMAR = (uint32_t)s_pu3_edges;
+    PU3_DMA_CHANNEL->CNDTR = (uint16_t)(steps * 2u);
+    /* 先开 DMA，再开定时器，保证第一个更新事件写出置高 edge。 */
+    DMA_Cmd(PU3_DMA_CHANNEL, ENABLE);
+    TIM_Cmd(PU3_TIMER, ENABLE);
+}
+
+/** 初始化 PU3 的 PB13、TIM7 和 DMA2 通道4。 */
+void PU3_Stepper_Init(void)
+{
+    GPIO_InitTypeDef gpio;
+    TIM_TimeBaseInitTypeDef timer;
+    DMA_InitTypeDef dma;
+    NVIC_InitTypeDef nvic;
+    uint32_t index;
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB, ENABLE);
+    RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM7, ENABLE);
+    RCC_AHBPeriphClockCmd(RCC_AHBPeriph_DMA2, ENABLE);
+    gpio.GPIO_Pin = PU3_STEP_PIN;
+    gpio.GPIO_Speed = GPIO_Speed_50MHz;
+    gpio.GPIO_Mode = GPIO_Mode_Out_PP;
+    GPIO_Init(PU3_STEP_GPIO, &gpio);
+    GPIO_ResetBits(PU3_STEP_GPIO, PU3_STEP_PIN);
+    for (index = 0u; index < PU3_CHUNK_EDGES; index++)
+        s_pu3_edges[index] = (index & 1u) ? ((uint32_t)PU3_STEP_PIN << 16) : PU3_STEP_PIN;
+    timer.TIM_Prescaler = 0u;
+    timer.TIM_CounterMode = TIM_CounterMode_Up;
+    timer.TIM_Period = 999u;
+    timer.TIM_ClockDivision = TIM_CKD_DIV1;
+    timer.TIM_RepetitionCounter = 0u;
+    TIM_TimeBaseInit(PU3_TIMER, &timer);
+    TIM_DMACmd(PU3_TIMER, TIM_DMA_Update, ENABLE);
+    DMA_DeInit(PU3_DMA_CHANNEL);
+    dma.DMA_PeripheralBaseAddr = (uint32_t)&GPIOB->BSRR;
+    dma.DMA_MemoryBaseAddr = (uint32_t)s_pu3_edges;
+    dma.DMA_DIR = DMA_DIR_PeripheralDST;
+    dma.DMA_BufferSize = PU3_CHUNK_EDGES;
+    dma.DMA_PeripheralInc = DMA_PeripheralInc_Disable;
+    dma.DMA_MemoryInc = DMA_MemoryInc_Enable;
+    dma.DMA_PeripheralDataSize = DMA_PeripheralDataSize_Word;
+    dma.DMA_MemoryDataSize = DMA_MemoryDataSize_Word;
+    dma.DMA_Mode = DMA_Mode_Normal;
+    dma.DMA_Priority = DMA_Priority_High;
+    dma.DMA_M2M = DMA_M2M_Disable;
+    DMA_Init(PU3_DMA_CHANNEL, &dma);
+    DMA_ITConfig(PU3_DMA_CHANNEL, DMA_IT_TC, ENABLE);
+    nvic.NVIC_IRQChannel = PU3_DMA_IRQn;
+    nvic.NVIC_IRQChannelPreemptionPriority = 1u;
+    nvic.NVIC_IRQChannelSubPriority = 3u;
+    nvic.NVIC_IRQChannelCmd = ENABLE;
+    NVIC_Init(&nvic);
+    PU3_Stepper_Stop();
+}
+
+/** 启动 PU3 梯形加减速运动；运行中或零步数时返回 0。 */
+uint8_t PU3_Stepper_Start(uint32_t steps, uint8_t direction, uint32_t start_frequency, uint32_t maximum_frequency, uint32_t acceleration)
+{
+    uint32_t chunk;
+    if (steps == 0u || s_pu3.running)
+        return 0u;
+    if (start_frequency < 1u)
+        start_frequency = 1u;
+    if (maximum_frequency < start_frequency)
+        maximum_frequency = start_frequency;
+    if (acceleration < 1u)
+        acceleration = 1u;
+    PU3_Stepper_Stop();
+    s_pu3.direction = direction ? 1u : 0u;
+    PU3_SetDirection(s_pu3.direction);
+    s_pu3.total_steps = steps;
+    s_pu3.remaining_steps = steps;
+    s_pu3.completed_steps = 0u;
+    s_pu3.start_speed = start_frequency;
+    s_pu3.current_speed = start_frequency;
+    s_pu3.target_speed = maximum_frequency;
+    s_pu3.acceleration = acceleration;
+    s_pu3.accel_state = PU3_ACCEL_UP;
+    GPIO_ResetBits(PU3_STEP_GPIO, PU3_STEP_PIN);
+    PU3_SetEdgeFrequency(start_frequency * 2u);
+    s_pu3.running = 1u;
+    chunk = (steps > PU3_CHUNK_STEPS) ? PU3_CHUNK_STEPS : steps;
+    PU3_LoadChunk(chunk);
+    return 1u;
+}
+
+/** 停止 PU3，并将 PB13 保持为低电平。 */
+void PU3_Stepper_Stop(void)
+{
+    TIM_Cmd(PU3_TIMER, DISABLE);
+    DMA_Cmd(PU3_DMA_CHANNEL, DISABLE);
+    DMA_ClearITPendingBit(DMA2_IT_TC4);
+    TIM_ClearFlag(PU3_TIMER, TIM_FLAG_Update);
+    GPIO_ResetBits(PU3_STEP_GPIO, PU3_STEP_PIN);
+    s_pu3.running = 0u;
+    s_pu3.accel_state = PU3_ACCEL_IDLE;
+}
+
+/** 查询 PU3 是否正在输出 DMA 步进脉冲。 */
+uint8_t PU3_Stepper_IsRunning(void) { return s_pu3.running; }
+
+void DMA2_Channel4_5_IRQHandler(void)
+{
+    uint32_t chunk;
+    if (DMA_GetITStatus(DMA2_IT_TC4) == RESET)
+        return;
+    DMA_ClearITPendingBit(DMA2_IT_TC4);
+    s_pu3.completed_steps += s_pu3.current_chunk_steps;
+    s_pu3.remaining_steps -= s_pu3.current_chunk_steps;
+    if (s_pu3.remaining_steps == 0u)
+    {
+        PU3_Stepper_Stop();
+        return;
+    }
+    /* 每段仅更新一次速度，无等待和逐 GPIO 翻转；末段按剩余距离减速。 */
+    if (s_pu3.remaining_steps <= PU3_CHUNK_STEPS)
+    {
+        s_pu3.accel_state = PU3_ACCEL_DOWN;
+        s_pu3.current_speed = s_pu3.start_speed;
+    }
+    else if (s_pu3.current_speed < s_pu3.target_speed)
+    {
+        s_pu3.current_speed = s_pu3.target_speed;
+        s_pu3.accel_state = PU3_ACCEL_CRUISE;
+    }
+    PU3_SetEdgeFrequency(s_pu3.current_speed * 2u);
+    chunk = (s_pu3.remaining_steps > PU3_CHUNK_STEPS) ? PU3_CHUNK_STEPS : s_pu3.remaining_steps;
+    PU3_LoadChunk(chunk);
 }

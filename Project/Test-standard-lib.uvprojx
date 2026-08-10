@@ -521,6 +521,16 @@
               <FileType>1</FileType>
               <FilePath>..\User\step_dma.c</FilePath>
             </File>
+            <File>
+              <FileName>robot_arm.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\robot_arm.c</FilePath>
+            </File>
+            <File>
+              <FileName>robot_arm_driver.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\robot_arm_driver.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

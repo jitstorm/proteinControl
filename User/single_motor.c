@@ -170,7 +170,6 @@ void SingleMotor_Task(uint32_t elapsed_ms)
             continue;
         }
 
-        /* 传感器优先检查，确保同一调度周期内先触发的传感器优先停机。 */
         if (motor->sensor_id != 0u)
         {
             if (SingleMotor_IsSensorTriggered(motor))

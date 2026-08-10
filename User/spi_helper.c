@@ -49,6 +49,9 @@ void SPI1_InitOnce(void)
     SPI_InitStructure.SPI_NSS = SPI_NSS_Soft;
     SPI_InitStructure.SPI_BaudRatePrescaler = SPI_BaudRatePrescaler_16;
     SPI_InitStructure.SPI_FirstBit = SPI_FirstBit_MSB;
+
+    /* 软件 NSS 模式下，内部 NSS 必须保持高 */
+    SPI_NSSInternalSoftwareConfig(SPI1, SPI_NSSInternalSoft_Set);
     SPI_Init(SPI1, &SPI_InitStructure);
     SPI_Cmd(SPI1, ENABLE);
 }
