@@ -34,3 +34,4 @@
 .\usart.o: ..\User\protocol.h
 .\usart.o: ..\User\DELAY.h
 .\usart.o: ..\User\time.h
+.\usart.o: ..\User\RingBuffer.h

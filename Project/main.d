@@ -45,3 +45,5 @@
 .\main.o: ..\User\stepMotor.h
 .\main.o: ..\User\IWDG.h
 .\main.o: ..\User\step_dma.h
+.\main.o: ..\User\single_motor.h
+.\main.o: ..\User\reversible_motor.h

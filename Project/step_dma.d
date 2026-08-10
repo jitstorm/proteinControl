@@ -29,3 +29,5 @@
 .\step_dma.o: ..\Fwilb\inc\stm32f10x_usart.h
 .\step_dma.o: ..\Fwilb\inc\stm32f10x_wwdg.h
 .\step_dma.o: ..\Fwilb\inc\misc.h
+.\step_dma.o: ..\User\shift_register.h
+.\step_dma.o: ..\User\DELAY.h

@@ -4,7 +4,7 @@
 ".\main.o"
 ".\stm32f10x_it.o"
 ".\usart.o"
-".\RingBuffer.o"
+".\ringbuffer.o"
 ".\shift_register_input.o"
 ".\shift_register.o"
 ".\spi_helper.o"

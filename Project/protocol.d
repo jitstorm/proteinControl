@@ -41,3 +41,6 @@
 .\protocol.o: ..\User\USART.h
 .\protocol.o: F:\software\keil5\ARM\ARMCC\Bin\..\include\stdio.h
 .\protocol.o: ..\User\step_dma.h
+.\protocol.o: ..\User\single_motor.h
+.\protocol.o: ..\User\reversible_motor.h
+.\protocol.o: ..\User\time.h
