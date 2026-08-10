@@ -26,7 +26,7 @@
 | Git `29d465d`（2026-07-08） | 当前未提交模块 | 主循环任务化、统一毫秒节拍 | 恢复的 `main.c` 有旧任务，但未初始化/调度 `SingleMotor`、`ReversibleMotor` | 已确认丢失 |
 | 当前未提交 `single_motor.*`、`reversible_motor.*` | `readme` 已描述 | 单向电机 1..19：即时/定时/传感器停止/状态；五路正反转：死区、定时、传感器停止、状态 | 实现文件尚在，但恢复的 `main.c`、`protocol.c` 未可靠接入 | 已确认丢失 |
 | Git `e73934e`（2026-07-10） | IDE `protocol_20260730111056.c` | USART 接收队列、环形缓冲、发送诊断、ACK/事件发送分流 | 恢复 `protocol.c` 包含部分新逻辑但也保留旧 `handle_command` | 疑似旧协议覆盖 |
-| 当前用户需求 | 尚未实施 | PU3：PB13、U86 Q6/第二片 595 bit6、TIM7/DMA2 Ch4 候选 | 未写入 | 不适用，暂停 |
+| 当前用户需求 | 已开始接入，尚未完成硬件验证 | PU3：PB13、U86 Q6/第二片 595 bit6、TIM7/DMA2 Ch4 | 已有初始化、BSRR DMA、方向与 0x1B 编号分发 | 无法确认 |
 
 已明确废弃或不应恢复的项目：旧直接覆盖 74HC595 数据的协议路径 `0x02` 已在较新 `protocol.c` 中被 `#if 0` 停用；旧非步进命令分发也被 `#if 0` 保留。它们不能作为恢复目标。
 
@@ -81,9 +81,9 @@
 
 ## 5. PU3 前置资源审计
 
-候选资源尚未写入。工程配置为 STM32F103RE、`STM32F10X_HD`，启动文件有 `TIM7_IRQHandler` 和 `DMA2_Channel4_5_IRQHandler` 向量；当前源码搜索未发现 TIM7 或 DMA2 Channel4 的使用。PB13 当前同时出现在旧 `stepMotorB` 初始化中，故必须先确认该旧对象是否仍参与运行，不能直接占用。
+工程配置为 STM32F103RE、`STM32F10X_HD`，启动文件有 `TIM7_IRQHandler` 和 `DMA2_Channel4_5_IRQHandler` 向量。PU3 已使用 TIM7、DMA2 Channel4 与 `DMA2_Channel4_5_IRQHandler`；旧 `stepMotorB` 及其 PB13 引用已删除。
 
-本审计尚未以芯片参考手册或已验证板级 DMA 请求表确认 “TIM7_UP -> DMA2 Ch4” 的合法性；因此它只是一项候选，不能据此实现 PU3。
+尚未以目标板实测或芯片参考手册的 DMA 请求表确认 “TIM7_UP -> DMA2 Ch4” 的合法性；因此 PU3 仍不能视为已完成硬件验证。
 
 ## 6. 恢复补丁计划（尚未执行）
 

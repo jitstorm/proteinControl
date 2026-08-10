@@ -34,6 +34,7 @@ SUM = (AA + CMD + D0 + D1 + D2 + D3 + D4 + D5) & 0xFF
 | `0C` | 查询五路正反转电机状态 | 返回状态和停止原因 |
 | `1B` | X 轴步进电机（PB11） | 原样回显 |
 | `1C` | Y 轴步进电机（PB10） | 原样回显 |
+| `1E` | PU3 步进电机（PB13） | 原样回显 |
 | `1F` | 查询 Y 轴步进状态 | `D0=0` 运行中，`D0=1` 已停止/完成 |
 | `20` | Y 轴步进电机带传感器停止 | 原样回显；传感器触发后主动上报 `1F` |
 
@@ -153,6 +154,14 @@ AA 1B STEP_H STEP_L DIR SPEED 00 00 55 SUM
 ```text
 AA 1C STEP_H STEP_L DIR SPEED 00 00 55 SUM
 ```
+
+### `1E`：PU3 轴 PB13
+
+```text
+AA 1E STEP_H STEP_L DIR SPEED 00 00 55 SUM
+```
+
+`STEP_H STEP_L` 为大端 16 位步数，`DIR` 仅使用 bit0。PU3 的起步速度为 `500 steps/s`、最大速度为 `SPEED * 200 steps/s`、加速度为 `100000 steps/s²`。STEP 由 TIM7 更新事件触发 DMA2 Channel4 向 `GPIOB->BSRR` 交替写 PB13 的置位和复位值，两个 DMA edge 构成一个实际步数；DIR 为 U86（第二片 74HC595）Q6、软件 bit6。
 
 `STEP_H STEP_L` 为大端 16 位步数；`DIR` 仅使用 bit0；最大速度为 `SPEED * 200 steps/s`，起步速度为 `500 steps/s`，加速度为 `100000 steps/s²`。X 轴方向使用 `HC595Data[1] bit4`（DIR1），Y 轴方向使用 bit5（DIR2）；bit6、bit7 保留给 DIR3、DIR4，不占用单向电机所在的 `HC595Data[2]`。
 
