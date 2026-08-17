@@ -27,6 +27,7 @@ typedef enum
     ROBOT_OP_MOVE_Y,
     ROBOT_OP_MOVE_Z,
     ROBOT_OP_MOVE_TO,
+    ROBOT_OP_MOVE_TO_SAFE,
     ROBOT_OP_HOME_X,
     ROBOT_OP_HOME_Y,
     ROBOT_OP_HOME_Z,
@@ -40,6 +41,7 @@ typedef enum
     ROBOT_MOVE_END_STOPPED,
     ROBOT_MOVE_END_SENSOR,
     ROBOT_MOVE_END_LIMIT,
+    ROBOT_MOVE_END_INTERLOCK,
     ROBOT_MOVE_END_TIMEOUT,
     ROBOT_MOVE_END_DRIVER_ERROR
 } RobotMoveEndReason_t;
@@ -68,6 +70,40 @@ typedef enum
     ROBOT_MOVE_TO_DONE,
     ROBOT_MOVE_TO_ERROR
 } RobotMoveToState_t;
+
+typedef enum
+{
+    ROBOT_MOVE_AXIS_NOT_REQUIRED = 0,
+    ROBOT_MOVE_AXIS_WAIT_START,
+    ROBOT_MOVE_AXIS_RUNNING,
+    ROBOT_MOVE_AXIS_COMPLETED
+} RobotMoveAxisProgress_t;
+
+typedef enum
+{
+    ROBOT_MOVE_FINALIZE_NONE = 0,
+    ROBOT_MOVE_FINALIZE_WAIT_AXIS,
+    ROBOT_MOVE_FINALIZE_DRIVER_BUSY,
+    ROBOT_MOVE_FINALIZE_POSITION_MISMATCH,
+    ROBOT_MOVE_FINALIZE_COMPLETED,
+    ROBOT_MOVE_FINALIZE_START_FAILED
+} RobotMoveFinalizeReason_t;
+
+typedef enum
+{
+    ROBOT_SAFE_MOVE_IDLE = 0,
+    ROBOT_SAFE_MOVE_PREPARE,
+    ROBOT_SAFE_MOVE_RAISE_Z_START,
+    ROBOT_SAFE_MOVE_RAISE_Z_WAIT,
+    ROBOT_SAFE_MOVE_X_START,
+    ROBOT_SAFE_MOVE_X_WAIT,
+    ROBOT_SAFE_MOVE_Y_START,
+    ROBOT_SAFE_MOVE_Y_WAIT,
+    ROBOT_SAFE_MOVE_FINAL_Z_START,
+    ROBOT_SAFE_MOVE_FINAL_Z_WAIT,
+    ROBOT_SAFE_MOVE_DONE,
+    ROBOT_SAFE_MOVE_ERROR
+} RobotSafeMoveState_t;
 
 typedef enum
 {
@@ -111,9 +147,24 @@ typedef struct
     RobotArmOperation_t operation;
     RobotHomeState_t home_state;
     RobotMoveToState_t move_to_state;
+    RobotSafeMoveState_t safe_move_state;
     RobotMoveEndReason_t last_move_end_reason;
     int32_t error_code;
 } RobotArmStatus_t;
+
+typedef struct
+{
+    int32_t received_current[ROBOT_AXIS_COUNT];
+    int32_t received_target[ROBOT_AXIS_COUNT];
+    int64_t received_delta[ROBOT_AXIS_COUNT];
+    RobotMoveAxisProgress_t axis_progress[ROBOT_AXIS_COUNT];
+    uint8_t start_called[ROBOT_AXIS_COUNT];
+    uint32_t start_steps[ROBOT_AXIS_COUNT];
+    uint8_t start_result[ROBOT_AXIS_COUNT];
+    uint8_t busy_before[ROBOT_AXIS_COUNT];
+    uint8_t busy_after[ROBOT_AXIS_COUNT];
+    RobotMoveFinalizeReason_t finalize_reason;
+} RobotArmMoveDebug_t;
 
 /** 初始化 XYZ 机械臂管理层；不会启动任意电机。 */
 void RobotArm_Init(void);
@@ -133,6 +184,8 @@ RobotArmResult_t RobotArm_MoveY(int32_t target, uint32_t speed);
 RobotArmResult_t RobotArm_MoveZ(int32_t target, uint32_t speed);
 /** 按 X、Y、Z 顺序启动非阻塞目标位置任务。 */
 RobotArmResult_t RobotArm_MoveTo(int32_t x, int32_t y, int32_t z);
+/** 按“必要时抬高 Z、移动 X/Y、最后移动 Z”的安全路径接受绝对位置任务。 */
+RobotArmResult_t RobotArm_MoveToSafe(int32_t x, int32_t y, int32_t z);
 /** 启动指定轴的非阻塞双阶段 Home。 */
 RobotArmResult_t RobotArm_HomeAxis(RobotAxisId_t axis);
 /** 按 Z、Y、X 顺序启动非阻塞 HomeAll。 */
@@ -161,7 +214,16 @@ uint8_t RobotArm_IsPositionValid(RobotAxisId_t axis);
 uint8_t RobotArm_IsHomed(RobotAxisId_t axis);
 /** 获取机械臂坐标、状态、传感器和结束原因快照。 */
 void RobotArm_GetStatus(RobotArmStatus_t *status);
+/** 获取最近一次 MOVE_TO 的接收、启动和收尾诊断快照；不参与 V2 STATUS 打包。 */
+void RobotArm_GetMoveDebug(RobotArmMoveDebug_t *debug);
 /** 检查目标姿态安全性；当前无标定碰撞区时默认通过。 */
 RobotArmResult_t RobotArm_CheckPoseSafety(int32_t x, int32_t y, int32_t z);
+/** 检查两个姿态之间是否允许直接转换。 */
+RobotArmResult_t RobotArm_CheckTransitionSafety(int32_t current_x,
+                                                int32_t current_y,
+                                                int32_t current_z,
+                                                int32_t target_x,
+                                                int32_t target_y,
+                                                int32_t target_z);
 
 #endif

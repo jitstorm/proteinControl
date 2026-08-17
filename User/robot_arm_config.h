@@ -3,6 +3,11 @@
 
 #include <stdint.h>
 
+/* 临时调试时假定三轴已完成 Home；关闭后恢复上电必须先正式 Home 的流程。 */
+#ifndef ROBOT_ARM_DEBUG_ASSUME_HOME
+#define ROBOT_ARM_DEBUG_ASSUME_HOME 1u
+#endif
+
 /* HC165 采集层已经按位取反；以下逻辑电平仍需通过板端传感器测试确认。 */
 #define ROBOT_ARM_S1_TRIGGERED_LEVEL 1u
 #define ROBOT_ARM_S2_TRIGGERED_LEVEL 1u
@@ -56,6 +61,14 @@
 #define ROBOT_ARM_X_HOME_OFFSET 0
 #define ROBOT_ARM_Y_HOME_OFFSET 0
 #define ROBOT_ARM_Z_HOME_OFFSET 0
+
+/* Safe Z 尚未完成机械标定，生产固件必须保持禁用并拒绝安全移动。 */
+#ifndef ROBOT_ARM_SAFE_MOVE_ENABLED
+#define ROBOT_ARM_SAFE_MOVE_ENABLED 0u
+#endif
+#ifndef ROBOT_ARM_SAFE_Z_POSITION
+#define ROBOT_ARM_SAFE_Z_POSITION 0
+#endif
 
 /* 适配现有 DMA 驱动的默认速度，单位均为 steps/s。 */
 #define ROBOT_ARM_X_DEFAULT_SPEED 1000u

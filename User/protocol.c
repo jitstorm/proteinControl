@@ -11,7 +11,6 @@
 #include "shift_register_input.h"
 #include "PWM.h"
 #include "USART.h"
-#include <stdio.h>
 #include "step_dma.h"
 #include "single_motor.h"
 #include "reversible_motor.h"
@@ -23,7 +22,6 @@
 #define PROTOCOL_TAIL 0x55
 #define FRAME_SIZE 10
 #define PROTOCOL_COMMAND_QUEUE_SIZE 4
-#define USART2_TX_WAIT_TIMEOUT_MS 5u
 /* 步进方向使用 U86 对应的 595[1] 后四位，避免占用单向电机所在的 595[2]。 */
 #define STEP_DIR_X_595_BIT 4u
 #define STEP_DIR_RESERVED3_595_BIT 6u
@@ -272,18 +270,25 @@ void sendPacket(USART_TypeDef *USARTx, const Packet *pkt)
     /* Packet 结构体字段顺序保持兼容，发送时按线上的 SUM、55 顺序重组。 */
     for (i = 0; i < 10; i++)
     {
+        if (i == 0)
+        {
+            /* 一次提交完整帧，确保 RS485 方向覆盖整个 10B 帧。 */
+            (void)USART_SendBuffer(USARTx, frame, 10u);
+            break;
+        }
         while (!(USARTx->SR & USART_SR_TXE))
             ; // 等待发送缓冲区为空
-        USART_SendByte(USARTx, frame[i]);
+        /* 完整帧已在循环首项提交，保留循环结构以维持旧代码布局。 */
     }
 }
 
 void USART_ProtocolHandler(uint8_t *buffer)
 {
     int i;
+    /* 缓冲区作为一个发送单元提交，避免 RS485 在数据中途切回接收。 */
+    (void)USART_SendBuffer(USART1, buffer, PROTOCOL_MAX_SIZE);
     for (i = 0; i < PROTOCOL_MAX_SIZE; i++)
     {
-        USART_SendByte(USART1, buffer[i]);
         buffer[i] = 0x00;
     }
 }
@@ -930,7 +935,13 @@ void send_frame_usart1(uint8_t cmd, uint8_t *data)
 
     for (j = 0; j < 10; j++)
     {
-        USART_SendByte(USART1, frame[j]);
+        if (j == 0)
+        {
+            /* V1 帧一次提交给 USART 层，保持整帧 RS485 发送方向。 */
+            (void)USART_SendBuffer(USART1, frame, 10u);
+            break;
+        }
+        /* 完整帧已在循环首项提交，保留循环结构以维持旧代码布局。 */
     }
 }
 
@@ -939,10 +950,7 @@ static void send_frame_internal(uint8_t cmd, uint8_t *data, TxSource source)
     uint8_t frame[10];
     uint8_t checksum;
     uint8_t count_business;
-    uint32_t tx_wait_start;
-    uint32_t timeout_before;
     int i;
-    int j;
 
     /* 当前上下文供 TXE/TC timeout 快照使用。 */
     dbg_usart2_tx_current_cmd = cmd;
@@ -980,7 +988,6 @@ static void send_frame_internal(uint8_t cmd, uint8_t *data, TxSource source)
     frame[9] = checksum;
 
     /* 正常帧开始不得清除之前持久化的 timeout 证据。 */
-    timeout_before = dbg_usart2_tx_timeout;
     if (count_business)
     {
         dbg_usart2_tx_last_cmd = cmd;
@@ -988,33 +995,16 @@ static void send_frame_internal(uint8_t cmd, uint8_t *data, TxSource source)
         dbg_usart2_tx_frames_begin++;
     }
 
-    for (j = 0; j < 10; j++)
-    {
-        /* 写每个字节前先发布当前帧内位置。 */
-        dbg_usart2_tx_current_byte_index = (uint8_t)j;
-        USART_SendByte(USART1, frame[j]);
-        if (dbg_usart2_tx_timeout != timeout_before)
-        {
-            dbg_usart2_tx_current_byte_index = 0xFFu;
-            return;
-        }
-        if (count_business)
-        {
-            dbg_usart2_tx_bytes++;
-        }
-    }
-
-    /* TXE 只表示 DR 已空，最后继续等待物理发送完成。 */
+    /* V1 10B 只通过 USART1 整帧入口发送，失败时不伪装完成。 */
     dbg_usart2_tx_current_byte_index = 9u;
-    tx_wait_start = millis();
-    while (USART_GetFlagStatus(USART1, USART_FLAG_TC) == RESET)
+    if (!USART_SendBuffer(USART1, frame, 10u))
     {
-        if ((millis() - tx_wait_start) >= USART2_TX_WAIT_TIMEOUT_MS)
-        {
-            Protocol_RecordUsart2TxTimeout(2u);
-            dbg_usart2_tx_current_byte_index = 0xFFu;
-            return;
-        }
+        dbg_usart2_tx_current_byte_index = 0xFFu;
+        return;
+    }
+    if (count_business)
+    {
+        dbg_usart2_tx_bytes += 10u;
     }
     dbg_usart2_tx_current_byte_index = 0xFFu;
 
@@ -1078,6 +1068,12 @@ void send_frame2(uint8_t cmd, uint8_t *data)
     frame[9] = checksum;
     for (j = 0; j < 10; j++)
     {
-        USART_SendByte(USART1, frame[j]);
+        if (j == 0)
+        {
+            /* V1 帧一次提交给 USART 层，保持整帧 RS485 发送方向。 */
+            (void)USART_SendBuffer(USART1, frame, 10u);
+            break;
+        }
+        /* 完整帧已在循环首项提交，保留循环结构以维持旧代码布局。 */
     }
 }

@@ -9,7 +9,7 @@
 #define FRAME_END 0x55
 #define RX_BUFFER_SIZE 10
 #define USART1_FRAME_QUEUE_SIZE 4
-#define USART2_TX_WAIT_TIMEOUT_MS 5u
+#define RS485_TX_WAIT_TIMEOUT_MS 20u
 #define USART_PROTOCOL_HEADER 0xAAu
 #define USART_PROTOCOL_TAIL 0x55u
 #define USART_PROTOCOL_FRAME_SIZE 10u
@@ -48,6 +48,11 @@ static volatile uint8_t usart1_temp_buffer[USART1_TEMP_FRAME_SIZE];
 static volatile uint16_t usart1_remote_temperature = 0;
 static volatile uint32_t usart1_remote_temperature_tick = 0;
 static volatile uint32_t usart1_temp_rx_tick = 0;
+volatile uint32_t rs485_tx_call_count = 0;
+volatile uint32_t rs485_tx_success_count = 0;
+volatile uint32_t rs485_tx_txe_timeout_count = 0;
+volatile uint32_t rs485_tx_tc_timeout_count = 0;
+volatile uint32_t rs485_tx_bytes_count = 0;
 
 #define RS485_EN1_PORT GPIOA
 #define RS485_EN1_PIN GPIO_Pin_8
@@ -601,38 +606,10 @@ uint16_t USART1_GetRemoteTemperature(void)
     return temp_value;
 }
 
-void USART_SendByte(USART_TypeDef *USARTx, uint8_t data)
+uint8_t USART_SendByte(USART_TypeDef *USARTx, uint8_t data)
 {
-    uint32_t tx_wait_start;
-
-    if (USARTx == USART1 || USARTx == USART3)
-    {
-        RS485_SetTransmit(USARTx);
-        Delay_us(20);
-    }
-
-    // while (USART_GetFlagStatus(USARTx, USART_FLAG_TXE) == RESET)
-    //     ;
-    USART_SendData(USARTx, data);
-    tx_wait_start = millis();
-    while (USART_GetFlagStatus(USARTx, USART_FLAG_TXE) == RESET)
-    {
-        /* timeout 现场由协议层统一原子记录，正常发送时序保持不变。 */
-        if (USARTx == USART1 &&
-            (millis() - tx_wait_start) >= USART2_TX_WAIT_TIMEOUT_MS)
-        {
-            Protocol_RecordUsart2TxTimeout(1u);
-            return;
-        }
-    }
-
-    if (USARTx == USART1 || USARTx == USART3)
-    {
-        while (USART_GetFlagStatus(USARTx, USART_FLAG_TC) == RESET)
-            ;
-        Delay_us(20);
-        RS485_SetReceive(USARTx);
-    }
+    /* 独立单字节发送复用整帧入口，保证异常路径也会归还 485 总线。 */
+    return USART_SendBuffer(USARTx, &data, 1u);
 }
 /* Receive one byte from USART1. */
 unsigned char UART1GetByte(unsigned char *GetData)
@@ -659,13 +636,109 @@ void USART_SendString(USART_TypeDef *USARTx, char *str)
         USART_SendByte(USARTx, *str++);
     }
 }
-void USART_SendBuffer(USART_TypeDef *USARTx, uint8_t *buffer, uint16_t length)
+uint8_t USART_SendBuffer(USART_TypeDef *USARTx, uint8_t *buffer, uint16_t length)
 {
     uint16_t i;
+    uint32_t tx_wait_start;
+    uint8_t is_rs485;
+    uint8_t is_usart1;
+
+    is_usart1 = (USARTx == USART1) ? 1u : 0u;
+    if (is_usart1)
+    {
+        rs485_tx_call_count++;
+    }
+
+    if ((USARTx == 0) || (buffer == 0) || (length == 0u))
+    {
+        /* USART1 参数失败时也明确归还 PA8，避免保留未知的发送方向。 */
+        if (USARTx == USART1)
+        {
+            RS485_SetReceive(USART1);
+        }
+        return 0u;
+    }
+
+    is_rs485 = ((USARTx == USART1) || (USARTx == USART3)) ? 1u : 0u;
+
+    if (is_rs485)
+    {
+        /* 上一次发送必须已物理结束，才能由本次调用独占 DE。 */
+        tx_wait_start = millis();
+        while (USART_GetFlagStatus(USARTx, USART_FLAG_TC) == RESET)
+        {
+            if ((millis() - tx_wait_start) >= RS485_TX_WAIT_TIMEOUT_MS)
+            {
+                if (is_usart1)
+                {
+                    rs485_tx_tc_timeout_count++;
+                    Protocol_RecordUsart2TxTimeout(2u);
+                }
+                goto tx_cleanup;
+            }
+        }
+
+        /* 整帧独占 485 方向，禁止在帧内字节之间切回接收。 */
+        RS485_SetTransmit(USARTx);
+        Delay_us(20);
+    }
+
     for (i = 0; i < length; i++)
     {
-        USART_SendByte(USARTx, buffer[i]);
+        tx_wait_start = millis();
+        while (USART_GetFlagStatus(USARTx, USART_FLAG_TXE) == RESET)
+        {
+            if ((millis() - tx_wait_start) >= RS485_TX_WAIT_TIMEOUT_MS)
+            {
+                if (is_usart1)
+                {
+                    rs485_tx_txe_timeout_count++;
+                    Protocol_RecordUsart2TxTimeout(1u);
+                }
+                goto tx_cleanup;
+            }
+        }
+        USART_SendData(USARTx, buffer[i]);
+        if (is_usart1)
+        {
+            rs485_tx_bytes_count++;
+        }
     }
+
+    /* 只有最后一个字节的移位寄存器清空后，才允许释放 485 发送使能。 */
+    tx_wait_start = millis();
+    while (USART_GetFlagStatus(USARTx, USART_FLAG_TC) == RESET)
+    {
+        if ((millis() - tx_wait_start) >= RS485_TX_WAIT_TIMEOUT_MS)
+        {
+            if (is_usart1)
+            {
+                rs485_tx_tc_timeout_count++;
+                Protocol_RecordUsart2TxTimeout(2u);
+            }
+            goto tx_cleanup;
+        }
+    }
+
+    if (is_rs485)
+    {
+        Delay_us(20);
+        RS485_SetReceive(USARTx);
+    }
+    if (is_usart1)
+    {
+        /* 只有最终 TC 完成且 PA8 已恢复接收，才计为成功。 */
+        rs485_tx_success_count++;
+    }
+    return 1u;
+
+tx_cleanup:
+    /* TXE/TC 超时等所有发送失败路径都必须将收发器归还到接收态。 */
+    if (is_rs485)
+    {
+        RS485_SetReceive(USARTx);
+    }
+    return 0u;
 }
 // 重定向fputc函数
 // int fputc(int ch, FILE *f)

@@ -32,15 +32,37 @@ typedef struct
     RobotArmOperation_t operation;
     RobotHomeState_t home_state;
     RobotMoveToState_t move_to_state;
+    RobotSafeMoveState_t safe_move_state;
     RobotAxisId_t home_axis;
     uint8_t home_all_active;
     uint32_t home_start_ms;
     int32_t move_to_target[ROBOT_AXIS_COUNT];
+    RobotMoveAxisProgress_t move_axis_progress[ROBOT_AXIS_COUNT];
+    int32_t safe_move_target[ROBOT_AXIS_COUNT];
     RobotMoveEndReason_t last_move_end_reason;
     int32_t error_code;
 } RobotArm_t;
 
 static RobotArm_t s_robot_arm;
+static RobotArmMoveDebug_t s_move_debug;
+
+static void RobotArm_ResetMoveDebug(void)
+{
+    uint8_t index;
+    for (index = 0u; index < ROBOT_AXIS_COUNT; index++)
+    {
+        s_move_debug.received_current[index] = 0;
+        s_move_debug.received_target[index] = 0;
+        s_move_debug.received_delta[index] = 0;
+        s_move_debug.axis_progress[index] = ROBOT_MOVE_AXIS_NOT_REQUIRED;
+        s_move_debug.start_called[index] = 0u;
+        s_move_debug.start_steps[index] = 0u;
+        s_move_debug.start_result[index] = 0u;
+        s_move_debug.busy_before[index] = 0u;
+        s_move_debug.busy_after[index] = 0u;
+    }
+    s_move_debug.finalize_reason = ROBOT_MOVE_FINALIZE_NONE;
+}
 
 static RobotAxis_t *RobotArm_GetAxis(RobotAxisId_t axis)
 {
@@ -134,6 +156,8 @@ static RobotArmResult_t RobotArm_ResultFromEndReason(RobotMoveEndReason_t reason
         return ROBOT_ARM_ERR_SENSOR;
     case ROBOT_MOVE_END_LIMIT:
         return ROBOT_ARM_ERR_LIMIT;
+    case ROBOT_MOVE_END_INTERLOCK:
+        return ROBOT_ARM_ERR_INTERLOCK;
     case ROBOT_MOVE_END_TIMEOUT:
         return ROBOT_ARM_ERR_MOVE_TIMEOUT;
     case ROBOT_MOVE_END_DRIVER_ERROR:
@@ -145,9 +169,15 @@ static RobotArmResult_t RobotArm_ResultFromEndReason(RobotMoveEndReason_t reason
 
 static void RobotArm_ResetCombinedStates(void)
 {
+    uint8_t index;
     s_robot_arm.home_state = ROBOT_HOME_IDLE;
     s_robot_arm.move_to_state = ROBOT_MOVE_TO_IDLE;
+    s_robot_arm.safe_move_state = ROBOT_SAFE_MOVE_IDLE;
     s_robot_arm.home_all_active = 0u;
+    for (index = 0u; index < ROBOT_AXIS_COUNT; index++)
+    {
+        s_robot_arm.move_axis_progress[index] = ROBOT_MOVE_AXIS_NOT_REQUIRED;
+    }
 }
 
 static void RobotArm_FailAxisMove(RobotAxisId_t axis,
@@ -155,6 +185,8 @@ static void RobotArm_FailAxisMove(RobotAxisId_t axis,
 {
     RobotAxis_t *robot_axis = RobotArm_GetAxis(axis);
     uint8_t was_move_to = (s_robot_arm.operation == ROBOT_OP_MOVE_TO) ? 1u : 0u;
+    uint8_t was_safe_move =
+        (s_robot_arm.operation == ROBOT_OP_MOVE_TO_SAFE) ? 1u : 0u;
     if (robot_axis == 0)
     {
         return;
@@ -174,6 +206,8 @@ static void RobotArm_FailAxisMove(RobotAxisId_t axis,
     s_robot_arm.operation = ROBOT_OP_NONE;
     s_robot_arm.move_to_state = was_move_to ?
                                     ROBOT_MOVE_TO_ERROR : ROBOT_MOVE_TO_IDLE;
+    s_robot_arm.safe_move_state = was_safe_move ?
+                                      ROBOT_SAFE_MOVE_ERROR : ROBOT_SAFE_MOVE_IDLE;
     s_robot_arm.home_state = ROBOT_HOME_IDLE;
     s_robot_arm.home_all_active = 0u;
 }
@@ -234,6 +268,9 @@ static RobotArmResult_t RobotArm_StartAxisMoveInternal(RobotAxisId_t axis,
     uint32_t steps;
     int8_t direction;
     RobotArmResult_t result;
+    uint8_t driver_result;
+    uint8_t busy_before;
+    uint8_t busy_after;
 
     if (robot_axis == 0)
     {
@@ -263,7 +300,22 @@ static RobotArmResult_t RobotArm_StartAxisMoveInternal(RobotAxisId_t axis,
     {
         speed = robot_axis->default_speed;
     }
-    if (!RobotArmDriver_Start(axis, direction, steps, speed))
+    busy_before = RobotArmDriver_IsBusy(axis);
+    if (s_robot_arm.operation == ROBOT_OP_MOVE_TO)
+    {
+        s_move_debug.start_called[axis] = 1u;
+        s_move_debug.start_steps[axis] = steps;
+        s_move_debug.busy_before[axis] = busy_before;
+    }
+    driver_result = RobotArmDriver_Start(axis, direction, steps, speed);
+    busy_after = RobotArmDriver_IsBusy(axis);
+    if (s_robot_arm.operation == ROBOT_OP_MOVE_TO)
+    {
+        s_move_debug.start_result[axis] = driver_result;
+        s_move_debug.busy_after[axis] = busy_after;
+    }
+    /* Start 返回后必须同步观察到运行态，否则本轴从未真实启动。 */
+    if (!driver_result || busy_before || !busy_after)
     {
         return ROBOT_ARM_ERR_DRIVER;
     }
@@ -646,8 +698,9 @@ static void RobotArm_TaskHome(void)
     }
 }
 
-static void RobotArm_FailMoveToStart(RobotAxisId_t axis,
-                                     RobotArmResult_t error)
+static void RobotArm_FailCombinedMoveStart(RobotAxisId_t axis,
+                                           RobotArmResult_t error,
+                                           uint8_t is_safe_move)
 {
     RobotAxis_t *robot_axis = RobotArm_GetAxis(axis);
     RobotMoveEndReason_t reason = ROBOT_MOVE_END_DRIVER_ERROR;
@@ -659,13 +712,81 @@ static void RobotArm_FailMoveToStart(RobotAxisId_t axis,
     {
         reason = ROBOT_MOVE_END_SENSOR;
     }
+    else if (error == ROBOT_ARM_ERR_INTERLOCK)
+    {
+        reason = ROBOT_MOVE_END_INTERLOCK;
+    }
     robot_axis->state = ROBOT_AXIS_ERROR;
     robot_axis->end_reason = reason;
     s_robot_arm.last_move_end_reason = reason;
     s_robot_arm.error_code = (int32_t)error;
     s_robot_arm.state = ROBOT_ARM_ERROR;
     s_robot_arm.operation = ROBOT_OP_NONE;
-    s_robot_arm.move_to_state = ROBOT_MOVE_TO_ERROR;
+    if (is_safe_move)
+    {
+        s_robot_arm.safe_move_state = ROBOT_SAFE_MOVE_ERROR;
+    }
+    else
+    {
+        s_robot_arm.move_to_state = ROBOT_MOVE_TO_ERROR;
+        s_move_debug.finalize_reason = ROBOT_MOVE_FINALIZE_START_FAILED;
+    }
+}
+
+static void RobotArm_TryCompleteMoveTo(void)
+{
+    uint8_t index;
+
+    /* 所有必需轴必须真实完成；尚未启动和仍在运行都不能进入坐标校验。 */
+    for (index = 0u; index < ROBOT_AXIS_COUNT; index++)
+    {
+        s_move_debug.axis_progress[index] =
+            s_robot_arm.move_axis_progress[index];
+        if ((s_robot_arm.move_axis_progress[index] !=
+             ROBOT_MOVE_AXIS_NOT_REQUIRED) &&
+            (s_robot_arm.move_axis_progress[index] !=
+             ROBOT_MOVE_AXIS_COMPLETED))
+        {
+            s_move_debug.finalize_reason = ROBOT_MOVE_FINALIZE_WAIT_AXIS;
+            return;
+        }
+    }
+
+    /* 生命周期完成后仍要求管理层和三个底层驱动均已停止。 */
+    for (index = 0u; index < ROBOT_AXIS_COUNT; index++)
+    {
+        if (s_robot_arm.axis[index].active ||
+            RobotArmDriver_IsBusy((RobotAxisId_t)index))
+        {
+            s_move_debug.finalize_reason = ROBOT_MOVE_FINALIZE_DRIVER_BUSY;
+            return;
+        }
+    }
+
+    /* 三轴已停止但最终坐标不一致属于驱动完成异常，不能伪报成功。 */
+    if ((s_robot_arm.axis[ROBOT_AXIS_X].current_position !=
+         s_robot_arm.move_to_target[ROBOT_AXIS_X]) ||
+        (s_robot_arm.axis[ROBOT_AXIS_Y].current_position !=
+         s_robot_arm.move_to_target[ROBOT_AXIS_Y]) ||
+        (s_robot_arm.axis[ROBOT_AXIS_Z].current_position !=
+         s_robot_arm.move_to_target[ROBOT_AXIS_Z]))
+    {
+        s_robot_arm.error_code = ROBOT_ARM_ERR_DRIVER;
+        s_robot_arm.state = ROBOT_ARM_ERROR;
+        s_robot_arm.operation = ROBOT_OP_NONE;
+        s_robot_arm.move_to_state = ROBOT_MOVE_TO_ERROR;
+        s_robot_arm.last_move_end_reason = ROBOT_MOVE_END_DRIVER_ERROR;
+        s_move_debug.finalize_reason = ROBOT_MOVE_FINALIZE_POSITION_MISMATCH;
+        return;
+    }
+
+    /* 最终轴确认完成的同一轮立即清理，避免 STATUS 读到短暂的伪 Busy。 */
+    s_robot_arm.operation = ROBOT_OP_NONE;
+    s_robot_arm.move_to_state = ROBOT_MOVE_TO_IDLE;
+    s_robot_arm.state = ROBOT_ARM_IDLE;
+    s_robot_arm.error_code = 0;
+    s_robot_arm.last_move_end_reason = ROBOT_MOVE_END_COMPLETED;
+    s_move_debug.finalize_reason = ROBOT_MOVE_FINALIZE_COMPLETED;
 }
 
 static void RobotArm_TaskMoveTo(void)
@@ -675,8 +796,8 @@ static void RobotArm_TaskMoveTo(void)
     switch (s_robot_arm.move_to_state)
     {
     case ROBOT_MOVE_TO_X_START:
-        if (s_robot_arm.axis[ROBOT_AXIS_X].current_position ==
-            s_robot_arm.move_to_target[ROBOT_AXIS_X])
+        if (s_robot_arm.move_axis_progress[ROBOT_AXIS_X] ==
+            ROBOT_MOVE_AXIS_NOT_REQUIRED)
         {
             s_robot_arm.move_to_state = ROBOT_MOVE_TO_Y_START;
             break;
@@ -685,23 +806,36 @@ static void RobotArm_TaskMoveTo(void)
             ROBOT_AXIS_X, s_robot_arm.move_to_target[ROBOT_AXIS_X], 0u);
         if (result != ROBOT_ARM_OK)
         {
-            RobotArm_FailMoveToStart(ROBOT_AXIS_X, result);
+            RobotArm_FailCombinedMoveStart(ROBOT_AXIS_X, result, 0u);
             break;
         }
+        s_robot_arm.move_axis_progress[ROBOT_AXIS_X] = ROBOT_MOVE_AXIS_RUNNING;
+        s_move_debug.axis_progress[ROBOT_AXIS_X] = ROBOT_MOVE_AXIS_RUNNING;
         s_robot_arm.move_to_state = ROBOT_MOVE_TO_X_WAIT;
         break;
 
     case ROBOT_MOVE_TO_X_WAIT:
+        if (s_robot_arm.move_axis_progress[ROBOT_AXIS_X] !=
+            ROBOT_MOVE_AXIS_RUNNING)
+        {
+            RobotArm_FailCombinedMoveStart(
+                ROBOT_AXIS_X, ROBOT_ARM_ERR_DRIVER, 0u);
+            break;
+        }
         progress = RobotArm_ProcessAxisMove(ROBOT_AXIS_X);
         if (progress > 0)
         {
+            s_robot_arm.move_axis_progress[ROBOT_AXIS_X] =
+                ROBOT_MOVE_AXIS_COMPLETED;
+            s_move_debug.axis_progress[ROBOT_AXIS_X] =
+                ROBOT_MOVE_AXIS_COMPLETED;
             s_robot_arm.move_to_state = ROBOT_MOVE_TO_Y_START;
         }
         break;
 
     case ROBOT_MOVE_TO_Y_START:
-        if (s_robot_arm.axis[ROBOT_AXIS_Y].current_position ==
-            s_robot_arm.move_to_target[ROBOT_AXIS_Y])
+        if (s_robot_arm.move_axis_progress[ROBOT_AXIS_Y] ==
+            ROBOT_MOVE_AXIS_NOT_REQUIRED)
         {
             s_robot_arm.move_to_state = ROBOT_MOVE_TO_Z_START;
             break;
@@ -710,62 +844,255 @@ static void RobotArm_TaskMoveTo(void)
             ROBOT_AXIS_Y, s_robot_arm.move_to_target[ROBOT_AXIS_Y], 0u);
         if (result != ROBOT_ARM_OK)
         {
-            RobotArm_FailMoveToStart(ROBOT_AXIS_Y, result);
+            RobotArm_FailCombinedMoveStart(ROBOT_AXIS_Y, result, 0u);
             break;
         }
+        s_robot_arm.move_axis_progress[ROBOT_AXIS_Y] = ROBOT_MOVE_AXIS_RUNNING;
+        s_move_debug.axis_progress[ROBOT_AXIS_Y] = ROBOT_MOVE_AXIS_RUNNING;
         s_robot_arm.move_to_state = ROBOT_MOVE_TO_Y_WAIT;
         break;
 
     case ROBOT_MOVE_TO_Y_WAIT:
+        if (s_robot_arm.move_axis_progress[ROBOT_AXIS_Y] !=
+            ROBOT_MOVE_AXIS_RUNNING)
+        {
+            RobotArm_FailCombinedMoveStart(
+                ROBOT_AXIS_Y, ROBOT_ARM_ERR_DRIVER, 0u);
+            break;
+        }
         progress = RobotArm_ProcessAxisMove(ROBOT_AXIS_Y);
         if (progress > 0)
         {
+            s_robot_arm.move_axis_progress[ROBOT_AXIS_Y] =
+                ROBOT_MOVE_AXIS_COMPLETED;
+            s_move_debug.axis_progress[ROBOT_AXIS_Y] =
+                ROBOT_MOVE_AXIS_COMPLETED;
             s_robot_arm.move_to_state = ROBOT_MOVE_TO_Z_START;
         }
         break;
 
     case ROBOT_MOVE_TO_Z_START:
-        if (s_robot_arm.axis[ROBOT_AXIS_Z].current_position ==
-            s_robot_arm.move_to_target[ROBOT_AXIS_Z])
+        if (s_robot_arm.move_axis_progress[ROBOT_AXIS_Z] ==
+            ROBOT_MOVE_AXIS_NOT_REQUIRED)
         {
             s_robot_arm.move_to_state = ROBOT_MOVE_TO_DONE;
+            RobotArm_TryCompleteMoveTo();
             break;
         }
         result = RobotArm_StartAxisMoveInternal(
             ROBOT_AXIS_Z, s_robot_arm.move_to_target[ROBOT_AXIS_Z], 0u);
         if (result != ROBOT_ARM_OK)
         {
-            RobotArm_FailMoveToStart(ROBOT_AXIS_Z, result);
+            RobotArm_FailCombinedMoveStart(ROBOT_AXIS_Z, result, 0u);
             break;
         }
+        s_robot_arm.move_axis_progress[ROBOT_AXIS_Z] = ROBOT_MOVE_AXIS_RUNNING;
+        s_move_debug.axis_progress[ROBOT_AXIS_Z] = ROBOT_MOVE_AXIS_RUNNING;
         s_robot_arm.move_to_state = ROBOT_MOVE_TO_Z_WAIT;
         break;
 
     case ROBOT_MOVE_TO_Z_WAIT:
+        if (s_robot_arm.move_axis_progress[ROBOT_AXIS_Z] !=
+            ROBOT_MOVE_AXIS_RUNNING)
+        {
+            RobotArm_FailCombinedMoveStart(
+                ROBOT_AXIS_Z, ROBOT_ARM_ERR_DRIVER, 0u);
+            break;
+        }
         progress = RobotArm_ProcessAxisMove(ROBOT_AXIS_Z);
         if (progress > 0)
         {
+            s_robot_arm.move_axis_progress[ROBOT_AXIS_Z] =
+                ROBOT_MOVE_AXIS_COMPLETED;
+            s_move_debug.axis_progress[ROBOT_AXIS_Z] =
+                ROBOT_MOVE_AXIS_COMPLETED;
             s_robot_arm.move_to_state = ROBOT_MOVE_TO_DONE;
+            RobotArm_TryCompleteMoveTo();
         }
         break;
 
     case ROBOT_MOVE_TO_DONE:
-        if ((s_robot_arm.axis[ROBOT_AXIS_X].current_position !=
-             s_robot_arm.move_to_target[ROBOT_AXIS_X]) ||
-            (s_robot_arm.axis[ROBOT_AXIS_Y].current_position !=
-             s_robot_arm.move_to_target[ROBOT_AXIS_Y]) ||
-            (s_robot_arm.axis[ROBOT_AXIS_Z].current_position !=
-             s_robot_arm.move_to_target[ROBOT_AXIS_Z]))
+        RobotArm_TryCompleteMoveTo();
+        break;
+
+    default:
+        break;
+    }
+}
+
+static RobotArmResult_t RobotArm_ValidateSafeMoveConfig(void)
+{
+    RobotAxis_t *z_axis = RobotArm_GetAxis(ROBOT_AXIS_Z);
+    if (!ROBOT_ARM_SAFE_MOVE_ENABLED || (z_axis == 0))
+    {
+        return ROBOT_ARM_ERR_CONFIG;
+    }
+    /* Safe Z 即使在普通软限位暂未启用时，也必须处于已声明的 Z 坐标范围内。 */
+    if ((ROBOT_ARM_SAFE_Z_POSITION < z_axis->min_position) ||
+        (ROBOT_ARM_SAFE_Z_POSITION > z_axis->max_position))
+    {
+        return ROBOT_ARM_ERR_CONFIG;
+    }
+    return ROBOT_ARM_OK;
+}
+
+static void RobotArm_TaskSafeMove(void)
+{
+    RobotArmResult_t result;
+    int8_t progress;
+    RobotAxis_t *x_axis = RobotArm_GetAxis(ROBOT_AXIS_X);
+    RobotAxis_t *y_axis = RobotArm_GetAxis(ROBOT_AXIS_Y);
+    RobotAxis_t *z_axis = RobotArm_GetAxis(ROBOT_AXIS_Z);
+
+    switch (s_robot_arm.safe_move_state)
+    {
+    case ROBOT_SAFE_MOVE_PREPARE:
+        if ((x_axis->current_position == s_robot_arm.safe_move_target[ROBOT_AXIS_X]) &&
+            (y_axis->current_position == s_robot_arm.safe_move_target[ROBOT_AXIS_Y]))
         {
-            s_robot_arm.error_code = ROBOT_ARM_ERR_DRIVER;
-            s_robot_arm.state = ROBOT_ARM_ERROR;
-            s_robot_arm.move_to_state = ROBOT_MOVE_TO_ERROR;
-            s_robot_arm.last_move_end_reason = ROBOT_MOVE_END_DRIVER_ERROR;
+            s_robot_arm.safe_move_state = ROBOT_SAFE_MOVE_FINAL_Z_START;
+        }
+        else if (z_axis->current_position > ROBOT_ARM_SAFE_Z_POSITION)
+        {
+            /* Z 数值越大位置越低，只有当前 Z 大于 Safe Z 时才需要先抬高。 */
+            s_robot_arm.safe_move_state = ROBOT_SAFE_MOVE_RAISE_Z_START;
+        }
+        else
+        {
+            s_robot_arm.safe_move_state = ROBOT_SAFE_MOVE_X_START;
+        }
+        break;
+
+    case ROBOT_SAFE_MOVE_RAISE_Z_START:
+        if (z_axis->current_position <= ROBOT_ARM_SAFE_Z_POSITION)
+        {
+            s_robot_arm.safe_move_state = ROBOT_SAFE_MOVE_X_START;
+            break;
+        }
+        result = RobotArm_StartAxisMoveInternal(
+            ROBOT_AXIS_Z, ROBOT_ARM_SAFE_Z_POSITION, 0u);
+        if (result != ROBOT_ARM_OK)
+        {
+            RobotArm_FailCombinedMoveStart(ROBOT_AXIS_Z, result, 1u);
+            break;
+        }
+        s_robot_arm.safe_move_state = ROBOT_SAFE_MOVE_RAISE_Z_WAIT;
+        break;
+
+    case ROBOT_SAFE_MOVE_RAISE_Z_WAIT:
+        progress = RobotArm_ProcessAxisMove(ROBOT_AXIS_Z);
+        if (progress > 0)
+        {
+            s_robot_arm.safe_move_state = ROBOT_SAFE_MOVE_X_START;
+        }
+        break;
+
+    case ROBOT_SAFE_MOVE_X_START:
+        if (x_axis->current_position == s_robot_arm.safe_move_target[ROBOT_AXIS_X])
+        {
+            s_robot_arm.safe_move_state = ROBOT_SAFE_MOVE_Y_START;
+            break;
+        }
+        result = RobotArm_CheckTransitionSafety(
+            x_axis->current_position, y_axis->current_position, z_axis->current_position,
+            s_robot_arm.safe_move_target[ROBOT_AXIS_X], y_axis->current_position,
+            z_axis->current_position);
+        if (result == ROBOT_ARM_OK)
+        {
+            result = RobotArm_StartAxisMoveInternal(
+                ROBOT_AXIS_X, s_robot_arm.safe_move_target[ROBOT_AXIS_X], 0u);
+        }
+        if (result != ROBOT_ARM_OK)
+        {
+            RobotArm_FailCombinedMoveStart(ROBOT_AXIS_X, result, 1u);
+            break;
+        }
+        s_robot_arm.safe_move_state = ROBOT_SAFE_MOVE_X_WAIT;
+        break;
+
+    case ROBOT_SAFE_MOVE_X_WAIT:
+        progress = RobotArm_ProcessAxisMove(ROBOT_AXIS_X);
+        if (progress > 0)
+        {
+            s_robot_arm.safe_move_state = ROBOT_SAFE_MOVE_Y_START;
+        }
+        break;
+
+    case ROBOT_SAFE_MOVE_Y_START:
+        if (y_axis->current_position == s_robot_arm.safe_move_target[ROBOT_AXIS_Y])
+        {
+            s_robot_arm.safe_move_state = ROBOT_SAFE_MOVE_FINAL_Z_START;
+            break;
+        }
+        result = RobotArm_CheckTransitionSafety(
+            x_axis->current_position, y_axis->current_position, z_axis->current_position,
+            x_axis->current_position, s_robot_arm.safe_move_target[ROBOT_AXIS_Y],
+            z_axis->current_position);
+        if (result == ROBOT_ARM_OK)
+        {
+            result = RobotArm_StartAxisMoveInternal(
+                ROBOT_AXIS_Y, s_robot_arm.safe_move_target[ROBOT_AXIS_Y], 0u);
+        }
+        if (result != ROBOT_ARM_OK)
+        {
+            RobotArm_FailCombinedMoveStart(ROBOT_AXIS_Y, result, 1u);
+            break;
+        }
+        s_robot_arm.safe_move_state = ROBOT_SAFE_MOVE_Y_WAIT;
+        break;
+
+    case ROBOT_SAFE_MOVE_Y_WAIT:
+        progress = RobotArm_ProcessAxisMove(ROBOT_AXIS_Y);
+        if (progress > 0)
+        {
+            s_robot_arm.safe_move_state = ROBOT_SAFE_MOVE_FINAL_Z_START;
+        }
+        break;
+
+    case ROBOT_SAFE_MOVE_FINAL_Z_START:
+        if (z_axis->current_position == s_robot_arm.safe_move_target[ROBOT_AXIS_Z])
+        {
+            s_robot_arm.safe_move_state = ROBOT_SAFE_MOVE_DONE;
+            break;
+        }
+        /* 最终 Z 动作必须基于已经真实到位的 X/Y 再次检查静态姿态安全。 */
+        result = RobotArm_CheckPoseSafety(
+            x_axis->current_position, y_axis->current_position,
+            s_robot_arm.safe_move_target[ROBOT_AXIS_Z]);
+        if (result == ROBOT_ARM_OK)
+        {
+            result = RobotArm_StartAxisMoveInternal(
+                ROBOT_AXIS_Z, s_robot_arm.safe_move_target[ROBOT_AXIS_Z], 0u);
+        }
+        if (result != ROBOT_ARM_OK)
+        {
+            RobotArm_FailCombinedMoveStart(ROBOT_AXIS_Z, result, 1u);
+            break;
+        }
+        s_robot_arm.safe_move_state = ROBOT_SAFE_MOVE_FINAL_Z_WAIT;
+        break;
+
+    case ROBOT_SAFE_MOVE_FINAL_Z_WAIT:
+        progress = RobotArm_ProcessAxisMove(ROBOT_AXIS_Z);
+        if (progress > 0)
+        {
+            s_robot_arm.safe_move_state = ROBOT_SAFE_MOVE_DONE;
+        }
+        break;
+
+    case ROBOT_SAFE_MOVE_DONE:
+        if ((x_axis->current_position != s_robot_arm.safe_move_target[ROBOT_AXIS_X]) ||
+            (y_axis->current_position != s_robot_arm.safe_move_target[ROBOT_AXIS_Y]) ||
+            (z_axis->current_position != s_robot_arm.safe_move_target[ROBOT_AXIS_Z]) ||
+            !x_axis->position_valid || !y_axis->position_valid || !z_axis->position_valid)
+        {
+            RobotArm_FailCombinedMoveStart(ROBOT_AXIS_Z,
+                                           ROBOT_ARM_ERR_DRIVER, 1u);
         }
         else
         {
             s_robot_arm.operation = ROBOT_OP_NONE;
-            s_robot_arm.move_to_state = ROBOT_MOVE_TO_IDLE;
+            s_robot_arm.safe_move_state = ROBOT_SAFE_MOVE_IDLE;
             s_robot_arm.state = ROBOT_ARM_IDLE;
             s_robot_arm.last_move_end_reason = ROBOT_MOVE_END_COMPLETED;
         }
@@ -794,8 +1121,14 @@ void RobotArm_Init(void)
         s_robot_arm.axis[index].min_position = min_position[index];
         s_robot_arm.axis[index].max_position = max_position[index];
         s_robot_arm.axis[index].default_speed = speed[index];
+        /* 调试开关只提供上电后的零点坐标；运行时保护与状态机保持不变。 */
+#if ROBOT_ARM_DEBUG_ASSUME_HOME
+        s_robot_arm.axis[index].homed = 1u;
+        s_robot_arm.axis[index].position_valid = 1u;
+#else
         s_robot_arm.axis[index].homed = 0u;
         s_robot_arm.axis[index].position_valid = 0u;
+#endif
         s_robot_arm.axis[index].active = 0u;
         s_robot_arm.axis[index].end_reason = ROBOT_MOVE_END_NONE;
     }
@@ -804,6 +1137,7 @@ void RobotArm_Init(void)
     s_robot_arm.last_move_end_reason = ROBOT_MOVE_END_NONE;
     s_robot_arm.error_code = 0;
     RobotArm_ResetCombinedStates();
+    RobotArm_ResetMoveDebug();
 }
 
 /** 在主循环中推进 Home、单轴和 MoveTo 状态机。 */
@@ -822,6 +1156,11 @@ void RobotArm_Task(void)
     if (s_robot_arm.operation == ROBOT_OP_MOVE_TO)
     {
         RobotArm_TaskMoveTo();
+        return;
+    }
+    if (s_robot_arm.operation == ROBOT_OP_MOVE_TO_SAFE)
+    {
+        RobotArm_TaskSafeMove();
         return;
     }
     if ((s_robot_arm.operation >= ROBOT_OP_MOVE_X) &&
@@ -877,6 +1216,10 @@ RobotArmResult_t RobotArm_MoveZ(int32_t target, uint32_t speed)
 RobotArmResult_t RobotArm_MoveTo(int32_t x, int32_t y, int32_t z)
 {
     RobotArmResult_t result;
+    uint8_t index;
+    int32_t targets[ROBOT_AXIS_COUNT];
+    int32_t current;
+    int64_t delta;
     if (s_robot_arm.state == ROBOT_ARM_ERROR)
     {
         return (RobotArmResult_t)s_robot_arm.error_code;
@@ -906,19 +1249,90 @@ RobotArmResult_t RobotArm_MoveTo(int32_t x, int32_t y, int32_t z)
     {
         return result;
     }
+    targets[ROBOT_AXIS_X] = x;
+    targets[ROBOT_AXIS_Y] = y;
+    targets[ROBOT_AXIS_Z] = z;
+    RobotArm_ResetMoveDebug();
+    for (index = 0u; index < ROBOT_AXIS_COUNT; index++)
+    {
+        current = s_robot_arm.axis[index].current_position;
+        delta = (int64_t)targets[index] - (int64_t)current;
+        s_robot_arm.move_to_target[index] = targets[index];
+        s_robot_arm.axis[index].target_position = targets[index];
+        s_move_debug.received_current[index] = current;
+        s_move_debug.received_target[index] = targets[index];
+        s_move_debug.received_delta[index] = delta;
+        s_robot_arm.move_axis_progress[index] =
+            (delta == 0) ? ROBOT_MOVE_AXIS_NOT_REQUIRED :
+                           ROBOT_MOVE_AXIS_WAIT_START;
+        s_move_debug.axis_progress[index] =
+            s_robot_arm.move_axis_progress[index];
+    }
+    if ((s_robot_arm.move_axis_progress[ROBOT_AXIS_X] ==
+         ROBOT_MOVE_AXIS_NOT_REQUIRED) &&
+        (s_robot_arm.move_axis_progress[ROBOT_AXIS_Y] ==
+         ROBOT_MOVE_AXIS_NOT_REQUIRED) &&
+        (s_robot_arm.move_axis_progress[ROBOT_AXIS_Z] ==
+         ROBOT_MOVE_AXIS_NOT_REQUIRED))
+    {
+        s_robot_arm.last_move_end_reason = ROBOT_MOVE_END_COMPLETED;
+        s_move_debug.finalize_reason = ROBOT_MOVE_FINALIZE_COMPLETED;
+        return ROBOT_ARM_OK;
+    }
+    s_robot_arm.move_to_state = ROBOT_MOVE_TO_X_START;
+    s_robot_arm.operation = ROBOT_OP_MOVE_TO;
+    s_robot_arm.state = ROBOT_ARM_MOVING;
+    s_robot_arm.error_code = 0;
+    s_robot_arm.last_move_end_reason = ROBOT_MOVE_END_NONE;
+    return ROBOT_ARM_OK;
+}
+
+/** 按“必要时抬高 Z、移动 X/Y、最后移动 Z”的安全路径接受绝对位置任务。 */
+RobotArmResult_t RobotArm_MoveToSafe(int32_t x, int32_t y, int32_t z)
+{
+    RobotArmResult_t result;
+    if (s_robot_arm.state == ROBOT_ARM_ERROR)
+    {
+        return (RobotArmResult_t)s_robot_arm.error_code;
+    }
+    if (RobotArm_IsBusy())
+    {
+        return ROBOT_ARM_ERR_BUSY;
+    }
+    if (!s_robot_arm.axis[ROBOT_AXIS_X].position_valid ||
+        !s_robot_arm.axis[ROBOT_AXIS_Y].position_valid ||
+        !s_robot_arm.axis[ROBOT_AXIS_Z].position_valid)
+    {
+        return ROBOT_ARM_ERR_POSITION_UNKNOWN;
+    }
+    if (!RobotArmSensor_IsReady())
+    {
+        return ROBOT_ARM_ERR_SENSOR;
+    }
+    result = RobotArm_CheckAxisTarget(ROBOT_AXIS_X, x);
+    if (result == ROBOT_ARM_OK) result = RobotArm_CheckAxisTarget(ROBOT_AXIS_Y, y);
+    if (result == ROBOT_ARM_OK) result = RobotArm_CheckAxisTarget(ROBOT_AXIS_Z, z);
+    if (result == ROBOT_ARM_OK) result = RobotArm_CheckPoseSafety(x, y, z);
+    if (result == ROBOT_ARM_OK) result = RobotArm_ValidateSafeMoveConfig();
+    if (result != ROBOT_ARM_OK)
+    {
+        return result;
+    }
     if ((RobotArm_GetX() == x) && (RobotArm_GetY() == y) && (RobotArm_GetZ() == z))
     {
         s_robot_arm.last_move_end_reason = ROBOT_MOVE_END_COMPLETED;
         return ROBOT_ARM_OK;
     }
-    s_robot_arm.move_to_target[ROBOT_AXIS_X] = x;
-    s_robot_arm.move_to_target[ROBOT_AXIS_Y] = y;
-    s_robot_arm.move_to_target[ROBOT_AXIS_Z] = z;
+
+    /* 组合任务始终保存最终目标；各阶段只通过统一单轴 helper 改写活动轴命令。 */
+    s_robot_arm.safe_move_target[ROBOT_AXIS_X] = x;
+    s_robot_arm.safe_move_target[ROBOT_AXIS_Y] = y;
+    s_robot_arm.safe_move_target[ROBOT_AXIS_Z] = z;
     s_robot_arm.axis[ROBOT_AXIS_X].target_position = x;
     s_robot_arm.axis[ROBOT_AXIS_Y].target_position = y;
     s_robot_arm.axis[ROBOT_AXIS_Z].target_position = z;
-    s_robot_arm.move_to_state = ROBOT_MOVE_TO_X_START;
-    s_robot_arm.operation = ROBOT_OP_MOVE_TO;
+    s_robot_arm.safe_move_state = ROBOT_SAFE_MOVE_PREPARE;
+    s_robot_arm.operation = ROBOT_OP_MOVE_TO_SAFE;
     s_robot_arm.state = ROBOT_ARM_MOVING;
     s_robot_arm.error_code = 0;
     s_robot_arm.last_move_end_reason = ROBOT_MOVE_END_NONE;
@@ -1112,9 +1526,18 @@ void RobotArm_GetStatus(RobotArmStatus_t *status)
     status->x = RobotArm_GetX();
     status->y = RobotArm_GetY();
     status->z = RobotArm_GetZ();
-    status->target_x = s_robot_arm.axis[ROBOT_AXIS_X].target_position;
-    status->target_y = s_robot_arm.axis[ROBOT_AXIS_Y].target_position;
-    status->target_z = s_robot_arm.axis[ROBOT_AXIS_Z].target_position;
+    if (s_robot_arm.operation == ROBOT_OP_MOVE_TO_SAFE)
+    {
+        status->target_x = s_robot_arm.safe_move_target[ROBOT_AXIS_X];
+        status->target_y = s_robot_arm.safe_move_target[ROBOT_AXIS_Y];
+        status->target_z = s_robot_arm.safe_move_target[ROBOT_AXIS_Z];
+    }
+    else
+    {
+        status->target_x = s_robot_arm.axis[ROBOT_AXIS_X].target_position;
+        status->target_y = s_robot_arm.axis[ROBOT_AXIS_Y].target_position;
+        status->target_z = s_robot_arm.axis[ROBOT_AXIS_Z].target_position;
+    }
     status->x_homed = RobotArm_IsHomed(ROBOT_AXIS_X);
     status->y_homed = RobotArm_IsHomed(ROBOT_AXIS_Y);
     status->z_homed = RobotArm_IsHomed(ROBOT_AXIS_Z);
@@ -1132,8 +1555,35 @@ void RobotArm_GetStatus(RobotArmStatus_t *status)
     status->operation = s_robot_arm.operation;
     status->home_state = s_robot_arm.home_state;
     status->move_to_state = s_robot_arm.move_to_state;
+    status->safe_move_state = s_robot_arm.safe_move_state;
     status->last_move_end_reason = s_robot_arm.last_move_end_reason;
     status->error_code = s_robot_arm.error_code;
+}
+
+/** 获取最近一次 MOVE_TO 的接收、启动和收尾诊断快照；不参与 V2 STATUS 打包。 */
+void RobotArm_GetMoveDebug(RobotArmMoveDebug_t *debug)
+{
+    uint8_t index;
+    if (debug == 0)
+    {
+        return;
+    }
+    for (index = 0u; index < ROBOT_AXIS_COUNT; index++)
+    {
+        debug->received_current[index] =
+            s_move_debug.received_current[index];
+        debug->received_target[index] =
+            s_move_debug.received_target[index];
+        debug->received_delta[index] =
+            s_move_debug.received_delta[index];
+        debug->axis_progress[index] = s_move_debug.axis_progress[index];
+        debug->start_called[index] = s_move_debug.start_called[index];
+        debug->start_steps[index] = s_move_debug.start_steps[index];
+        debug->start_result[index] = s_move_debug.start_result[index];
+        debug->busy_before[index] = s_move_debug.busy_before[index];
+        debug->busy_after[index] = s_move_debug.busy_after[index];
+    }
+    debug->finalize_reason = s_move_debug.finalize_reason;
 }
 
 /** 检查目标姿态安全性；当前无标定碰撞区时默认通过。 */
@@ -1142,5 +1592,36 @@ RobotArmResult_t RobotArm_CheckPoseSafety(int32_t x, int32_t y, int32_t z)
     (void)x;
     (void)y;
     (void)z;
+#ifdef ROBOT_ARM_LOGIC_TEST
+    extern uint8_t g_robot_arm_logic_test_pose_safety_blocked;
+    if (g_robot_arm_logic_test_pose_safety_blocked)
+    {
+        return ROBOT_ARM_ERR_INTERLOCK;
+    }
+#endif
+    return ROBOT_ARM_OK;
+}
+
+/** 检查两个姿态之间是否允许直接转换。 */
+RobotArmResult_t RobotArm_CheckTransitionSafety(int32_t current_x,
+                                                int32_t current_y,
+                                                int32_t current_z,
+                                                int32_t target_x,
+                                                int32_t target_y,
+                                                int32_t target_z)
+{
+    (void)target_z;
+    if ((current_x != target_x) || (current_y != target_y))
+    {
+        if (!ROBOT_ARM_SAFE_MOVE_ENABLED)
+        {
+            return ROBOT_ARM_ERR_CONFIG;
+        }
+        /* Z=0 为最高点，因此 XY 改变时 Z 数值必须小于等于 Safe Z。 */
+        if (current_z > ROBOT_ARM_SAFE_Z_POSITION)
+        {
+            return ROBOT_ARM_ERR_INTERLOCK;
+        }
+    }
     return ROBOT_ARM_OK;
 }

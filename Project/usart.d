@@ -30,7 +30,6 @@
 .\usart.o: ..\Fwilb\inc\stm32f10x_usart.h
 .\usart.o: ..\Fwilb\inc\stm32f10x_wwdg.h
 .\usart.o: ..\Fwilb\inc\misc.h
-.\usart.o: F:\software\keil5\ARM\ARMCC\Bin\..\include\stdio.h
 .\usart.o: ..\User\protocol.h
 .\usart.o: ..\User\DELAY.h
 .\usart.o: ..\User\time.h

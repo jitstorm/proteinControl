@@ -32,3 +32,4 @@
 .\shift_register_input.o: ..\User\DELAY.h
 .\shift_register_input.o: ..\User\spi_helper.h
 .\shift_register_input.o: ..\User\pb10_sensor_stop.h
+.\shift_register_input.o: ..\User\robot_arm_sensor.h

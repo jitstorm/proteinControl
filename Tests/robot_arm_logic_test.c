@@ -10,7 +10,9 @@ static uint32_t s_completed[ROBOT_AXIS_COUNT];
 static uint32_t s_remaining[ROBOT_AXIS_COUNT];
 static int8_t s_direction[ROBOT_AXIS_COUNT];
 static uint32_t s_start_count[ROBOT_AXIS_COUNT];
+static uint8_t s_start_enters_busy[ROBOT_AXIS_COUNT] = {1u, 1u, 1u};
 static int s_test_failure;
+uint8_t g_robot_arm_logic_test_pose_safety_blocked;
 
 /** 为无 C 运行库的测试可执行文件提供最小内存清零实现。 */
 void *memset(void *destination, int value, __SIZE_TYPE__ count)
@@ -33,11 +35,16 @@ uint8_t RobotArmDriver_Start(RobotAxisId_t axis, int8_t direction,
 {
     (void)speed;
     if (s_busy[axis] || (steps == 0u)) return 0u;
+    s_direction[axis] = direction;
+    s_start_count[axis]++;
+    if (!s_start_enters_busy[axis])
+    {
+        /* 模拟底层错误返回成功，但实际没有进入运行态。 */
+        return 1u;
+    }
     s_busy[axis] = 1u;
     s_completed[axis] = 0u;
     s_remaining[axis] = steps;
-    s_direction[axis] = direction;
-    s_start_count[axis]++;
     return 1u;
 }
 
@@ -63,6 +70,43 @@ static void TestDriverComplete(RobotAxisId_t axis)
     s_remaining[axis] = 0u;
     s_busy[axis] = 0u;
 }
+
+static void TestHomeAxis(RobotAxisId_t axis, uint8_t home_bit);
+
+static void TestResetAndHomeAll(void)
+{
+    RobotArm_Init();
+    g_robot_arm_logic_test_pose_safety_blocked = 0u;
+    TestSensorSnapshot(0u, 0u, 0u, 0u);
+    TestHomeAxis(ROBOT_AXIS_X, 0u);
+    TestHomeAxis(ROBOT_AXIS_Y, 0u);
+    TestHomeAxis(ROBOT_AXIS_Z, 0u);
+    TestSensorSnapshot(0u, 0u, 0u, 0u);
+}
+
+#ifndef ROBOT_ARM_SAFE_DISABLED_TEST
+static void TestSetPose(int32_t x, int32_t y, int32_t z)
+{
+    if (x != RobotArm_GetX())
+    {
+        TEST_CHECK(RobotArm_MoveX(x, 100u) == ROBOT_ARM_OK);
+        TestDriverComplete(ROBOT_AXIS_X);
+        RobotArm_Task();
+    }
+    if (y != RobotArm_GetY())
+    {
+        TEST_CHECK(RobotArm_MoveY(y, 100u) == ROBOT_ARM_OK);
+        TestDriverComplete(ROBOT_AXIS_Y);
+        RobotArm_Task();
+    }
+    if (z != RobotArm_GetZ())
+    {
+        TEST_CHECK(RobotArm_MoveZ(z, 100u) == ROBOT_ARM_OK);
+        TestDriverComplete(ROBOT_AXIS_Z);
+        RobotArm_Task();
+    }
+}
+#endif
 
 static void TestHomeAxis(RobotAxisId_t axis, uint8_t home_bit)
 {
@@ -103,6 +147,7 @@ static void TestHomeAxis(RobotAxisId_t axis, uint8_t home_bit)
     TEST_CHECK(RobotArm_IsPositionValid(axis) == 1u);
 }
 
+#ifndef ROBOT_ARM_SAFE_DISABLED_TEST
 static void TestFinishHomeAllAxis(RobotAxisId_t axis)
 {
     uint8_t s1 = 0u, s2 = 0u, s3 = 0u;
@@ -126,11 +171,28 @@ static void TestFinishHomeAllAxis(RobotAxisId_t axis)
     RobotArm_Task();
     TEST_CHECK(RobotArm_IsHomed(axis) == 1u);
 }
+#endif
 
 /** 运行 RobotArm 的纯逻辑回归场景。 */
+#ifdef ROBOT_ARM_SAFE_DISABLED_TEST
+int main(void)
+{
+    uint32_t starts;
+    TestResetAndHomeAll();
+    starts = s_start_count[ROBOT_AXIS_X] +
+             s_start_count[ROBOT_AXIS_Y] +
+             s_start_count[ROBOT_AXIS_Z];
+    TEST_CHECK(RobotArm_MoveToSafe(1, 1, 1) == ROBOT_ARM_ERR_CONFIG);
+    TEST_CHECK((s_start_count[ROBOT_AXIS_X] +
+                s_start_count[ROBOT_AXIS_Y] +
+                s_start_count[ROBOT_AXIS_Z]) == starts);
+    return s_test_failure;
+}
+#else
 int main(void)
 {
     RobotArmStatus_t status;
+    RobotArmMoveDebug_t move_debug;
     uint32_t x_starts;
     uint32_t y_starts;
     uint32_t z_starts;
@@ -160,11 +222,21 @@ int main(void)
     RobotArm_Task();
     TestDriverComplete(ROBOT_AXIS_Z);
     RobotArm_Task();
-    RobotArm_Task();
+    RobotArm_GetStatus(&status);
+    /* 最后一轴完成的同一轮必须释放组合状态，避免 page0 捕获伪 Busy。 */
+    TEST_CHECK(s_busy[ROBOT_AXIS_X] == 0u);
+    TEST_CHECK(s_busy[ROBOT_AXIS_Y] == 0u);
+    TEST_CHECK(s_busy[ROBOT_AXIS_Z] == 0u);
     TEST_CHECK(RobotArm_GetX() == 10);
     TEST_CHECK(RobotArm_GetY() == 20);
     TEST_CHECK(RobotArm_GetZ() == 30);
+    TEST_CHECK(status.x_state == ROBOT_AXIS_IDLE);
+    TEST_CHECK(status.y_state == ROBOT_AXIS_IDLE);
+    TEST_CHECK(status.z_state == ROBOT_AXIS_IDLE);
     TEST_CHECK(RobotArm_GetState() == ROBOT_ARM_IDLE);
+    TEST_CHECK(status.operation == ROBOT_OP_NONE);
+    TEST_CHECK(status.move_to_state == ROBOT_MOVE_TO_IDLE);
+    TEST_CHECK(RobotArm_IsBusy() == 0u);
 
     /* 三轴目标均等于当前位置时必须直接完成，不能向底层发送新命令。 */
     x_starts = s_start_count[ROBOT_AXIS_X];
@@ -279,5 +351,253 @@ int main(void)
     TEST_CHECK(status.last_move_end_reason == ROBOT_MOVE_END_LIMIT);
     TEST_CHECK(status.z == 1);
     TEST_CHECK(status.z_valid == 0u);
+
+    /* SafeMove 启用时，位置未知必须在产生任何 STEP 之前拒绝任务。 */
+    RobotArm_Init();
+    TestSensorSnapshot(0u, 0u, 0u, 0u);
+    TEST_CHECK(RobotArm_MoveToSafe(1, 1, 1) == ROBOT_ARM_ERR_POSITION_UNKNOWN);
+
+    /* 仅 Z 改变时直接执行 Final Z，不额外执行 Raise Z。 */
+    TestResetAndHomeAll();
+    TestSetPose(0, 0, 5);
+    z_starts = s_start_count[ROBOT_AXIS_Z];
+    TEST_CHECK(RobotArm_MoveToSafe(0, 0, 20) == ROBOT_ARM_OK);
+    RobotArm_Task();
+    RobotArm_GetStatus(&status);
+    TEST_CHECK(status.safe_move_state == ROBOT_SAFE_MOVE_FINAL_Z_START);
+    RobotArm_Task();
+    TEST_CHECK(s_start_count[ROBOT_AXIS_Z] == z_starts + 1u);
+    TEST_CHECK(s_direction[ROBOT_AXIS_Z] == 1);
+    TestDriverComplete(ROBOT_AXIS_Z);
+    RobotArm_Task();
+    RobotArm_Task();
+    TEST_CHECK(RobotArm_GetZ() == 20);
+
+    /* 当前 Z 低于安全高度时，严格执行 Raise Z、X、Y、Final Z。 */
+    TestResetAndHomeAll();
+    TestSetPose(0, 0, 20);
+    TEST_CHECK(RobotArm_MoveToSafe(5, 6, 30) == ROBOT_ARM_OK);
+    RobotArm_Task();
+    RobotArm_GetStatus(&status);
+    TEST_CHECK(status.safe_move_state == ROBOT_SAFE_MOVE_RAISE_Z_START);
+    RobotArm_Task();
+    TEST_CHECK(s_direction[ROBOT_AXIS_Z] == -1);
+    TestDriverComplete(ROBOT_AXIS_Z);
+    RobotArm_Task();
+    RobotArm_Task();
+    TEST_CHECK(s_direction[ROBOT_AXIS_X] == 1);
+    TestDriverComplete(ROBOT_AXIS_X);
+    RobotArm_Task();
+    RobotArm_Task();
+    TEST_CHECK(s_direction[ROBOT_AXIS_Y] == 1);
+    TestDriverComplete(ROBOT_AXIS_Y);
+    RobotArm_Task();
+    RobotArm_Task();
+    TEST_CHECK(s_direction[ROBOT_AXIS_Z] == 1);
+    TestDriverComplete(ROBOT_AXIS_Z);
+    RobotArm_Task();
+    RobotArm_Task();
+    TEST_CHECK(RobotArm_GetX() == 5);
+    TEST_CHECK(RobotArm_GetY() == 6);
+    TEST_CHECK(RobotArm_GetZ() == 30);
+
+    /* 当前 Z 已处于安全高度时跳过 Raise Z，直接从 X 开始。 */
+    TestResetAndHomeAll();
+    TestSetPose(0, 0, 5);
+    z_starts = s_start_count[ROBOT_AXIS_Z];
+    TEST_CHECK(RobotArm_MoveToSafe(5, 6, 20) == ROBOT_ARM_OK);
+    RobotArm_Task();
+    RobotArm_GetStatus(&status);
+    TEST_CHECK(status.safe_move_state == ROBOT_SAFE_MOVE_X_START);
+    RobotArm_Task();
+    TEST_CHECK(s_start_count[ROBOT_AXIS_Z] == z_starts);
+    RobotArm_Stop();
+
+    /* XYZ 均等于目标时立即成功且不得产生 STEP。 */
+    TestResetAndHomeAll();
+    x_starts = s_start_count[ROBOT_AXIS_X];
+    y_starts = s_start_count[ROBOT_AXIS_Y];
+    z_starts = s_start_count[ROBOT_AXIS_Z];
+    TEST_CHECK(RobotArm_MoveToSafe(0, 0, 0) == ROBOT_ARM_OK);
+    TEST_CHECK(RobotArm_GetState() == ROBOT_ARM_IDLE);
+    TEST_CHECK(s_start_count[ROBOT_AXIS_X] == x_starts);
+    TEST_CHECK(s_start_count[ROBOT_AXIS_Y] == y_starts);
+    TEST_CHECK(s_start_count[ROBOT_AXIS_Z] == z_starts);
+
+    /* Raise Z 期间 Stop 后，X/Y 和 Final Z 永远不得继续启动。 */
+    TestSetPose(0, 0, 20);
+    x_starts = s_start_count[ROBOT_AXIS_X];
+    y_starts = s_start_count[ROBOT_AXIS_Y];
+    TEST_CHECK(RobotArm_MoveToSafe(5, 6, 30) == ROBOT_ARM_OK);
+    RobotArm_Task();
+    RobotArm_Task();
+    RobotArm_Stop();
+    RobotArm_Task();
+    TEST_CHECK(s_start_count[ROBOT_AXIS_X] == x_starts);
+    TEST_CHECK(s_start_count[ROBOT_AXIS_Y] == y_starts);
+    RobotArm_GetStatus(&status);
+    TEST_CHECK(status.safe_move_state == ROBOT_SAFE_MOVE_IDLE);
+
+    /* X Timeout 后不得启动 Y 或 Final Z。 */
+    TestResetAndHomeAll();
+    TestSetPose(0, 0, 5);
+    y_starts = s_start_count[ROBOT_AXIS_Y];
+    z_starts = s_start_count[ROBOT_AXIS_Z];
+    TEST_CHECK(RobotArm_MoveToSafe(1, 1, 20) == ROBOT_ARM_OK);
+    RobotArm_Task();
+    RobotArm_Task();
+    s_now_ms += 31000u;
+    RobotArm_Task();
+    RobotArm_GetStatus(&status);
+    TEST_CHECK(status.last_move_end_reason == ROBOT_MOVE_END_TIMEOUT);
+    TEST_CHECK(s_start_count[ROBOT_AXIS_Y] == y_starts);
+    TEST_CHECK(s_start_count[ROBOT_AXIS_Z] == z_starts);
+
+    /* Y 遇到 Home 侧硬限位后不得启动 Final Z。 */
+    TestResetAndHomeAll();
+    TestSetPose(0, 1, 5);
+    z_starts = s_start_count[ROBOT_AXIS_Z];
+    TEST_CHECK(RobotArm_MoveToSafe(1, 0, 20) == ROBOT_ARM_OK);
+    RobotArm_Task();
+    RobotArm_Task();
+    TestDriverComplete(ROBOT_AXIS_X);
+    RobotArm_Task();
+    TestSensorSnapshot(0u, 1u, 0u, 0u);
+    RobotArm_Task();
+    RobotArm_GetStatus(&status);
+    TEST_CHECK(status.last_move_end_reason == ROBOT_MOVE_END_LIMIT);
+    TEST_CHECK(s_start_count[ROBOT_AXIS_Z] == z_starts);
+
+    /* Final Z 前重新检查真实 XY 姿态，互锁失败时不得启动 Z。 */
+    TestResetAndHomeAll();
+    TestSetPose(0, 0, 5);
+    z_starts = s_start_count[ROBOT_AXIS_Z];
+    TEST_CHECK(RobotArm_MoveToSafe(1, 1, 20) == ROBOT_ARM_OK);
+    RobotArm_Task();
+    RobotArm_Task();
+    TestDriverComplete(ROBOT_AXIS_X);
+    RobotArm_Task();
+    RobotArm_Task();
+    TestDriverComplete(ROBOT_AXIS_Y);
+    RobotArm_Task();
+    g_robot_arm_logic_test_pose_safety_blocked = 1u;
+    RobotArm_Task();
+    RobotArm_GetStatus(&status);
+    TEST_CHECK(status.error_code == ROBOT_ARM_ERR_INTERLOCK);
+    TEST_CHECK(status.last_move_end_reason == ROBOT_MOVE_END_INTERLOCK);
+    TEST_CHECK(s_start_count[ROBOT_AXIS_Z] == z_starts);
+
+    /* Final Z 向下期间触发 S4，不能提交最终 Z target。 */
+    TestResetAndHomeAll();
+    TestSetPose(0, 0, 5);
+    TEST_CHECK(RobotArm_MoveToSafe(1, 1, 20) == ROBOT_ARM_OK);
+    RobotArm_Task();
+    RobotArm_Task();
+    TestDriverComplete(ROBOT_AXIS_X);
+    RobotArm_Task();
+    RobotArm_Task();
+    TestDriverComplete(ROBOT_AXIS_Y);
+    RobotArm_Task();
+    RobotArm_Task();
+    TestSensorSnapshot(0u, 0u, 0u, 1u);
+    RobotArm_Task();
+    RobotArm_GetStatus(&status);
+    TEST_CHECK(status.last_move_end_reason == ROBOT_MOVE_END_LIMIT);
+    TEST_CHECK(status.z == 5);
+    TEST_CHECK(status.z_valid == 0u);
+
+    /* SafeMove 独占期间拒绝 Relative 和普通 MoveTo。 */
+    TestResetAndHomeAll();
+    TestSetPose(0, 0, 5);
+    TEST_CHECK(RobotArm_MoveToSafe(1, 1, 20) == ROBOT_ARM_OK);
+    TEST_CHECK(RobotArm_MoveXRelative(1, 100u) == ROBOT_ARM_ERR_BUSY);
+    TEST_CHECK(RobotArm_MoveTo(1, 1, 20) == ROBOT_ARM_ERR_BUSY);
+    RobotArm_Stop();
+    RobotArm_Task();
+    RobotArm_GetStatus(&status);
+    TEST_CHECK(status.operation == ROBOT_OP_NONE);
+    TEST_CHECK(status.safe_move_state == ROBOT_SAFE_MOVE_IDLE);
+
+    /* 复现现场目标，逐轴证明 Start、方向、步数和运行态后才提交 current。 */
+    TestResetAndHomeAll();
+    TestSetPose(123, 123, 123);
+    TEST_CHECK(RobotArm_MoveTo(1550, 100, 100) == ROBOT_ARM_OK);
+    RobotArm_GetMoveDebug(&move_debug);
+    TEST_CHECK(move_debug.received_current[ROBOT_AXIS_X] == 123);
+    TEST_CHECK(move_debug.received_target[ROBOT_AXIS_X] == 1550);
+    TEST_CHECK(move_debug.received_delta[ROBOT_AXIS_X] == 1427);
+    TEST_CHECK(move_debug.axis_progress[ROBOT_AXIS_X] ==
+               ROBOT_MOVE_AXIS_WAIT_START);
+    RobotArm_Task();
+    RobotArm_GetMoveDebug(&move_debug);
+    TEST_CHECK(move_debug.start_called[ROBOT_AXIS_X] == 1u);
+    TEST_CHECK(move_debug.start_steps[ROBOT_AXIS_X] == 1427u);
+    TEST_CHECK(move_debug.start_result[ROBOT_AXIS_X] == 1u);
+    TEST_CHECK(move_debug.busy_before[ROBOT_AXIS_X] == 0u);
+    TEST_CHECK(move_debug.busy_after[ROBOT_AXIS_X] == 1u);
+    TEST_CHECK(move_debug.axis_progress[ROBOT_AXIS_X] ==
+               ROBOT_MOVE_AXIS_RUNNING);
+    TEST_CHECK(s_direction[ROBOT_AXIS_X] == 1);
+    TEST_CHECK(s_remaining[ROBOT_AXIS_X] == 1427u);
+    TEST_CHECK(RobotArm_GetX() == 123);
+
+    TestDriverComplete(ROBOT_AXIS_X);
+    RobotArm_Task();
+    TEST_CHECK(RobotArm_GetX() == 1550);
+    RobotArm_Task();
+    RobotArm_GetMoveDebug(&move_debug);
+    TEST_CHECK(move_debug.start_called[ROBOT_AXIS_Y] == 1u);
+    TEST_CHECK(move_debug.start_steps[ROBOT_AXIS_Y] == 23u);
+    TEST_CHECK(move_debug.busy_after[ROBOT_AXIS_Y] == 1u);
+    TEST_CHECK(s_direction[ROBOT_AXIS_Y] == -1);
+    TEST_CHECK(RobotArm_GetY() == 123);
+
+    TestDriverComplete(ROBOT_AXIS_Y);
+    RobotArm_Task();
+    TEST_CHECK(RobotArm_GetY() == 100);
+    RobotArm_Task();
+    RobotArm_GetMoveDebug(&move_debug);
+    TEST_CHECK(move_debug.start_called[ROBOT_AXIS_Z] == 1u);
+    TEST_CHECK(move_debug.start_steps[ROBOT_AXIS_Z] == 23u);
+    TEST_CHECK(move_debug.busy_after[ROBOT_AXIS_Z] == 1u);
+    TEST_CHECK(s_direction[ROBOT_AXIS_Z] == -1);
+    TEST_CHECK(RobotArm_GetZ() == 123);
+
+    TestDriverComplete(ROBOT_AXIS_Z);
+    RobotArm_Task();
+    RobotArm_GetMoveDebug(&move_debug);
+    TEST_CHECK(RobotArm_GetX() == 1550);
+    TEST_CHECK(RobotArm_GetY() == 100);
+    TEST_CHECK(RobotArm_GetZ() == 100);
+    TEST_CHECK(move_debug.axis_progress[ROBOT_AXIS_X] ==
+               ROBOT_MOVE_AXIS_COMPLETED);
+    TEST_CHECK(move_debug.axis_progress[ROBOT_AXIS_Y] ==
+               ROBOT_MOVE_AXIS_COMPLETED);
+    TEST_CHECK(move_debug.axis_progress[ROBOT_AXIS_Z] ==
+               ROBOT_MOVE_AXIS_COMPLETED);
+    TEST_CHECK(move_debug.finalize_reason == ROBOT_MOVE_FINALIZE_COMPLETED);
+    TEST_CHECK(RobotArm_IsBusy() == 0u);
+
+    /* Start 虚假成功但 Busy 未置位时必须报错，三个 current 均保持原值。 */
+    TestResetAndHomeAll();
+    TestSetPose(123, 123, 123);
+    s_start_enters_busy[ROBOT_AXIS_X] = 0u;
+    TEST_CHECK(RobotArm_MoveTo(1550, 100, 100) == ROBOT_ARM_OK);
+    RobotArm_Task();
+    RobotArm_GetMoveDebug(&move_debug);
+    TEST_CHECK(move_debug.start_called[ROBOT_AXIS_X] == 1u);
+    TEST_CHECK(move_debug.start_result[ROBOT_AXIS_X] == 1u);
+    TEST_CHECK(move_debug.busy_after[ROBOT_AXIS_X] == 0u);
+    TEST_CHECK(move_debug.axis_progress[ROBOT_AXIS_X] ==
+               ROBOT_MOVE_AXIS_WAIT_START);
+    TEST_CHECK(move_debug.finalize_reason ==
+               ROBOT_MOVE_FINALIZE_START_FAILED);
+    TEST_CHECK(RobotArm_GetX() == 123);
+    TEST_CHECK(RobotArm_GetY() == 123);
+    TEST_CHECK(RobotArm_GetZ() == 123);
+    TEST_CHECK(RobotArm_GetState() == ROBOT_ARM_ERROR);
+    TEST_CHECK(RobotArm_IsBusy() == 0u);
+    s_start_enters_busy[ROBOT_AXIS_X] = 1u;
     return s_test_failure;
 }
+#endif

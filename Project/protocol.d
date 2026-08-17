@@ -39,8 +39,9 @@
 .\protocol.o: ..\User\max31855.h
 .\protocol.o: ..\User\stepMotor.h
 .\protocol.o: ..\User\USART.h
-.\protocol.o: F:\software\keil5\ARM\ARMCC\Bin\..\include\stdio.h
 .\protocol.o: ..\User\step_dma.h
 .\protocol.o: ..\User\single_motor.h
 .\protocol.o: ..\User\reversible_motor.h
 .\protocol.o: ..\User\time.h
+.\protocol.o: ..\User\robot_arm.h
+.\protocol.o: ..\User\robot_arm_driver.h

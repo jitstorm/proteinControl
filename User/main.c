@@ -1,10 +1,8 @@
 #include "stm32f10x.h"
 #include "main.h"
-#include <stdio.h>
 #include <DELAY.h>
 #include <USART.h>
 #include <CLOCK.h>
-#include <inttypes.h> // 引入标准整数格式化宏
 #include <PWM.h>
 #include "shift_register.h"
 #include "shift_register_input.h"
@@ -19,8 +17,11 @@
 #include "single_motor.h"
 #include "reversible_motor.h"
 #include "robot_arm.h"
+#include "protocol_v2.h"
+#include "robot_arm_protocol.h"
 
 #define MAIN_LOOP_PROCESS_LIMIT 8u
+#define MAIN_LOOP_RX_BYTE_LIMIT 64u
 
 stepMotor stepMotorA = {GPIOB, GPIO_Pin_12, 0, 0, 1, 9, 1000, 1000, 0, 0, 100, 0, 0, 0, 0, 0, 4, 2000, 0};
 
@@ -28,6 +29,7 @@ extern MotorCtrl_t MotorCtrl[MOTOR_NUM]; // 595 输出电机控制状态
 extern volatile char motor_tick_pending;
 extern char handle_step_motor1;
 extern char handle_step_motor2;
+extern volatile uint32_t dbg_usart2_tx_timeout;
 
 static uint8_t last_inputData[SHIFT_REGISTER_INPUT_COUNT];
 static uint8_t inputData_inited;
@@ -49,15 +51,46 @@ static void task_temperature_report(void)
     send_temperature_frame(0x00);
 }
 
+static uint8_t task_protocol_v2_send(const uint8_t *frame, uint8_t length)
+{
+    uint32_t timeout_before = dbg_usart2_tx_timeout;
+    /* 复用现有 USART1 RS485 发送入口，不改变波特率和方向控制资源。 */
+    if (!USART_SendBuffer(USART1, (uint8_t *)frame, length))
+    {
+        return 0u;
+    }
+    return (dbg_usart2_tx_timeout == timeout_before) ? 1u : 0u;
+}
+
 static void task_uart_frames(void)
 {
-    uint8_t frame[10];
-    uint8_t count = 0;
+    uint8_t frame[PROTOCOL_V1_FRAME_SIZE];
+    uint8_t byte;
+    uint8_t count = 0u;
+    uint8_t byte_count = 0u;
+    ProtocolV2Frame_t v2_frame;
 
-    /* 限制单轮处理量，避免串口持续有数据时阻塞其他任务。 */
-    while (count < MAIN_LOOP_PROCESS_LIMIT && USART1_TakeFrame(frame))
+    /* 每轮只消费有限字节；半帧状态保留到下一次主循环继续。 */
+    while ((byte_count < MAIN_LOOP_RX_BYTE_LIMIT) && UART1GetByte(&byte))
+    {
+        ProtocolV2_InputByte(byte);
+        byte_count++;
+    }
+
+    /* V1 仍进入原 parse_frame 和命令队列，旧业务行为保持不变。 */
+    while ((count < MAIN_LOOP_PROCESS_LIMIT) &&
+           ProtocolV2_TakeV1Frame(frame))
     {
         parse_frame(frame);
+        count++;
+    }
+
+    count = 0u;
+    while ((count < MAIN_LOOP_PROCESS_LIMIT) &&
+           RobotArmProtocol_CanAcceptRequest() &&
+           ProtocolV2_TakeFrame(&v2_frame))
+    {
+        RobotArmProtocol_HandleFrame(&v2_frame);
         count++;
     }
 }
@@ -251,6 +284,8 @@ int main(void)
     // PWM_PA0_PA1_PA11_Init();
     GPIO_SetBits(GPIOB, GPIO_Pin_1);
     USART1_Init();
+    ProtocolV2_Init();
+    RobotArmProtocol_Init(task_protocol_v2_send);
     Protocol_InitTxDiagnostics();
     /* 输出启动时的初始 74HC595 状态。 */
     ShiftRegister_WriteAll(HC595Data);
@@ -267,5 +302,6 @@ int main(void)
         task_single_motor();
         /* 在主循环推进动作完成，不在 DMA 中断内执行业务状态机。 */
         RobotArm_Task();
+        RobotArmProtocol_Task();
     }
 }

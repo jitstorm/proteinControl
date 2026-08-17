@@ -482,6 +482,16 @@
               <FilePath>..\User\protocol.c</FilePath>
             </File>
             <File>
+              <FileName>protocol_v2.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\protocol_v2.c</FilePath>
+            </File>
+            <File>
+              <FileName>robot_arm_protocol.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\robot_arm_protocol.c</FilePath>
+            </File>
+            <File>
               <FileName>PWM.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\User\PWM.c</FilePath>

@@ -1,7 +1,6 @@
 #ifndef __USART_H
 #define __USART_H
 #include <stm32f10x_usart.h>
-#include <stdio.h>
 #include <stdint.h>
 
 #define USART1_RX_BUFFER_SIZE 512u
@@ -26,9 +25,15 @@ void USART1_Process(void);
  * @brief 轮询处理串口 3 环形缓冲区中的接收数据。
  */
 void USART3_Process(void);
-void USART_SendByte(USART_TypeDef* USARTx, uint8_t data);
+/**
+ * @brief 以独立帧方式发送一个字节，并在结束或失败时恢复 RS485 接收态。
+ */
+uint8_t USART_SendByte(USART_TypeDef* USARTx, uint8_t data);
 void USART_SendString(USART_TypeDef* USARTx, char *str);
-void USART_SendBuffer(USART_TypeDef* USARTx, uint8_t *buffer, uint16_t length);
+/**
+ * @brief 独占 RS485 发送方向完成一个缓冲区，并在最终 TC 或失败后恢复接收态。
+ */
+uint8_t USART_SendBuffer(USART_TypeDef* USARTx, uint8_t *buffer, uint16_t length);
 unsigned char UART1GetByte(unsigned char *GetData);
 void UART1Test(void);
 uint16_t USART1_GetRemoteTemperature(void);
@@ -40,4 +45,9 @@ extern volatile uint8_t frame_ready;
 extern uint8_t rx_buffer[10];
 extern USART_RxStats usart1_rx_stats;
 extern USART_RxStats usart3_rx_stats;
+extern volatile uint32_t rs485_tx_call_count;
+extern volatile uint32_t rs485_tx_success_count;
+extern volatile uint32_t rs485_tx_txe_timeout_count;
+extern volatile uint32_t rs485_tx_tc_timeout_count;
+extern volatile uint32_t rs485_tx_bytes_count;
 #endif

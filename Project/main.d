@@ -30,11 +30,9 @@
 .\main.o: ..\Fwilb\inc\misc.h
 .\main.o: ..\User\main.h
 .\main.o: ..\User\PWM.h
-.\main.o: F:\software\keil5\ARM\ARMCC\Bin\..\include\stdio.h
 .\main.o: ..\User\DELAY.h
 .\main.o: ..\User\USART.h
 .\main.o: ..\User\CLOCK.h
-.\main.o: F:\software\keil5\ARM\ARMCC\Bin\..\include\inttypes.h
 .\main.o: ..\User\shift_register.h
 .\main.o: ..\User\shift_register_input.h
 .\main.o: ..\User\protocol.h
@@ -47,3 +45,7 @@
 .\main.o: ..\User\step_dma.h
 .\main.o: ..\User\single_motor.h
 .\main.o: ..\User\reversible_motor.h
+.\main.o: ..\User\robot_arm.h
+.\main.o: ..\User\robot_arm_driver.h
+.\main.o: ..\User\protocol_v2.h
+.\main.o: ..\User\robot_arm_protocol.h
