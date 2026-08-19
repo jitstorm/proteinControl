@@ -27,21 +27,21 @@ uint32_t PU3_Stepper_GetCompletedSteps(void);
 #include "shift_register.h"
 #endif
 
-#define ROBOT_ARM_X_DIR_595_INDEX 1u
-#define ROBOT_ARM_X_DIR_595_MASK (1u << 4)
+#define ROBOT_ARM_Y_DIR_595_INDEX 1u
+#define ROBOT_ARM_Y_DIR_595_MASK (1u << 5)
 #define ROBOT_ARM_DRIVER_START_FREQUENCY 500u
 #define ROBOT_ARM_DRIVER_ACCELERATION 100000u
 
 /* 此处集中保留既有三轴硬件差异，RobotArm 核心不接触 GPIO、DMA 或定时器。 */
-static void RobotArmDriver_SetXDirection(int8_t direction)
+static void RobotArmDriver_SetPb11Direction(int8_t direction)
 {
     if (direction > 0)
     {
-        HC595Data[ROBOT_ARM_X_DIR_595_INDEX] |= (uint8_t)ROBOT_ARM_X_DIR_595_MASK;
+        HC595Data[ROBOT_ARM_Y_DIR_595_INDEX] |= (uint8_t)ROBOT_ARM_Y_DIR_595_MASK;
     }
     else
     {
-        HC595Data[ROBOT_ARM_X_DIR_595_INDEX] &= (uint8_t)~ROBOT_ARM_X_DIR_595_MASK;
+        HC595Data[ROBOT_ARM_Y_DIR_595_INDEX] &= (uint8_t)~ROBOT_ARM_Y_DIR_595_MASK;
     }
     ShiftRegister_WriteAll(HC595Data);
 }
@@ -64,15 +64,15 @@ uint8_t RobotArmDriver_Start(RobotAxisId_t axis, int8_t direction,
     switch (axis)
     {
     case ROBOT_AXIS_X:
-        /* X 轴沿用 PB11/TIM5/DMA2 通道2，仅在此处翻译 DIR1。 */
-        RobotArmDriver_SetXDirection(direction);
+        /* X 轴使用实际 PU1：PB10/TIM6/DMA2 通道3，Stepper2 内部负责 DIR1。 */
+        start_result = Stepper2_Start((direction > 0) ? 1u : 0u, steps, speed);
+        return (start_result && Stepper2_IsBusy()) ? 1u : 0u;
+    case ROBOT_AXIS_Y:
+        /* Y 轴使用实际 PU2：PB11/TIM5/DMA2 通道2，仅在此处翻译 DIR2。 */
+        RobotArmDriver_SetPb11Direction(direction);
         stepdma_pb11_request_trap(steps, ROBOT_ARM_DRIVER_START_FREQUENCY,
                                   speed, ROBOT_ARM_DRIVER_ACCELERATION);
         return stepdma_pb11_is_running();
-    case ROBOT_AXIS_Y:
-        /* Y 轴沿用 PB10/TIM6/DMA2 通道3，Stepper2 内部负责 DIR2。 */
-        start_result = Stepper2_Start((direction > 0) ? 1u : 0u, steps, speed);
-        return (start_result && Stepper2_IsBusy()) ? 1u : 0u;
     case ROBOT_AXIS_Z:
         /* Z 轴沿用 PB13/TIM7/DMA2 通道4，PU3 内部负责 DIR3。 */
         start_result = PU3_Stepper_Start(
@@ -91,10 +91,10 @@ void RobotArmDriver_Stop(RobotAxisId_t axis)
     switch (axis)
     {
     case ROBOT_AXIS_X:
-        stepdma_pb11_stop();
+        Stepper2_Stop();
         break;
     case ROBOT_AXIS_Y:
-        Stepper2_Stop();
+        stepdma_pb11_stop();
         break;
     case ROBOT_AXIS_Z:
         PU3_Stepper_Stop();
@@ -110,9 +110,9 @@ uint8_t RobotArmDriver_IsBusy(RobotAxisId_t axis)
     switch (axis)
     {
     case ROBOT_AXIS_X:
-        return stepdma_pb11_is_running();
-    case ROBOT_AXIS_Y:
         return Stepper2_IsBusy();
+    case ROBOT_AXIS_Y:
+        return stepdma_pb11_is_running();
     case ROBOT_AXIS_Z:
         return PU3_Stepper_IsRunning();
     default:
@@ -126,9 +126,9 @@ uint32_t RobotArmDriver_GetRemainingSteps(RobotAxisId_t axis)
     switch (axis)
     {
     case ROBOT_AXIS_X:
-        return stepdma_pb11_get_remaining_steps();
-    case ROBOT_AXIS_Y:
         return Stepper2_GetRemainingSteps();
+    case ROBOT_AXIS_Y:
+        return stepdma_pb11_get_remaining_steps();
     case ROBOT_AXIS_Z:
         return PU3_Stepper_GetRemainingSteps();
     default:
@@ -142,9 +142,9 @@ uint32_t RobotArmDriver_GetCompletedSteps(RobotAxisId_t axis)
     switch (axis)
     {
     case ROBOT_AXIS_X:
-        return stepdma_pb11_get_completed_steps();
-    case ROBOT_AXIS_Y:
         return Stepper2_GetCompletedSteps();
+    case ROBOT_AXIS_Y:
+        return stepdma_pb11_get_completed_steps();
     case ROBOT_AXIS_Z:
         return PU3_Stepper_GetCompletedSteps();
     default:

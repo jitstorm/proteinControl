@@ -48,6 +48,8 @@ static volatile uint8_t usart1_temp_buffer[USART1_TEMP_FRAME_SIZE];
 static volatile uint16_t usart1_remote_temperature = 0;
 static volatile uint32_t usart1_remote_temperature_tick = 0;
 static volatile uint32_t usart1_temp_rx_tick = 0;
+/* USART1 的 PA8 与数据寄存器必须由同一完整帧独占，防止重入发送切换 DE。 */
+static volatile uint8_t usart1_tx_busy = 0u;
 volatile uint32_t rs485_tx_call_count = 0;
 volatile uint32_t rs485_tx_success_count = 0;
 volatile uint32_t rs485_tx_txe_timeout_count = 0;
@@ -80,6 +82,40 @@ static void RS485_SetTransmit(USART_TypeDef *USARTx)
     else if (USARTx == USART3)
     {
         GPIO_SetBits(RS485_EN3_PORT, RS485_EN3_PIN);
+    }
+}
+
+static uint8_t USART1_TryAcquireTx(void)
+{
+    uint32_t primask;
+    uint8_t acquired = 0u;
+
+    /* 仅在读写 busy 标志时关中断，完整串口发送期间仍允许实时中断运行。 */
+    primask = __get_PRIMASK();
+    __disable_irq();
+    if (!usart1_tx_busy)
+    {
+        usart1_tx_busy = 1u;
+        acquired = 1u;
+    }
+    if (!primask)
+    {
+        __enable_irq();
+    }
+    return acquired;
+}
+
+static void USART1_ReleaseTx(void)
+{
+    uint32_t primask;
+
+    /* 释放必须发生在 PA8 已恢复接收之后，禁止下一帧提前接管方向脚。 */
+    primask = __get_PRIMASK();
+    __disable_irq();
+    usart1_tx_busy = 0u;
+    if (!primask)
+    {
+        __enable_irq();
     }
 }
 
@@ -316,7 +352,7 @@ void USART1_Init(void)
     GPIO_Init(GPIOC, &GPIO_InitStructure);
 
     // 3. USART 配置（通用�?
-    USART_InitStructure.USART_BaudRate = 9600;
+    USART_InitStructure.USART_BaudRate = 115200;
     USART_InitStructure.USART_WordLength = USART_WordLength_8b;
     USART_InitStructure.USART_StopBits = USART_StopBits_1;
     USART_InitStructure.USART_Parity = USART_Parity_No;
@@ -631,10 +667,18 @@ void UART1Test(void)
 }
 void USART_SendString(USART_TypeDef *USARTx, char *str)
 {
-    while (*str)
+    uint16_t length = 0u;
+
+    if (str == 0)
     {
-        USART_SendByte(USARTx, *str++);
+        return;
     }
+    while (str[length] != '\0')
+    {
+        length++;
+    }
+    /* 字符串也必须作为一个发送单元提交，避免逐字节切换 RS485 方向。 */
+    (void)USART_SendBuffer(USARTx, (uint8_t *)str, length);
 }
 uint8_t USART_SendBuffer(USART_TypeDef *USARTx, uint8_t *buffer, uint16_t length)
 {
@@ -642,6 +686,7 @@ uint8_t USART_SendBuffer(USART_TypeDef *USARTx, uint8_t *buffer, uint16_t length
     uint32_t tx_wait_start;
     uint8_t is_rs485;
     uint8_t is_usart1;
+    uint8_t usart1_tx_acquired = 0u;
 
     is_usart1 = (USARTx == USART1) ? 1u : 0u;
     if (is_usart1)
@@ -651,15 +696,21 @@ uint8_t USART_SendBuffer(USART_TypeDef *USARTx, uint8_t *buffer, uint16_t length
 
     if ((USARTx == 0) || (buffer == 0) || (length == 0u))
     {
-        /* USART1 参数失败时也明确归还 PA8，避免保留未知的发送方向。 */
-        if (USARTx == USART1)
-        {
-            RS485_SetReceive(USART1);
-        }
+        /* 参数失败时尚未取得发送权，不能触碰可能属于其他帧的 PA8。 */
         return 0u;
     }
 
     is_rs485 = ((USARTx == USART1) || (USARTx == USART3)) ? 1u : 0u;
+
+    if (is_usart1)
+    {
+        /* 取得发送权失败时绝不写 DR、TXE、TC 或 PA8，当前整帧保持完整。 */
+        if (!USART1_TryAcquireTx())
+        {
+            return 0u;
+        }
+        usart1_tx_acquired = 1u;
+    }
 
     if (is_rs485)
     {
@@ -730,6 +781,10 @@ uint8_t USART_SendBuffer(USART_TypeDef *USARTx, uint8_t *buffer, uint16_t length
         /* 只有最终 TC 完成且 PA8 已恢复接收，才计为成功。 */
         rs485_tx_success_count++;
     }
+    if (usart1_tx_acquired)
+    {
+        USART1_ReleaseTx();
+    }
     return 1u;
 
 tx_cleanup:
@@ -737,6 +792,11 @@ tx_cleanup:
     if (is_rs485)
     {
         RS485_SetReceive(USARTx);
+    }
+    if (usart1_tx_acquired)
+    {
+        /* 所有 TXE/TC 超时路径同样先归还 PA8，再允许下一帧接管。 */
+        USART1_ReleaseTx();
     }
     return 0u;
 }

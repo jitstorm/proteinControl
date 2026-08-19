@@ -4,7 +4,7 @@
 
 // 定义 GPIO 端口和引脚
 #define MAX31855_CS_PORT GPIOB
-#define MAX31855_CS_PIN GPIO_Pin_2
+#define MAX31855_CS_PIN GPIO_Pin_5
 
 #define MAX31855_SCK_PORT GPIOC
 #define MAX31855_SCK_PIN GPIO_Pin_7
@@ -28,10 +28,10 @@ void MAX31855_Init(void)
     // 使能GPIOA时钟
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB |RCC_APB2Periph_GPIOC, ENABLE);
     // 配置CS和SCK为推挽输出
-    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_6;
+    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_2;
     GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP;
     GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-    GPIO_Init(GPIOC, &GPIO_InitStructure);
+    GPIO_Init(GPIOB, &GPIO_InitStructure);
     // 配置CS和SCK为推挽输出
     GPIO_InitStructure.GPIO_Pin = MAX31855_CS_PIN ;
     GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP;
@@ -46,7 +46,7 @@ void MAX31855_Init(void)
     GPIO_InitStructure.GPIO_Pin = MAX31855_MISO_PIN;
     GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING;
     GPIO_Init(MAX31855_MISO_PORT, &GPIO_InitStructure);
-    GPIO_SetBits(GPIOC, GPIO_Pin_6);
+    GPIO_SetBits(GPIOB, GPIO_Pin_2);
     MAX31855_CS_HIGH(); // 默认拉高CS
     MAX31855_SCK_LOW(); // 默认拉低SCK
 }

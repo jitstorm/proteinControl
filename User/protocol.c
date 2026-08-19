@@ -24,6 +24,7 @@
 #define PROTOCOL_COMMAND_QUEUE_SIZE 4
 /* 步进方向使用 U86 对应的 595[1] 后四位，避免占用单向电机所在的 595[2]。 */
 #define STEP_DIR_X_595_BIT 4u
+#define STEP_DIR_Y_595_BIT 5u
 #define STEP_DIR_RESERVED3_595_BIT 6u
 #define STEP_DIR_RESERVED4_595_BIT 7u
 extern MotorCtrl_t MotorCtrl[MOTOR_NUM]; // �?这是声明
@@ -545,13 +546,11 @@ void getHc165IndexForStepMotor(stepMotor *motor, char HC165number)
 void send_temperature_frame(uint8_t cmd)
 {
     uint8_t data[6];
-    uint16_t remote_temperature;
+  uint16_t local_temperature;
+ local_temperature = (uint16_t)temperature;
 
-    remote_temperature = USART1_GetRemoteTemperature();
-
-
-    data[0] = (uint8_t)(remote_temperature >> 8);
-    data[1] = (uint8_t)remote_temperature;
+    data[0] = (uint8_t)(local_temperature >> 8);
+    data[1] = (uint8_t)local_temperature;
     data[2] = 0;
     data[3] = 0;
     data[4] = 0;
@@ -596,11 +595,31 @@ void send_motor16_timeout_event(uint8_t motor_id, uint8_t direction)
 #define SINGLE_MOTOR_RESULT_INVALID_TIME 0x04u
 #define SINGLE_MOTOR_RESULT_UNSUPPORTED 0x05u
 
-static void Protocol_SendSingleMotorResult(uint8_t cmd, uint8_t result)
+static void Protocol_SendSingleMotorResult(uint8_t cmd, uint8_t result,
+                                           uint8_t motor_id)
 {
     uint8_t response[6] = {0u};
 
+    /* D0 保持结果码，D1 回显电机编号，便于上位机关联异步回包。 */
     response[0] = result;
+    response[1] = motor_id;
+    if (result != SINGLE_MOTOR_RESULT_OK)
+    {
+        SingleMotor_RecordError(result);
+    }
+    send_frame(cmd, response);
+}
+
+static void Protocol_SendSingleMotorTimedResult(uint8_t cmd, uint8_t motor_id,
+                                                uint8_t time_100ms,
+                                                uint8_t result)
+{
+    uint8_t response[6] = {0u};
+
+    /* 06 回包先回显电机与时间，状态码紧随时间字段，便于按请求格式解析。 */
+    response[0] = motor_id;
+    response[1] = time_100ms;
+    response[2] = result;
     if (result != SINGLE_MOTOR_RESULT_OK)
     {
         SingleMotor_RecordError(result);
@@ -613,12 +632,14 @@ static void Protocol_SendSingleMotorResult(uint8_t cmd, uint8_t result)
  * @param cmd 当前命令字。
  * @param result 执行结果码。
  */
-static void Protocol_SendReversibleMotorResult(uint8_t cmd, uint8_t result)
+static void Protocol_SendReversibleMotorResult(uint8_t cmd, uint8_t result,
+                                               uint8_t motor_id)
 {
     uint8_t response[6] = {0u};
 
-    /* 沿用既有应答帧，仅在 D0 返回结果，其他保留字节固定清零。 */
+    /* D0 返回结果，D1 回显电机编号，其他保留字节固定清零。 */
     response[0] = result;
+    response[1] = motor_id;
     if (result != SINGLE_MOTOR_RESULT_OK)
     {
         ReversibleMotor_RecordError(result);
@@ -694,55 +715,60 @@ void handle_command(uint8_t cmd, uint8_t *data)
     case 0x06:
         if (data[0] < 1u || data[0] > SINGLE_MOTOR_COUNT)
         {
-            Protocol_SendSingleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_MOTOR);
+            Protocol_SendSingleMotorTimedResult(cmd, data[0], data[1],
+                                                SINGLE_MOTOR_RESULT_INVALID_MOTOR);
             break;
         }
         if (!Protocol_IsAllZero(data, 2u))
         {
-            Protocol_SendSingleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_ACTION);
+            Protocol_SendSingleMotorTimedResult(cmd, data[0], data[1],
+                                                SINGLE_MOTOR_RESULT_INVALID_ACTION);
             break;
         }
         /* 文档约定 DATA2 为 100ms 单位的单字节定时时间。 */
         duration_ms = (uint32_t)data[1] * 100u;
         if (duration_ms == 0u)
         {
-            Protocol_SendSingleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_TIME);
+            Protocol_SendSingleMotorTimedResult(cmd, data[0], data[1],
+                                                SINGLE_MOTOR_RESULT_INVALID_TIME);
             break;
         }
         SingleMotor_StartTimed(data[0], duration_ms);
-        Protocol_SendSingleMotorResult(cmd, SINGLE_MOTOR_RESULT_OK);
+        Protocol_SendSingleMotorTimedResult(cmd, data[0], data[1],
+                                            SINGLE_MOTOR_RESULT_OK);
         break;
     case 0x07:
         if (data[0] < 1u || data[0] > SINGLE_MOTOR_COUNT)
         {
-            Protocol_SendSingleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_MOTOR);
+            Protocol_SendSingleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_MOTOR, data[0]);
             break;
         }
         if (data[1] < 1u || data[1] > SHIFT_REGISTER_INPUT_CHANNEL_COUNT)
         {
-            Protocol_SendSingleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_SENSOR);
+            Protocol_SendSingleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_SENSOR, data[0]);
             break;
         }
         if (data[2] > 1u || data[5] != 0u)
         {
-            Protocol_SendSingleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_ACTION);
+            Protocol_SendSingleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_ACTION, data[0]);
             break;
         }
         timeout_100ms = (uint16_t)data[3] | ((uint16_t)data[4] << 8);
         if (timeout_100ms == 0u)
         {
-            Protocol_SendSingleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_TIME);
+            Protocol_SendSingleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_TIME, data[0]);
             break;
         }
         SingleMotor_StartSensorTimed(data[0], data[1], data[2],
                                      (uint32_t)timeout_100ms * 100u);
-        Protocol_SendSingleMotorResult(cmd, SINGLE_MOTOR_RESULT_OK);
+        Protocol_SendSingleMotorResult(cmd, SINGLE_MOTOR_RESULT_OK, data[0]);
         break;
     case 0x08:
         /* 查询帧不允许携带参数，返回三字节单向电机运行位图。 */
         if (!Protocol_IsAllZero(data, 0u))
         {
-            Protocol_SendSingleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_ACTION);
+            /* 查询命令没有单一电机编号，D1 保持为零。 */
+            Protocol_SendSingleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_ACTION, 0u);
             break;
         }
         SingleMotor_GetRunningBitmap(bitmap);
@@ -777,62 +803,63 @@ void handle_command(uint8_t cmd, uint8_t *data)
         /* 文档约定 DATA3 为 100ms 单位的单字节定时时间。 */
         if (data[0] < 1u || data[0] > REVERSIBLE_MOTOR_COUNT)
         {
-            Protocol_SendReversibleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_MOTOR);
+            Protocol_SendReversibleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_MOTOR, data[0]);
             break;
         }
         if (data[1] < 1u || data[1] > 2u)
         {
-            Protocol_SendReversibleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_ACTION);
+            Protocol_SendReversibleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_ACTION, data[0]);
             break;
         }
         if (!Protocol_IsAllZero(data, 3u))
         {
-            Protocol_SendReversibleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_ACTION);
+            Protocol_SendReversibleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_ACTION, data[0]);
             break;
         }
         duration_ms = (uint32_t)data[2] * 100u;
         if (duration_ms == 0u)
         {
-            Protocol_SendReversibleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_TIME);
+            Protocol_SendReversibleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_TIME, data[0]);
             break;
         }
         ReversibleMotor_StartTimed(data[0],
                                    (data[1] == 1u) ? REV_MOTOR_FORWARD : REV_MOTOR_REVERSE,
                                    duration_ms);
-        Protocol_SendReversibleMotorResult(cmd, SINGLE_MOTOR_RESULT_OK);
+        Protocol_SendReversibleMotorResult(cmd, SINGLE_MOTOR_RESULT_OK, data[0]);
         break;
     case 0x0B:
         /* 传感器任务在完成全部校验后才允许改变电机输出。 */
         if (data[0] < 1u || data[0] > REVERSIBLE_MOTOR_COUNT)
         {
-            Protocol_SendReversibleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_MOTOR);
+            Protocol_SendReversibleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_MOTOR, data[0]);
             break;
         }
         if (data[1] < 1u || data[1] > 2u || data[3] > 1u)
         {
-            Protocol_SendReversibleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_ACTION);
+            Protocol_SendReversibleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_ACTION, data[0]);
             break;
         }
         if (data[2] < 1u || data[2] > SHIFT_REGISTER_INPUT_CHANNEL_COUNT)
         {
-            Protocol_SendReversibleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_SENSOR);
+            Protocol_SendReversibleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_SENSOR, data[0]);
             break;
         }
         timeout_100ms = (uint16_t)data[4] | ((uint16_t)data[5] << 8);
         if (timeout_100ms == 0u)
         {
-            Protocol_SendReversibleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_TIME);
+            Protocol_SendReversibleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_TIME, data[0]);
             break;
         }
         ReversibleMotor_StartSensorTimed(data[0],
                                          (data[1] == 1u) ? REV_MOTOR_FORWARD : REV_MOTOR_REVERSE,
                                          data[2], data[3], (uint32_t)timeout_100ms * 100u);
-        Protocol_SendReversibleMotorResult(cmd, SINGLE_MOTOR_RESULT_OK);
+        Protocol_SendReversibleMotorResult(cmd, SINGLE_MOTOR_RESULT_OK, data[0]);
         break;
     case 0x0C:
         if (!Protocol_IsAllZero(data, 0u))
         {
-            Protocol_SendReversibleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_ACTION);
+            /* 查询命令没有单一电机编号，D1 保持为零。 */
+            Protocol_SendReversibleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_ACTION, 0u);
             break;
         }
         /* 文档约定 D0..D4 分别返回五路电机状态，D5 保留。 */
@@ -846,18 +873,18 @@ void handle_command(uint8_t cmd, uint8_t *data)
         break;
     case 0x1B:
         send_frame(cmd, data);
-        /* PU1 仅修改 DIR1，确保同片 DIR2、DIR3 等输出保持不变。 */
-        HC595Data[1] = (HC595Data[1] & ~(1 << STEP_DIR_X_595_BIT)) |
-                       ((data[2] & 0x01) << STEP_DIR_X_595_BIT);
+        /* 实际 PU2（Y 轴 PB11）仅修改 DIR2，确保同片其他输出保持不变。 */
+        HC595Data[1] = (HC595Data[1] & ~(1 << STEP_DIR_Y_595_BIT)) |
+                       ((data[2] & 0x01) << STEP_DIR_Y_595_BIT);
         ShiftRegister_WriteAll(HC595Data);
         stepdma_pb11_request_trap(data[0] << 8 | data[1], 500u, data[3] * 200u, 100000u);
         /* 旧调试命令绕过管理层，完成后坐标不可再作为绝对位置依据。 */
-        RobotArm_InvalidatePosition(ROBOT_AXIS_X);
+        RobotArm_InvalidatePosition(ROBOT_AXIS_Y);
         break;
     case 0x1C:
         Protocol_DisablePb10StopSensor();
         send_frame(cmd, data);
-        /* 运行中的第二轴先停止，避免在脉冲输出期间直接切换第二片 595 的 Q5。 */
+        /* 实际 PU1（X 轴 PB10）先停止，避免在脉冲输出期间直接切换 U86 的 DIR1(Q4)。 */
         if (stepdma_pb10_is_running())
         {
             Stepper2_Stop();
@@ -866,7 +893,7 @@ void handle_command(uint8_t cmd, uint8_t *data)
         Delay_us(2u);
         stepdma_pb10_request_trap(data[0] << 8 | data[1], 500, data[3] * 200, 100000);
         /* 保持旧帧行为，仅使管理层放弃该轴的旧坐标。 */
-        RobotArm_InvalidatePosition(ROBOT_AXIS_Y);
+        RobotArm_InvalidatePosition(ROBOT_AXIS_X);
         break;
     case 0x1E:
         /* PU3 沿用两轴步进参数格式，方向由 U86 的 DIR3(Q6) 独立控制。 */
@@ -897,8 +924,8 @@ void handle_command(uint8_t cmd, uint8_t *data)
             Stepper2_SetDirection(data[2]);
             Delay_us(2u);
             stepdma_pb10_request_trap(data[0] << 8 | data[1], 500, data[3] * 200, 100000);
-            /* 带传感器停止的旧命令同样不向管理层报告精确执行步数。 */
-            RobotArm_InvalidatePosition(ROBOT_AXIS_Y);
+            /* 实际 PU1（PB10）带传感器停止，管理层不能报告精确执行步数。 */
+            RobotArm_InvalidatePosition(ROBOT_AXIS_X);
         }
         else
         {
@@ -907,7 +934,8 @@ void handle_command(uint8_t cmd, uint8_t *data)
         }
         break;
     default:
-        Protocol_SendSingleMotorResult(cmd, SINGLE_MOTOR_RESULT_UNSUPPORTED);
+        /* 未知命令没有电机编号，D1 保持为零。 */
+        Protocol_SendSingleMotorResult(cmd, SINGLE_MOTOR_RESULT_UNSUPPORTED, 0u);
         break;
     }
 }

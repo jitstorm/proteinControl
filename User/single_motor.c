@@ -10,18 +10,18 @@ volatile uint8_t g_single_motor_last_error = 0u;
 
 /*
  * 逻辑电机编号依次跳过未接入的 MT1 至 MT5，以及 DIR 专用 595。
- * 电机 1 至 7 对应 595[0] bit1 至 bit7；电机 8 至 11 对应 595[2]
- * bit0 至 bit3；电机 12 至 19 对应 595[3] bit0 至 bit7。
+ * 电机 1 至 8 对应 595[3] bit0 至 bit7；电机 9 至 12 对应 595[2]
+ * bit0 至 bit3；电机 13 至 19 对应 595[0] bit1 至 bit7。
  */
 static const uint8_t single_motor_register_index[SINGLE_MOTOR_COUNT] = {
-    0u, 0u, 0u, 0u, 0u, 0u, 0u,
+    3u, 3u, 3u, 3u, 3u, 3u, 3u, 3u,
     2u, 2u, 2u, 2u,
-    3u, 3u, 3u, 3u, 3u, 3u, 3u, 3u
+    0u, 0u, 0u, 0u, 0u, 0u, 0u
 };
 static const uint8_t single_motor_bit_index[SINGLE_MOTOR_COUNT] = {
-    1u, 2u, 3u, 4u, 5u, 6u, 7u,
+    0u, 1u, 2u, 3u, 4u, 5u, 6u, 7u,
     0u, 1u, 2u, 3u,
-    0u, 1u, 2u, 3u, 4u, 5u, 6u, 7u
+    1u, 2u, 3u, 4u, 5u, 6u, 7u
 };
 
 static uint8_t SingleMotor_IsValidId(uint8_t motor_id)

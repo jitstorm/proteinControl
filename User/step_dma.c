@@ -11,7 +11,7 @@
 #endif
 
 /* =========================
- *  硬件绑定：PB11 输出 STEP
+ *  硬件绑定：实际 PU2 的 PB11 输出 STEP
  * ========================= */
 #define STEP_GPIO GPIOB
 #define STEP_PIN 11
@@ -286,35 +286,52 @@ static void tim5_set_edge_freq(uint32_t fev_hz)
             arr = 0xFFFFu;
     }
 
+    if ((TIM5->CR1 & TIM_CR1_CEN) != 0u)
+    {
+        /* 分段续传期间保持时基连续：PSC 在下一次自然 Update 装载，
+         * 禁止 Immediate/UG 和清 CNT，以免人为延长边界 STEP 间隔。 */
+        TIM5->PSC = (uint16_t)psc;
+        TIM5->ARR = (uint16_t)arr;
+        return;
+    }
+
+    /* 首段定时器尚未运行，允许归零并强制装载初始周期。 */
     TIM_PrescalerConfig(TIM5, (uint16_t)psc, TIM_PSCReloadMode_Immediate);
     TIM_SetAutoreload(TIM5, (uint16_t)arr);
     TIM_SetCounter(TIM5, 0);
-
-    /* 立即生效一次更新 */
     TIM_GenerateEvent(TIM5, TIM_EventSource_Update);
 }
 
 /* =========================
  *  启动一次 DMA 传输：输出 edges 个边沿
  * =========================
- * 为什么先关 TIM 再装 DMA？
- * - 防止在你改 CNDTR/CMAR 的瞬间 TIM 又产生更新事件触发 DMA，造成乱序。
- * - 最稳的时序：停 TIM → 停 DMA → 写寄存器 → 清 Update → 开 DMA → 开 TIM
+ * 首段时基尚未运行，按“停 DMA → 写寄存器 → 开 DMA → 开 TIM”启动。
+ * chunk 续传时 TIM 必须连续运行：仅短暂关闭 DMA 后重装，允许禁用窗口内
+ * 的 Update 请求自然丢弃，下一次有效请求仍从 SET 边沿开始。
  */
 static void dma_start_edges(uint16_t edges)
 {
-    TIM_Cmd(TIM5, DISABLE);
+    uint8_t timer_running;
+
+    timer_running = ((TIM5->CR1 & TIM_CR1_CEN) != 0u) ? 1u : 0u;
     DMA_Cmd(DMA2_Channel2, DISABLE);
 
     /* 重置内存地址与计数器 */
     DMA2_Channel2->CMAR = (uint32_t)s_dma_buf;
     DMA2_Channel2->CNDTR = edges;
 
-    /* 清 Update 标志，避免刚开就多触发一次 */
-    TIM_ClearFlag(TIM5, TIM_FLAG_Update);
-
+    /* 旧 TC 只能在重装后、重新使能 DMA 前清除。 */
+    DMA_ClearITPendingBit(DMA2_IT_TC2);
+    if (!timer_running)
+    {
+        TIM_ClearFlag(TIM5, TIM_FLAG_Update);
+    }
     DMA_Cmd(DMA2_Channel2, ENABLE);
-    TIM_Cmd(TIM5, ENABLE);
+    if (!timer_running)
+    {
+        /* 首段最后才启动时基；chunk 续传绝不停止 TIM5。 */
+        TIM_Cmd(TIM5, ENABLE);
+    }
 }
 
 /* =========================
@@ -339,7 +356,7 @@ uint32_t stepdma_pb11_get_remaining_steps(void)
 }
 
 /* =========================
- *  初始化：PB11 + TIM5 + DMA2_Channel2 + IRQ
+ *  初始化：实际 PU2（PB11）+ TIM5 + DMA2_Channel2 + IRQ
  * ========================= */
 void stepdma_pb11_init(uint32_t tim5_clk_hz)
 {
@@ -779,15 +796,15 @@ void DMA2_Channel2_IRQHandler(void)
 }
 
 /* ============================================================
- * PB10 第二路步进：TIM6 + DMA2_Channel3
+ * 实际 PU1（PB10）步进：TIM6 + DMA2_Channel3
  * 说明：完全照 PB11 的架构写（chunk + normal + TC续段 + 梯形末端到0）
  * ============================================================ */
 
 #define STEP10_GPIO GPIOB
 #define STEP10_PIN 10
 #define STEP10_MASK (1u << STEP10_PIN)
-#define STEPPER2_DIR_595_INDEX 2u
-#define STEPPER2_DIR_BIT 5u
+#define STEPPER2_DIR_595_INDEX 1u
+#define STEPPER2_DIR_BIT 4u
 #define STEPPER2_DIR_MASK (1u << STEPPER2_DIR_BIT)
 #define STEPPER2_MIN_FREQUENCY 1u
 #define STEPPER2_MAX_FREQUENCY 50000u
@@ -931,6 +948,15 @@ static void tim6_set_edge_freq(uint32_t fev_hz)
             arr = 0xFFFFu;
     }
 
+    if ((TIM6->CR1 & TIM_CR1_CEN) != 0u)
+    {
+        /* 分段续传期间不发 UG、不清 CNT，下一次自然 Update 才装载新 PSC。 */
+        TIM6->PSC = (uint16_t)psc;
+        TIM6->ARR = (uint16_t)arr;
+        return;
+    }
+
+    /* 首段尚未运行，按既有方式装载初始周期。 */
     TIM_PrescalerConfig(TIM6, (uint16_t)psc, TIM_PSCReloadMode_Immediate);
     TIM_SetAutoreload(TIM6, (uint16_t)arr);
     TIM_SetCounter(TIM6, 0);
@@ -939,16 +965,26 @@ static void tim6_set_edge_freq(uint32_t fev_hz)
 
 static void dma10_start_edges(uint16_t edges)
 {
-    TIM_Cmd(TIM6, DISABLE);
+    uint8_t timer_running;
+
+    timer_running = ((TIM6->CR1 & TIM_CR1_CEN) != 0u) ? 1u : 0u;
     DMA_Cmd(DMA2_Channel3, DISABLE);
 
     DMA2_Channel3->CMAR = (uint32_t)s10_dma_buf;
     DMA2_Channel3->CNDTR = edges;
 
-    TIM_ClearFlag(TIM6, TIM_FLAG_Update);
-
+    /* 旧 TC 只能在重装后、重新使能 DMA 前清除。 */
+    DMA_ClearITPendingBit(DMA2_IT_TC3);
+    if (!timer_running)
+    {
+        TIM_ClearFlag(TIM6, TIM_FLAG_Update);
+    }
     DMA_Cmd(DMA2_Channel3, ENABLE);
-    TIM_Cmd(TIM6, ENABLE);
+    if (!timer_running)
+    {
+        /* 首段最后才启动时基；chunk 续传保持 TIM6 连续计数。 */
+        TIM_Cmd(TIM6, ENABLE);
+    }
 }
 
 uint8_t stepdma_pb10_is_running(void)
@@ -1285,7 +1321,7 @@ void DMA2_Channel3_IRQHandler(void)
     stepdma_pb10_stop();
 }
 
-/** 初始化第二轴：PB10 STEP、TIM6 和 DMA2 通道3。 */
+/** 初始化实际 PU1：PB10 STEP、TIM6 和 DMA2 通道3。 */
 void Stepper2_Init(void)
 {
     stepdma_pb10_init(72000000u);
@@ -1299,7 +1335,7 @@ void Stepper2_SetDirection(uint8_t direction)
         return;
     }
 
-    /* 仅修改第二片 595 的 Q5 位，避免影响同片其他输出。 */
+    /* 实际 PU1（X 轴）的方向使用 U86 DIR1(Q4)，仅修改 HC595Data[1] 的该位。 */
     if (direction)
     {
         HC595Data[STEPPER2_DIR_595_INDEX] |= (uint8_t)STEPPER2_DIR_MASK;
@@ -1311,7 +1347,7 @@ void Stepper2_SetDirection(uint8_t direction)
     ShiftRegister_WriteAll(HC595Data);
 }
 
-/** 启动第二轴梯形加减速运动，运行中重复启动返回 0。 */
+/** 启动实际 PU1 的梯形加减速运动，运行中重复启动返回 0。 */
 uint8_t Stepper2_Start(uint8_t direction, uint32_t steps, uint32_t target_frequency)
 {
     if (steps == 0u || stepdma_pb10_is_running())
@@ -1410,6 +1446,15 @@ static void PU3_SetEdgeFrequency(uint32_t edge_frequency)
         divisor = 1u;
     if (divisor > 65536u)
         divisor = 65536u;
+    if ((PU3_TIMER->CR1 & TIM_CR1_CEN) != 0u)
+    {
+        /* PU3 续段时不写 Immediate/UG 且不清 CNT，保持当前时基相位。 */
+        PU3_TIMER->PSC = 0u;
+        PU3_TIMER->ARR = (uint16_t)(divisor - 1u);
+        return;
+    }
+
+    /* 首段尚未运行，按既有方式初始化计数起点。 */
     TIM_PrescalerConfig(PU3_TIMER, 0u, TIM_PSCReloadMode_Immediate);
     TIM_SetAutoreload(PU3_TIMER, (uint16_t)(divisor - 1u));
     TIM_SetCounter(PU3_TIMER, 0u);
@@ -1417,16 +1462,25 @@ static void PU3_SetEdgeFrequency(uint32_t edge_frequency)
 
 static void PU3_LoadChunk(uint32_t steps)
 {
-    TIM_Cmd(PU3_TIMER, DISABLE);
+    uint8_t timer_running;
+
+    timer_running = ((PU3_TIMER->CR1 & TIM_CR1_CEN) != 0u) ? 1u : 0u;
     DMA_Cmd(PU3_DMA_CHANNEL, DISABLE);
     DMA_ClearITPendingBit(DMA2_IT_TC4);
-    TIM_ClearFlag(PU3_TIMER, TIM_FLAG_Update);
     s_pu3.current_chunk_steps = steps;
     PU3_DMA_CHANNEL->CMAR = (uint32_t)s_pu3_edges;
     PU3_DMA_CHANNEL->CNDTR = (uint16_t)(steps * 2u);
-    /* 先开 DMA，再开定时器，保证第一个更新事件写出置高 edge。 */
+    if (!timer_running)
+    {
+        TIM_ClearFlag(PU3_TIMER, TIM_FLAG_Update);
+    }
+    /* 首段先开 DMA 再开定时器；续传不停止 TIM7。 */
     DMA_Cmd(PU3_DMA_CHANNEL, ENABLE);
-    TIM_Cmd(PU3_TIMER, ENABLE);
+    if (!timer_running)
+    {
+        /* 首段最后启动时基；chunk 续传保持 TIM7 连续计数。 */
+        TIM_Cmd(PU3_TIMER, ENABLE);
+    }
 }
 
 /** 初始化 PU3 的 PB13、TIM7 和 DMA2 通道4。 */

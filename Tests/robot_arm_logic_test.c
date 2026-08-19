@@ -248,6 +248,28 @@ int main(void)
     TEST_CHECK(s_start_count[ROBOT_AXIS_Y] == y_starts);
     TEST_CHECK(s_start_count[ROBOT_AXIS_Z] == z_starts);
 
+    /* WAIT_START 阶段 STOP：没有输出脉冲，坐标有效性保留且立即允许新任务。 */
+    TEST_CHECK(RobotArm_MoveTo(11, 21, 31) == ROBOT_ARM_OK);
+    RobotArm_Stop();
+    RobotArm_GetStatus(&status);
+    RobotArm_GetMoveDebug(&move_debug);
+    TEST_CHECK(RobotArm_IsBusy() == 0u);
+    TEST_CHECK(status.arm_state == ROBOT_ARM_IDLE);
+    TEST_CHECK(status.operation == ROBOT_OP_NONE);
+    TEST_CHECK(status.move_to_state == ROBOT_MOVE_TO_IDLE);
+    TEST_CHECK(status.error_code == ROBOT_ARM_ERR_STOPPED);
+    TEST_CHECK(status.x_valid == 1u && status.y_valid == 1u && status.z_valid == 1u);
+    TEST_CHECK(RobotArm_GetX() == 10 && RobotArm_GetY() == 20 && RobotArm_GetZ() == 30);
+    TEST_CHECK(move_debug.axis_progress[ROBOT_AXIS_X] == ROBOT_MOVE_AXIS_NOT_REQUIRED);
+    TEST_CHECK(move_debug.axis_progress[ROBOT_AXIS_Y] == ROBOT_MOVE_AXIS_NOT_REQUIRED);
+    TEST_CHECK(move_debug.axis_progress[ROBOT_AXIS_Z] == ROBOT_MOVE_AXIS_NOT_REQUIRED);
+    TEST_CHECK(move_debug.finalize_reason == ROBOT_MOVE_FINALIZE_STOPPED);
+    TEST_CHECK(RobotArm_MoveTo(12, 22, 32) == ROBOT_ARM_OK);
+    RobotArm_GetStatus(&status);
+    TEST_CHECK(status.error_code == 0);
+    TEST_CHECK(RobotArm_IsBusy() == 1u);
+    RobotArm_Stop();
+
     /* MoveTo 期间拒绝插入任务，Stop 后不得继续启动后续轴。 */
     {
         uint32_t y_starts = s_start_count[ROBOT_AXIS_Y];
@@ -257,7 +279,22 @@ int main(void)
         TEST_CHECK(RobotArm_MoveTo(12, 22, 32) == ROBOT_ARM_ERR_BUSY);
         TEST_CHECK(RobotArm_MoveYRelative(1, 100u) == ROBOT_ARM_ERR_BUSY);
         RobotArm_Stop();
+        RobotArm_GetStatus(&status);
+        RobotArm_GetMoveDebug(&move_debug);
+        TEST_CHECK(s_busy[ROBOT_AXIS_X] == 0u);
+        TEST_CHECK(s_busy[ROBOT_AXIS_Y] == 0u);
+        TEST_CHECK(s_busy[ROBOT_AXIS_Z] == 0u);
+        TEST_CHECK(status.x_state == ROBOT_AXIS_IDLE);
+        TEST_CHECK(status.y_state == ROBOT_AXIS_IDLE);
+        TEST_CHECK(status.z_state == ROBOT_AXIS_IDLE);
+        TEST_CHECK(status.arm_state == ROBOT_ARM_IDLE);
+        TEST_CHECK(status.operation == ROBOT_OP_NONE);
+        TEST_CHECK(status.move_to_state == ROBOT_MOVE_TO_IDLE);
+        TEST_CHECK(status.error_code == ROBOT_ARM_ERR_STOPPED);
+        TEST_CHECK(move_debug.finalize_reason == ROBOT_MOVE_FINALIZE_STOPPED);
+        TEST_CHECK(RobotArm_IsBusy() == 0u);
         RobotArm_Task();
+        TEST_CHECK(RobotArm_IsBusy() == 0u);
         TEST_CHECK(s_start_count[ROBOT_AXIS_Y] == y_starts);
         TEST_CHECK(s_start_count[ROBOT_AXIS_Z] == z_starts);
         TEST_CHECK(RobotArm_IsHomed(ROBOT_AXIS_X) == 1u);

@@ -293,9 +293,14 @@ int main(void)
     {
         /* 串口1的485协议帧仅由中断入队，在主循环中统一解析。 */
         USART3_Process();
-        task_temperature_report();
+        /*
+         * 先清空已到达的命令并发送 ACK/response，使周期 0x00 主动上报
+         * 在同一轮主循环中只能排在命令回复之后，避免临界时刻抢占回复。
+         */
         task_uart_frames();
         task_protocol_commands();
+        /* 0x00 为低优先级主动上报；USART 发送入口忙时会返回失败，本次上报可跳过。 */
+        task_temperature_report();
         // task_step_done_report();
         task_165_input_scan();
         task_input_change_report();

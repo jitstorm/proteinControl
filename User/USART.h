@@ -29,6 +29,9 @@ void USART3_Process(void);
  * @brief 以独立帧方式发送一个字节，并在结束或失败时恢复 RS485 接收态。
  */
 uint8_t USART_SendByte(USART_TypeDef* USARTx, uint8_t data);
+/**
+ * @brief 将字符串作为一个连续发送单元输出，避免 RS485 在字符之间切换方向。
+ */
 void USART_SendString(USART_TypeDef* USARTx, char *str);
 /**
  * @brief 独占 RS485 发送方向完成一个缓冲区，并在最终 TC 或失败后恢复接收态。

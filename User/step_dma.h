@@ -45,11 +45,11 @@ void stepdma_pb10_move_steps(uint32_t steps, uint32_t fstep_hz);
 void stepdma_pb10_move_trap(uint32_t steps, uint32_t f_start, uint32_t f_max, uint32_t accel);
 void stepdma_pb10_request_trap(uint32_t steps, uint32_t f_start, uint32_t f_max, uint32_t accel);
 
-/** 初始化第二轴：PB10 STEP、TIM6 和 DMA2 通道3。 */
+/** 初始化实际 PU1：PB10 STEP、TIM6 和 DMA2 通道3。 */
 void Stepper2_Init(void);
 /** 设置第二轴方向；运行中请求会被忽略，避免脉冲期间换向。 */
 void Stepper2_SetDirection(uint8_t direction);
-/** 启动第二轴梯形加减速运动，运行中重复启动返回 0。 */
+/** 启动实际 PU1 的梯形加减速运动，运行中重复启动返回 0。 */
 uint8_t Stepper2_Start(uint8_t direction, uint32_t steps, uint32_t target_frequency);
 /** 立即停止第二轴，并将 PB10 保持为低电平。 */
 void Stepper2_Stop(void);

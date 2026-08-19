@@ -230,6 +230,18 @@ int main(void)
     TEST_CHECK(s_tx[before + 1u].seq == 105u);
     TEST_CHECK(s_tx[before + 1u].data[1] == ROBOT_ARM_EVENT_STOPPED);
 
+    /* STOPPED EVENT 发送完成后协议 active 必须释放，下一条 MOVE_TO 不得被 BUSY 拒绝。 */
+    TestClearFrame(&request, ROBOT_ARM_CMD_MOVE_TO, 107u);
+    ProtocolV2_WriteI32LE(&request.data[0], 1);
+    ProtocolV2_WriteI32LE(&request.data[4], 2);
+    ProtocolV2_WriteI32LE(&request.data[8], 3);
+    RobotArmProtocol_HandleFrame(&request);
+    TEST_CHECK(s_last_call == 5u);
+    TEST_CHECK(s_tx[s_tx_count - 1u].cmd == ROBOT_ARM_CMD_ACK);
+    TEST_CHECK(s_tx[s_tx_count - 1u].data[1] == ROBOT_ARM_ACK_ACCEPTED);
+    TestSetAsyncResult(ROBOT_MOVE_END_COMPLETED, ROBOT_ARM_OK);
+    RobotArmProtocol_Task();
+
     s_next_result = ROBOT_ARM_OK;
     TestClearFrame(&request, ROBOT_ARM_CMD_CLEAR_ERROR, 7u);
     RobotArmProtocol_HandleFrame(&request);

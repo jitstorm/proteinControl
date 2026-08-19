@@ -1276,6 +1276,7 @@ RobotArmResult_t RobotArm_MoveTo(int32_t x, int32_t y, int32_t z)
          ROBOT_MOVE_AXIS_NOT_REQUIRED))
     {
         s_robot_arm.last_move_end_reason = ROBOT_MOVE_END_COMPLETED;
+        s_robot_arm.error_code = 0;
         s_move_debug.finalize_reason = ROBOT_MOVE_FINALIZE_COMPLETED;
         return ROBOT_ARM_OK;
     }
@@ -1405,27 +1406,45 @@ RobotArmResult_t RobotArm_Home(void)
 void RobotArm_Stop(void)
 {
     uint8_t index;
+    uint8_t was_running;
     for (index = 0u; index < ROBOT_AXIS_COUNT; index++)
     {
         RobotAxis_t *robot_axis = &s_robot_arm.axis[index];
-        if (robot_axis->active || RobotArmDriver_IsBusy((RobotAxisId_t)index))
+        was_running = (uint8_t)(
+            robot_axis->active ||
+            RobotArmDriver_IsBusy((RobotAxisId_t)index) ||
+            (s_robot_arm.move_axis_progress[index] ==
+             ROBOT_MOVE_AXIS_RUNNING));
+
+        /* STOP 对三轴无条件下发，清除与管理层标志不同步的底层 running。 */
+        RobotArmDriver_Stop((RobotAxisId_t)index);
+        if (was_running)
         {
-            RobotArmDriver_Stop((RobotAxisId_t)index);
+            /* 已输出过部分脉冲时当前位置不可推断，绝不能提交 target。 */
             robot_axis->position_valid = 0u;
             if (robot_axis->state == ROBOT_AXIS_HOMING)
             {
                 robot_axis->homed = 0u;
             }
-            robot_axis->active = 0u;
-            robot_axis->state = ROBOT_AXIS_IDLE;
-            robot_axis->end_reason = ROBOT_MOVE_END_STOPPED;
         }
+        robot_axis->active = 0u;
+        robot_axis->state = ROBOT_AXIS_IDLE;
+        robot_axis->moving_direction = 0;
+        robot_axis->command_steps = 0u;
+        robot_axis->move_start_ms = 0u;
+        robot_axis->move_timeout_ms = 0u;
+        robot_axis->end_reason = ROBOT_MOVE_END_STOPPED;
+        s_robot_arm.move_axis_progress[index] =
+            ROBOT_MOVE_AXIS_NOT_REQUIRED;
+        s_move_debug.axis_progress[index] =
+            ROBOT_MOVE_AXIS_NOT_REQUIRED;
     }
     s_robot_arm.last_move_end_reason = ROBOT_MOVE_END_STOPPED;
     s_robot_arm.error_code = ROBOT_ARM_ERR_STOPPED;
     s_robot_arm.operation = ROBOT_OP_NONE;
     s_robot_arm.state = ROBOT_ARM_IDLE;
     RobotArm_ResetCombinedStates();
+    s_move_debug.finalize_reason = ROBOT_MOVE_FINALIZE_STOPPED;
 }
 
 /** 清除管理层 ERROR；不会恢复坐标有效性或回零状态。 */
