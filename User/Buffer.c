@@ -1,6 +1,7 @@
 #ifndef BUFFER_CPP
 #define BUFFER_CPP
 #include "Buffer.h"
+#include "USART.h"
 // 计算校验和的函数
 uint8_t calculateChecksum(uint8_t *packet) {
   uint8_t checksum = 0;
@@ -22,12 +23,19 @@ Packet createHandshakeReply() {
   pkt.computeChecksum();
   return pkt;
 }
+/**
+ * 通过统一 UART 发送边界输出兼容 Packet。
+ *
+ * 此遗留入口不得直接写 USART 数据寄存器；对 USART1 主机 RS485，
+ * 必须由 USART_SendBuffer 保证整包发送和最终 TC 确认。
+ *
+ * @param USARTx 目标 UART。
+ * @param pkt 待发送的兼容数据包。
+ */
 void sendPacket(USART_TypeDef* USARTx, const Packet& pkt) {
-    const uint8_t* p = (const uint8_t*)&pkt;
-    for (size_t i = 0; i < sizeof(Packet); ++i) {
-        while (!(USARTx->SR & USART_SR_TXE));  // 等待发送缓冲区为空
-        USART_SendData(USARTx, p[i]);
-    } 
+  const uint8_t* p = (const uint8_t*)&pkt;
+    /* 统一走阻塞整帧发送边界，禁止此兼容入口绕过 USART1 的发送权和最终 TC 确认。 */
+    (void)USART_SendBuffer(USARTx, (uint8_t*)p, sizeof(Packet));
 }
 
 bool receivePacket(Packet *packet)

@@ -22,6 +22,38 @@
 
 #define MAIN_LOOP_PROCESS_LIMIT 8u
 #define MAIN_LOOP_RX_BYTE_LIMIT 64u
+#define MAIN_LOOP_SLOW_THRESHOLD_MS 100u
+
+typedef enum
+{
+    /** 主循环当前未运行具体业务任务，或上一轮已经完成。 */
+    MAIN_STAGE_IDLE = 0u,
+    /** 正在消费 USART3 的接收缓冲区。 */
+    MAIN_STAGE_USART3,
+    /** 正在把 USART1 接收字节组为 V1/V2 协议帧。 */
+    MAIN_STAGE_UART_FRAMES,
+    /** 正在执行已入队的 V1 协议命令及其同步回复。 */
+    MAIN_STAGE_PROTOCOL,
+    /** 正在读取两片 74HC165 的完整输入快照。 */
+    MAIN_STAGE_INPUT_SCAN,
+    /** 正在比较输入快照并发送变化事件。 */
+    MAIN_STAGE_INPUT_REPORT,
+    /** 正在推进单向和正反转电机的非阻塞定时状态。 */
+    MAIN_STAGE_MOTOR,
+    /** 正在推进 RobotArm 的 Home、移动或安全状态机。 */
+    MAIN_STAGE_ROBOT_ARM,
+    /** 正在处理 RobotArm V2 的异步终态与发送队列。 */
+    MAIN_STAGE_ROBOT_PROTOCOL
+} MainLoopStage;
+
+/* 主循环卡顿诊断仅保存在 RAM；单位为 TIM2 的毫秒单调 tick。 */
+volatile uint8_t dbg_main_stage = MAIN_STAGE_IDLE;
+volatile uint32_t dbg_main_loop_last_duration_ms = 0u;
+volatile uint32_t dbg_main_loop_max_duration_ms = 0u;
+volatile uint32_t dbg_main_loop_slow_count = 0u;
+volatile uint8_t dbg_main_loop_last_slow_stage = MAIN_STAGE_IDLE;
+volatile uint32_t dbg_main_loop_last_slow_duration_ms = 0u;
+static uint32_t dbg_main_stage_start_ms;
 
 stepMotor stepMotorA = {GPIOB, GPIO_Pin_12, 0, 0, 1, 9, 1000, 1000, 0, 0, 100, 0, 0, 0, 0, 0, 4, 2000, 0};
 
@@ -36,6 +68,44 @@ static uint8_t inputData_inited;
 static uint32_t last_temperature_report_ms;
 static uint32_t last_single_motor_task_ms;
 
+/**
+ * 标记即将执行的主循环任务。
+ *
+ * 若任务在硬件等待中停住，Keil Watch 中的 dbg_main_stage 会保持在该任务，
+ * 用于把秒级延迟定位到协议、输入扫描、电机或机械臂模块。
+ *
+ * @param stage 当前即将运行的主循环关键任务标识。
+ */
+static void Main_DebugBeginStage(MainLoopStage stage)
+{
+    dbg_main_stage = (uint8_t)stage;
+    dbg_main_stage_start_ms = millis();
+}
+
+/**
+ * 汇总刚完成任务的耗时并保存慢任务现场。
+ *
+ * @return 刚完成任务所用的毫秒数。
+ */
+static uint32_t Main_DebugEndStage(void)
+{
+    uint32_t duration_ms = millis() - dbg_main_stage_start_ms;
+
+    if (duration_ms > MAIN_LOOP_SLOW_THRESHOLD_MS)
+    {
+        dbg_main_loop_slow_count++;
+        dbg_main_loop_last_slow_stage = dbg_main_stage;
+        dbg_main_loop_last_slow_duration_ms = duration_ms;
+    }
+    return duration_ms;
+}
+
+/**
+ * 执行低优先级温度周期上报。
+ *
+ * 每秒读取热电偶并尝试发送 CMD=0x00；命令回复已在本轮更早阶段处理，
+ * 若发送权在首字节前不可用则由发送层记录失败，本轮温度可跳过而不阻塞命令。
+ */
 static void task_temperature_report(void)
 {
     float temp;
@@ -51,15 +121,26 @@ static void task_temperature_report(void)
     send_temperature_frame(0x00);
 }
 
+/**
+ * 将 RobotArm V2 队列中的完整帧同步提交给 USART1。
+ *
+ * 返回成功代表全部字节已发送且最终 TC 已确认；若首字节前未取得发送权则返回失败，
+ * RobotArm 发送队列保留该帧等待后续轮询，绝不重发已经开始的帧。
+ *
+ * @param frame 固定 24B V2 原始帧。
+ * @param length 本次原始帧长度。
+ * @return 1 表示完整物理发送完成；0 表示整帧尚未开始发送。
+ */
 static uint8_t task_protocol_v2_send(const uint8_t *frame, uint8_t length)
 {
-    uint32_t timeout_before = dbg_usart2_tx_timeout;
-    /* 复用现有 USART1 RS485 发送入口，不改变波特率和方向控制资源。 */
+    /* V2 命令字位于固定帧第 2 字节，用于记录首字节前失败的持久现场。 */
+    USART1_SetTxDiagnosticCommand((length >= 3u) ? frame[2] : 0xFFu);
+    /* 发送层返回成功即代表最终 TC 已确认；软超时诊断不能把已完整发送的帧当作失败重发。 */
     if (!USART_SendBuffer(USART1, (uint8_t *)frame, length))
     {
         return 0u;
     }
-    return (dbg_usart2_tx_timeout == timeout_before) ? 1u : 0u;
+    return 1u;
 }
 
 static void task_uart_frames(void)
@@ -291,22 +372,47 @@ int main(void)
     ShiftRegister_WriteAll(HC595Data);
     while (1)
     {
+        uint32_t loop_start_ms = millis();
+
         /* 串口1的485协议帧仅由中断入队，在主循环中统一解析。 */
+        Main_DebugBeginStage(MAIN_STAGE_USART3);
         USART3_Process();
+        (void)Main_DebugEndStage();
         /*
          * 先清空已到达的命令并发送 ACK/response，使周期 0x00 主动上报
          * 在同一轮主循环中只能排在命令回复之后，避免临界时刻抢占回复。
          */
+        Main_DebugBeginStage(MAIN_STAGE_UART_FRAMES);
         task_uart_frames();
+        (void)Main_DebugEndStage();
+        Main_DebugBeginStage(MAIN_STAGE_PROTOCOL);
         task_protocol_commands();
+        (void)Main_DebugEndStage();
         /* 0x00 为低优先级主动上报；USART 发送入口忙时会返回失败，本次上报可跳过。 */
-        task_temperature_report();
+        // task_temperature_report();
         // task_step_done_report();
+        Main_DebugBeginStage(MAIN_STAGE_INPUT_SCAN);
         task_165_input_scan();
+        (void)Main_DebugEndStage();
+        Main_DebugBeginStage(MAIN_STAGE_INPUT_REPORT);
         task_input_change_report();
+        (void)Main_DebugEndStage();
+        Main_DebugBeginStage(MAIN_STAGE_MOTOR);
         task_single_motor();
+        (void)Main_DebugEndStage();
         /* 在主循环推进动作完成，不在 DMA 中断内执行业务状态机。 */
+        Main_DebugBeginStage(MAIN_STAGE_ROBOT_ARM);
         RobotArm_Task();
+        (void)Main_DebugEndStage();
+        Main_DebugBeginStage(MAIN_STAGE_ROBOT_PROTOCOL);
         RobotArmProtocol_Task();
+        (void)Main_DebugEndStage();
+
+        dbg_main_loop_last_duration_ms = millis() - loop_start_ms;
+        if (dbg_main_loop_last_duration_ms > dbg_main_loop_max_duration_ms)
+        {
+            dbg_main_loop_max_duration_ms = dbg_main_loop_last_duration_ms;
+        }
+        dbg_main_stage = MAIN_STAGE_IDLE;
     }
 }

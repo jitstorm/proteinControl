@@ -31,29 +31,29 @@ void handle_command(uint8_t cmd, uint8_t *data);
 void send_frame_usart1(uint8_t cmd, uint8_t *data);
 
 /**
- * 初始化 USART2 TX 诊断状态。
+ * 初始�?USART2 TX 诊断状态�?
  */
 void Protocol_InitTxDiagnostics(void);
 
 /**
- * 显式清除最近一次 USART2 TX timeout 证据。
+ * 显式清除最近一�?USART2 TX timeout 证据�?
  */
 void Protocol_ResetUsart2TxTimeoutEvidence(void);
 
 /**
- * 原子记录 USART2 TX timeout 现场。
+ * 原子记录 USART2 TX timeout 现场�?
  *
- * stage=1 表示 TXE timeout，stage=2 表示 TC timeout。
+ * stage=1 表示 TXE timeout，stage=2 表示 TC timeout�?
  */
 void Protocol_RecordUsart2TxTimeout(uint8_t stage);
 
 /**
- * 发送命令 ACK 或查询回复。
+ * 发送命�?ACK 或查询回复�?
  */
 void send_frame(uint8_t cmd, uint8_t *data);
 
 /**
- * 发送周期或状态主动上报。
+ * 发送周期或状态主动上报�?
  */
 void send_frame_event(uint8_t cmd, uint8_t *data);
 
@@ -78,5 +78,13 @@ extern volatile uint32_t dbg_cmd_queue_overflow;
 extern volatile uint32_t dbg_rx_cmd_count[256];
 extern volatile uint32_t dbg_handle_cmd_count[256];
 extern volatile uint32_t dbg_tx_cmd_count[256];
+
+/* CMD=0x08 �ֳ����ʹ�� TIM2 �ĺ��뵥��ʱ�ӣ��������� RAM �� Keil Watch �鿴�� */
+extern volatile uint32_t dbg_cmd08_rx_time_ms;
+extern volatile uint32_t dbg_cmd08_handle_time_ms;
+extern volatile uint32_t dbg_cmd08_tx_done_time_ms;
+extern volatile uint32_t dbg_cmd08_max_queue_delay_ms;
+extern volatile uint32_t dbg_cmd08_max_process_tx_delay_ms;
+extern volatile uint32_t dbg_cmd08_max_total_delay_ms;
 
 #endif

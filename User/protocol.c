@@ -22,12 +22,12 @@
 #define PROTOCOL_TAIL 0x55
 #define FRAME_SIZE 10
 #define PROTOCOL_COMMAND_QUEUE_SIZE 4
-/* 步进方向使用 U86 对应的 595[1] 后四位，避免占用单向电机所在的 595[2]。 */
+/* 步进方向使用 U86 对应�?595[1] 后四位，避免占用单向电机所在的 595[2]�?*/
 #define STEP_DIR_X_595_BIT 4u
 #define STEP_DIR_Y_595_BIT 5u
 #define STEP_DIR_RESERVED3_595_BIT 6u
 #define STEP_DIR_RESERVED4_595_BIT 7u
-extern MotorCtrl_t MotorCtrl[MOTOR_NUM]; // �?这是声明
+extern MotorCtrl_t MotorCtrl[MOTOR_NUM]; // �?这是声明
 extern stepMotor stepMotorA;
 uint8_t pwm_duty;
 uint16_t pwm_duty0;
@@ -73,22 +73,38 @@ volatile uint8_t dbg_usart2_tx_last_timeout_source = 0;
 volatile uint8_t dbg_usart2_tx_current_byte_index = 0;
 volatile uint8_t dbg_usart2_tx_current_cmd = 0;
 volatile uint8_t dbg_usart2_tx_current_source = 0;
+/* CMD=0x08 查询回复的完整发送结果，专用于确�?busy 是否导致整帧未开始�?*/
+volatile uint32_t dbg_cmd08_request_count = 0u;
+volatile uint32_t dbg_cmd08_reply_attempt_count = 0u;
+volatile uint32_t dbg_cmd08_reply_success_count = 0u;
+volatile uint32_t dbg_cmd08_reply_failure_count = 0u;
+volatile uint8_t dbg_cmd08_last_reply_failure_reason = 0u;
+/* 周期温度 0x00 仅在发送权未取得时跳过，不能阻塞或抢占命令回复�?*/
+volatile uint32_t dbg_temperature_report_skipped_count = 0u;
+volatile uint8_t dbg_temperature_report_last_skip_reason = 0u;
+/* CMD=0x08 �������ؼ�ʱ�̼���ʷ����ӳ٣�ȫ��ʹ�� TIM2 �ĺ��� tick�� */
+volatile uint32_t dbg_cmd08_rx_time_ms = 0u;
+volatile uint32_t dbg_cmd08_handle_time_ms = 0u;
+volatile uint32_t dbg_cmd08_tx_done_time_ms = 0u;
+volatile uint32_t dbg_cmd08_max_queue_delay_ms = 0u;
+volatile uint32_t dbg_cmd08_max_process_tx_delay_ms = 0u;
+volatile uint32_t dbg_cmd08_max_total_delay_ms = 0u;
 
 typedef enum
 {
     TX_SOURCE_ACK = 0,
     TX_SOURCE_EVENT,
+    TX_SOURCE_PERIODIC,
     TX_SOURCE_DEBUG
 } TxSource;
 
-static void send_frame_internal(uint8_t cmd, uint8_t *data, TxSource source);
+static uint8_t send_frame_internal(uint8_t cmd, uint8_t *data, TxSource source);
 #if 0
 static void send_frame_debug(uint8_t cmd, uint8_t *data);
 #endif
 
 /**
- * 显式清除最近一次 USART2 TX timeout 证据。
- */
+ * 显式清除最近一�?USART2 TX timeout 证据�? */
 void Protocol_ResetUsart2TxTimeoutEvidence(void)
 {
     uint32_t primask;
@@ -107,8 +123,7 @@ void Protocol_ResetUsart2TxTimeoutEvidence(void)
 }
 
 /**
- * 初始化 USART2 TX 诊断状态。
- */
+ * 初始�?USART2 TX 诊断状态�? */
 void Protocol_InitTxDiagnostics(void)
 {
     Protocol_ResetUsart2TxTimeoutEvidence();
@@ -118,10 +133,8 @@ void Protocol_InitTxDiagnostics(void)
 }
 
 /**
- * 原子记录 USART2 TX timeout 现场。
- *
- * stage=1 表示 TXE timeout，stage=2 表示 TC timeout。
- */
+ * 原子记录 USART2 TX timeout 现场�? *
+ * stage=1 表示 TXE timeout，stage=2 表示 TC timeout�? */
 void Protocol_RecordUsart2TxTimeout(uint8_t stage)
 {
     uint32_t now;
@@ -143,7 +156,7 @@ void Protocol_RecordUsart2TxTimeout(uint8_t stage)
     }
 }
 
-/* PB10 传感器停止配置，只在 0x20 命令运行期间有效。 */
+/* PB10 传感器停止配置，只在 0x20 命令运行期间有效�?*/
 static uint8_t pb10_stop_sensor_enabled = 0;
 static uint8_t pb10_stop_sensor_index = 0;
 static uint8_t pb10_stop_sensor_mask = 0;
@@ -163,7 +176,7 @@ static uint8_t Protocol_ConfigurePb10StopSensor(uint8_t sensor_number, uint8_t t
 {
     uint8_t sensor_index;
 
-    /* 硬件仅有 16 路 HC165 输入，拒绝越界编号以避免访问 inputData 越界。 */
+    /* 硬件仅有 16 �?HC165 输入，拒绝越界编号以避免访问 inputData 越界�?*/
     if (sensor_number < 1u || sensor_number > SHIFT_REGISTER_INPUT_CHANNEL_COUNT)
     {
         Protocol_DisablePb10StopSensor();
@@ -171,7 +184,7 @@ static uint8_t Protocol_ConfigurePb10StopSensor(uint8_t sensor_number, uint8_t t
     }
 
     sensor_index = (uint8_t)((sensor_number - 1u) / 8u);
-    /* 串行读取顺序与传感器编号相反，因此按当前芯片数量反序换算。 */
+    /* 串行读取顺序与传感器编号相反，因此按当前芯片数量反序换算�?*/
     pb10_stop_sensor_index = (uint8_t)((SHIFT_REGISTER_INPUT_COUNT - 1u) - sensor_index);
     pb10_stop_sensor_mask = (uint8_t)(1u << ((sensor_number - 1u) % 8u));
     pb10_stop_sensor_level = trigger_level ? 1u : 0u;
@@ -190,7 +203,7 @@ void Protocol_CheckPb10StopSensor(const uint8_t *sensor_data)
         return;
     }
 
-    /* 步进已自然结束时清除绑定，防止后续误触发。 */
+    /* 步进已自然结束时清除绑定，防止后续误触发�?*/
     if (!stepdma_pb10_is_running())
     {
         Protocol_DisablePb10StopSensor();
@@ -203,7 +216,7 @@ void Protocol_CheckPb10StopSensor(const uint8_t *sensor_data)
         return;
     }
 
-    /* 先撤销传感器绑定再停机，保证同一次触发只上报一次。 */
+    /* 先撤销传感器绑定再停机，保证同一次触发只上报一次�?*/
     report_data[0] = 1u;
     report_data[1] = 1u;
     report_data[2] = pb10_stop_sensor_number;
@@ -228,7 +241,7 @@ void initPacket(Packet *pkt)
 
 void computeChecksum(Packet *pkt)
 {
-    /* 校验和覆盖帧头、命令和 6 字节数据，帧尾固定放在最后一个字节。 */
+    /* 校验和覆盖帧头、命令和 6 字节数据，帧尾固定放在最后一个字节�?*/
     pkt->SUM = pkt->STX + pkt->CMD + pkt->DATA1 + pkt->DATA2 +
                pkt->DATA3 + pkt->DATA4 + pkt->DATA5 + pkt->DATA6;
 }
@@ -264,29 +277,31 @@ void sendPacket(USART_TypeDef *USARTx, const Packet *pkt)
     frame[5] = pkt->DATA4;
     frame[6] = pkt->DATA5;
     frame[7] = pkt->DATA6;
-    /* 线上的固定顺序为帧尾 0x55 在前，校验和在最后。 */
+    /* 线上的固定顺序为帧尾 0x55 在前，校验和在最后�?*/
     frame[8] = pkt->ETX;
     frame[9] = pkt->SUM;
 
-    /* Packet 结构体字段顺序保持兼容，发送时按线上的 SUM、55 顺序重组。 */
+    /* Packet 结构体字段顺序保持兼容，发送时按线上的 SUM�?5 顺序重组�?*/
     for (i = 0; i < 10; i++)
     {
         if (i == 0)
         {
-            /* 一次提交完整帧，确保 RS485 方向覆盖整个 10B 帧。 */
+            /* 一次提交完整帧，确�?RS485 方向覆盖整个 10B 帧�?*/
+            USART1_SetTxDiagnosticCommand(pkt->CMD);
             (void)USART_SendBuffer(USARTx, frame, 10u);
             break;
         }
         while (!(USARTx->SR & USART_SR_TXE))
             ; // 等待发送缓冲区为空
-        /* 完整帧已在循环首项提交，保留循环结构以维持旧代码布局。 */
+        /* 完整帧已在循环首项提交，保留循环结构以维持旧代码布局�?*/
     }
 }
 
 void USART_ProtocolHandler(uint8_t *buffer)
 {
     int i;
-    /* 缓冲区作为一个发送单元提交，避免 RS485 在数据中途切回接收。 */
+    /* 缓冲区作为一个发送单元提交，避免 RS485 在数据中途切回接收�?*/
+    USART1_SetTxDiagnosticCommand(buffer[1]);
     (void)USART_SendBuffer(USART1, buffer, PROTOCOL_MAX_SIZE);
     for (i = 0; i < PROTOCOL_MAX_SIZE; i++)
     {
@@ -294,7 +309,7 @@ void USART_ProtocolHandler(uint8_t *buffer)
     }
 }
 #if 0
-/* 旧 0x7E 调试命令已停用，诊断实现保留供后续恢复。 */
+/* �?0x7E 调试命令已停用，诊断实现保留供后续恢复�?*/
 static uint32_t Protocol_GetDebugCounter(uint8_t type, uint8_t index)
 {
     /* ??????????????????? 10 ??????? */
@@ -486,6 +501,11 @@ void parse_frame(uint8_t *frame)
     /* ???????????????? CMD ??? */
     dbg_usart_rx_frames++;
     dbg_rx_cmd_count[cmd]++;
+    if (cmd == 0x08u)
+    {
+        /* T1 ����ͨ���̶� 10B У�鲢׼������Э��������е�ʱ�̣����� ISR �д�ӡ���͡� */
+        dbg_cmd08_rx_time_ms = millis();
+    }
     for (j = 0; j < 6; j++)
     {
         data[j] = frame[2 + j];
@@ -508,7 +528,7 @@ void send_165Data()
 
 void StepMotor_SetDirction(char direction)
 {
-    /* 兼容旧调用入口：统一使用 X 轴对应的 DIR1 输出。 */
+    /* 兼容旧调用入口：统一使用 X 轴对应的 DIR1 输出�?*/
     HC595Data[1] = (HC595Data[1] & ~(1 << STEP_DIR_X_595_BIT)) |
                    ((direction & 0x01) << STEP_DIR_X_595_BIT);
     ShiftRegister_WriteAll(HC595Data);
@@ -518,7 +538,7 @@ void getHc165IndexByData(char motorNumber, char HC165number)
 {
     motors[motorNumber - 1].HC165Index = (SHIFT_REGISTER_INPUT_COUNT - 1u) -
                                          ((HC165number - 1) / 8);
-    /* 按串行读取顺序换算芯片索引，避免依赖固定芯片数量。 */
+    /* 按串行读取顺序换算芯片索引，避免依赖固定芯片数量�?*/
     motors[motorNumber - 1].HC165Value = 1 << ((HC165number - 1) % 8);
 }
 void getHc165IndexForMotorFull(MotorFull *motor, char HC165number)
@@ -526,28 +546,33 @@ void getHc165IndexForMotorFull(MotorFull *motor, char HC165number)
     uint8_t index = (HC165number - 1) / 8;
     uint8_t bitmask = 1 << ((HC165number - 1) % 8);
 
-    /* 串行读取顺序与传感器编号相反，使用芯片总数计算反序索引。 */
+    /* 串行读取顺序与传感器编号相反，使用芯片总数计算反序索引�?*/
     motor->HC165Index = (SHIFT_REGISTER_INPUT_COUNT - 1u) - index;
     motor->HC165Value = bitmask;
 }
 
 void getHc165IndexForStepMotor(stepMotor *motor, char HC165number)
 {
-    uint8_t index = (HC165number - 1) / 8;        // 第几�?65芯片（从0开始）
-    uint8_t bitmask = 1 << (HC165number - 1) % 8; // 掩码：哪个bit�?
+    uint8_t index = (HC165number - 1) / 8;        // 第几�?65芯片（从0开始）
+    uint8_t bitmask = 1 << (HC165number - 1) % 8; // 掩码：哪个bit�?
 
-    // HC165 芯片编号按串行读取顺序反向映射，避免依赖固定芯片数量。
-    motor->hc165_index = (SHIFT_REGISTER_INPUT_COUNT - 1u) - index;
+    // HC165 芯片编号按串行读取顺序反向映射，避免依赖固定芯片数量�?    motor->hc165_index = (SHIFT_REGISTER_INPUT_COUNT - 1u) - index;
 
-    /* 串行读取顺序与传感器编号相反，使用芯片总数计算反序索引。 */
+    /* 串行读取顺序与传感器编号相反，使用芯片总数计算反序索引�?*/
     motor->hc165_index = (SHIFT_REGISTER_INPUT_COUNT - 1u) - index;
     motor->hc165_value = bitmask;
 }
+/**
+ * 发送低优先级温度主动上报�? *
+ * 温度来自热电偶最近一次采样值，D0/D1 为既有的高低字节格式。该帧不是请求对应回复，
+ * 因此首字节前遇到 tx_busy 时仅记录跳过原因，由下一周期重试，不能阻塞命令回复�? *
+ * @param cmd 既有温度上报命令字，当前�?0x00�? */
 void send_temperature_frame(uint8_t cmd)
 {
     uint8_t data[6];
-  uint16_t local_temperature;
- local_temperature = (uint16_t)temperature;
+    uint16_t local_temperature;
+
+    local_temperature = (uint16_t)temperature;
 
     data[0] = (uint8_t)(local_temperature >> 8);
     data[1] = (uint8_t)local_temperature;
@@ -555,7 +580,12 @@ void send_temperature_frame(uint8_t cmd)
     data[3] = 0;
     data[4] = 0;
     data[5] = 0;
-    send_frame_event(cmd, data);
+    /* 0x00 是低优先级周期上报；首字节前未取得发送权时跳过本轮，下一秒再报�?*/
+    if (!send_frame_internal(cmd, data, TX_SOURCE_PERIODIC))
+    {
+        dbg_temperature_report_skipped_count++;
+        dbg_temperature_report_last_skip_reason = rs485_tx_last_failure_reason;
+    }
 }
 // 模拟器测试用
 // void send_temperature_frame(uint8_t cmd)
@@ -600,7 +630,7 @@ static void Protocol_SendSingleMotorResult(uint8_t cmd, uint8_t result,
 {
     uint8_t response[6] = {0u};
 
-    /* D0 保持结果码，D1 回显电机编号，便于上位机关联异步回包。 */
+    /* D0 保持结果码，D1 回显电机编号，便于上位机关联异步回包�?*/
     response[0] = result;
     response[1] = motor_id;
     if (result != SINGLE_MOTOR_RESULT_OK)
@@ -610,13 +640,46 @@ static void Protocol_SendSingleMotorResult(uint8_t cmd, uint8_t result,
     send_frame(cmd, response);
 }
 
+/**
+ * 发�?CMD=0x08 单向电机状态查询回复并保存完整发送结果�? *
+ * 查询请求已经被主循环接收，若 UART 在首字节前因 tx_busy 未取得发送权�? * 必须留下失败诊断，不能按已回复处理；发送层一旦写入首字节则会完成整帧�? * 因而此处绝不重发可能已开始的帧�? *
+ * @param data 按既有协议填充的 6 字节状态或错误结果�? * @return 1 表示回复完整发送并确认最�?TC�? 表示整帧未开始发送�? */
+static uint8_t Protocol_SendCmd08Reply(uint8_t *data)
+{
+    uint8_t sent;
+    uint32_t now;
+
+    dbg_cmd08_reply_attempt_count++;
+    sent = send_frame_internal(0x08u, data, TX_SOURCE_ACK);
+    if (sent)
+    {
+        /* send_frame_internal ����ʱ�Ѿ�ȷ������ TC=1����˴˿��������ظ��뿪 UART ��ʱ�̡� */
+        now = millis();
+        dbg_cmd08_tx_done_time_ms = now;
+        if ((now - dbg_cmd08_handle_time_ms) > dbg_cmd08_max_process_tx_delay_ms)
+        {
+            dbg_cmd08_max_process_tx_delay_ms = now - dbg_cmd08_handle_time_ms;
+        }
+        if ((now - dbg_cmd08_rx_time_ms) > dbg_cmd08_max_total_delay_ms)
+        {
+            dbg_cmd08_max_total_delay_ms = now - dbg_cmd08_rx_time_ms;
+        }
+        dbg_cmd08_reply_success_count++;
+        return 1u;
+    }
+
+    dbg_cmd08_reply_failure_count++;
+    dbg_cmd08_last_reply_failure_reason = rs485_tx_last_failure_reason;
+    return 0u;
+}
+
 static void Protocol_SendSingleMotorTimedResult(uint8_t cmd, uint8_t motor_id,
                                                 uint8_t time_100ms,
                                                 uint8_t result)
 {
     uint8_t response[6] = {0u};
 
-    /* 06 回包先回显电机与时间，状态码紧随时间字段，便于按请求格式解析。 */
+    /* 06 回包先回显电机与时间，状态码紧随时间字段，便于按请求格式解析�?*/
     response[0] = motor_id;
     response[1] = time_100ms;
     response[2] = result;
@@ -628,16 +691,13 @@ static void Protocol_SendSingleMotorTimedResult(uint8_t cmd, uint8_t motor_id,
 }
 
 /**
- * @brief 发送正反转电机命令的统一结果应答。
- * @param cmd 当前命令字。
- * @param result 执行结果码。
- */
+ * @brief 发送正反转电机命令的统一结果应答�? * @param cmd 当前命令字�? * @param result 执行结果码�? */
 static void Protocol_SendReversibleMotorResult(uint8_t cmd, uint8_t result,
                                                uint8_t motor_id)
 {
     uint8_t response[6] = {0u};
 
-    /* D0 返回结果，D1 回显电机编号，其他保留字节固定清零。 */
+    /* D0 返回结果，D1 回显电机编号，其他保留字节固定清零�?*/
     response[0] = result;
     response[1] = motor_id;
     if (result != SINGLE_MOTOR_RESULT_OK)
@@ -661,7 +721,7 @@ static uint8_t Protocol_IsAllZero(const uint8_t *data, uint8_t start_index)
     return 1u;
 }
 
-/* 协议仅定义停止、正转和反转；换向死区时实际输出已停止，因此按停止上报。 */
+/* 协议仅定义停止、正转和反转；换向死区时实际输出已停止，因此按停止上报�?*/
 static uint8_t Protocol_GetReversibleMotorStateForResponse(ReversibleMotorState state)
 {
     if (state == REV_MOTOR_DEADTIME)
@@ -673,10 +733,7 @@ static uint8_t Protocol_GetReversibleMotorStateForResponse(ReversibleMotorState 
 }
 
 /**
- * @brief 分发当前协议命令。
- * @param cmd 已完成校验的命令字。
- * @param data 六字节命令数据。
- */
+ * @brief 分发当前协议命令�? * @param cmd 已完成校验的命令字�? * @param data 六字节命令数据�? */
 void handle_command(uint8_t cmd, uint8_t *data)
 {
     uint32_t duration_ms;
@@ -688,16 +745,16 @@ void handle_command(uint8_t cmd, uint8_t *data)
     switch (cmd)
     {
     case 0x00:
-        /* 保留旧功能：当前命令为空操作。 */
+        /* 保留旧功能：当前命令为空操作�?*/
         break;
     case 0x01:
-        /* 保留旧功能：读取两字节 74HC165 输入快照。 */
+        /* 保留旧功能：读取两字�?74HC165 输入快照�?*/
         send_165DataSource(TX_SOURCE_ACK);
         break;
     case 0x05:
         if (data[0] < 1u || data[0] > SINGLE_MOTOR_COUNT)
         {
-            /* 05 的回应格式固定回显请求字段，错误仅保留在内部诊断。 */
+            /* 05 的回应格式固定回显请求字段，错误仅保留在内部诊断�?*/
             SingleMotor_RecordError(SINGLE_MOTOR_RESULT_INVALID_MOTOR);
             send_frame(cmd, data);
             break;
@@ -709,7 +766,7 @@ void handle_command(uint8_t cmd, uint8_t *data)
             break;
         }
         SingleMotor_Immediate(data[0], data[1]);
-        /* 成功回应按协议保留电机编号与动作字段。 */
+        /* 成功回应按协议保留电机编号与动作字段�?*/
         send_frame(cmd, data);
         break;
     case 0x06:
@@ -725,7 +782,7 @@ void handle_command(uint8_t cmd, uint8_t *data)
                                                 SINGLE_MOTOR_RESULT_INVALID_ACTION);
             break;
         }
-        /* 文档约定 DATA2 为 100ms 单位的单字节定时时间。 */
+        /* 文档约定 DATA2 �?100ms 单位的单字节定时时间�?*/
         duration_ms = (uint32_t)data[1] * 100u;
         if (duration_ms == 0u)
         {
@@ -740,35 +797,55 @@ void handle_command(uint8_t cmd, uint8_t *data)
     case 0x07:
         if (data[0] < 1u || data[0] > SINGLE_MOTOR_COUNT)
         {
-            Protocol_SendSingleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_MOTOR, data[0]);
+            Protocol_SendSingleMotorTimedResult(cmd, data[0], data[1],
+                                                SINGLE_MOTOR_RESULT_INVALID_MOTOR);
             break;
         }
-        if (data[1] < 1u || data[1] > SHIFT_REGISTER_INPUT_CHANNEL_COUNT)
+        /* DATA2 �?0x06 完全一致，均为 100ms 单位的单字节最大运行时间�?*/
+        duration_ms = (uint32_t)data[1] * 100u;
+        if (duration_ms == 0u)
         {
-            Protocol_SendSingleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_SENSOR, data[0]);
+            Protocol_SendSingleMotorTimedResult(cmd, data[0], data[1],
+                                                SINGLE_MOTOR_RESULT_INVALID_TIME);
             break;
         }
-        if (data[2] > 1u || data[5] != 0u)
+        if (data[2] < 1u || data[2] > SHIFT_REGISTER_INPUT_CHANNEL_COUNT)
         {
-            Protocol_SendSingleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_ACTION, data[0]);
+            Protocol_SendSingleMotorTimedResult(cmd, data[0], data[1],
+                                                SINGLE_MOTOR_RESULT_INVALID_SENSOR);
             break;
         }
-        timeout_100ms = (uint16_t)data[3] | ((uint16_t)data[4] << 8);
-        if (timeout_100ms == 0u)
+        if (data[3] > 1u || !Protocol_IsAllZero(data, 4u))
         {
-            Protocol_SendSingleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_TIME, data[0]);
+            Protocol_SendSingleMotorTimedResult(cmd, data[0], data[1],
+                                                SINGLE_MOTOR_RESULT_INVALID_ACTION);
             break;
         }
-        SingleMotor_StartSensorTimed(data[0], data[1], data[2],
-                                     (uint32_t)timeout_100ms * 100u);
-        Protocol_SendSingleMotorResult(cmd, SINGLE_MOTOR_RESULT_OK, data[0]);
+        /* 仅初始化每台 MT 的非阻塞上下文；传感器等待由 SingleMotor_Task 推进�?*/
+        SingleMotor_StartSensorTimed(data[0], data[2], data[3], duration_ms);
+        Protocol_SendSingleMotorTimedResult(cmd, data[0], data[1],
+                                            SINGLE_MOTOR_RESULT_OK);
         break;
     case 0x08:
-        /* 查询帧不允许携带参数，返回三字节单向电机运行位图。 */
+        /* 查询帧不允许携带参数，返回三字节单向电机运行位图�?*/
+        /* T2 ��ʾ�������������������ʼִ�� handler������ ACK/�ظ�����������ɡ� */
+        dbg_cmd08_handle_time_ms = millis();
+        if ((dbg_cmd08_handle_time_ms - dbg_cmd08_rx_time_ms) > dbg_cmd08_max_queue_delay_ms)
+        {
+            dbg_cmd08_max_queue_delay_ms = dbg_cmd08_handle_time_ms - dbg_cmd08_rx_time_ms;
+        }
+        dbg_cmd08_request_count++;
         if (!Protocol_IsAllZero(data, 0u))
         {
-            /* 查询命令没有单一电机编号，D1 保持为零。 */
-            Protocol_SendSingleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_ACTION, 0u);
+            /* 查询命令没有单一电机编号，错误回复仍按既�?D0=结果、D1=0 格式发送�?*/
+            SingleMotor_RecordError(SINGLE_MOTOR_RESULT_INVALID_ACTION);
+            data[0] = SINGLE_MOTOR_RESULT_INVALID_ACTION;
+            data[1] = 0u;
+            data[2] = 0u;
+            data[3] = 0u;
+            data[4] = 0u;
+            data[5] = 0u;
+            (void)Protocol_SendCmd08Reply(data);
             break;
         }
         SingleMotor_GetRunningBitmap(bitmap);
@@ -778,13 +855,13 @@ void handle_command(uint8_t cmd, uint8_t *data)
         data[3] = 0u;
         data[4] = 0u;
         data[5] = 0u;
-        send_frame(cmd, data);
+        (void)Protocol_SendCmd08Reply(data);
         break;
     case 0x09:
-        /* 立即控制仅接受已配置的正反转电机编号和停止/正转/反转动作。 */
+        /* 立即控制仅接受已配置的正反转电机编号和停�?正转/反转动作�?*/
         if (data[0] < 1u || data[0] > REVERSIBLE_MOTOR_COUNT)
         {
-            /* 09 的回应格式固定回显请求字段，错误仅保留在内部诊断。 */
+            /* 09 的回应格式固定回显请求字段，错误仅保留在内部诊断�?*/
             ReversibleMotor_RecordError(SINGLE_MOTOR_RESULT_INVALID_MOTOR);
             send_frame(cmd, data);
             break;
@@ -796,11 +873,11 @@ void handle_command(uint8_t cmd, uint8_t *data)
             break;
         }
         ReversibleMotor_Immediate(data[0], data[1]);
-        /* 成功回应按协议保留电机编号与动作字段。 */
+        /* 成功回应按协议保留电机编号与动作字段�?*/
         send_frame(cmd, data);
         break;
     case 0x0A:
-        /* 文档约定 DATA3 为 100ms 单位的单字节定时时间。 */
+        /* 文档约定 DATA3 �?100ms 单位的单字节定时时间�?*/
         if (data[0] < 1u || data[0] > REVERSIBLE_MOTOR_COUNT)
         {
             Protocol_SendReversibleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_MOTOR, data[0]);
@@ -828,7 +905,7 @@ void handle_command(uint8_t cmd, uint8_t *data)
         Protocol_SendReversibleMotorResult(cmd, SINGLE_MOTOR_RESULT_OK, data[0]);
         break;
     case 0x0B:
-        /* 传感器任务在完成全部校验后才允许改变电机输出。 */
+        /* 传感器任务在完成全部校验后才允许改变电机输出�?*/
         if (data[0] < 1u || data[0] > REVERSIBLE_MOTOR_COUNT)
         {
             Protocol_SendReversibleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_MOTOR, data[0]);
@@ -858,11 +935,11 @@ void handle_command(uint8_t cmd, uint8_t *data)
     case 0x0C:
         if (!Protocol_IsAllZero(data, 0u))
         {
-            /* 查询命令没有单一电机编号，D1 保持为零。 */
+            /* 查询命令没有单一电机编号，D1 保持为零�?*/
             Protocol_SendReversibleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_ACTION, 0u);
             break;
         }
-        /* 文档约定 D0..D4 分别返回五路电机状态，D5 保留。 */
+        /* 文档约定 D0..D4 分别返回五路电机状态，D5 保留�?*/
         data[0] = Protocol_GetReversibleMotorStateForResponse(g_reversible_motors[0].state);
         data[1] = Protocol_GetReversibleMotorStateForResponse(g_reversible_motors[1].state);
         data[2] = Protocol_GetReversibleMotorStateForResponse(g_reversible_motors[2].state);
@@ -873,18 +950,18 @@ void handle_command(uint8_t cmd, uint8_t *data)
         break;
     case 0x1B:
         send_frame(cmd, data);
-        /* 实际 PU2（Y 轴 PB11）仅修改 DIR2，确保同片其他输出保持不变。 */
+        /* 实际 PU2（Y �?PB11）仅修改 DIR2，确保同片其他输出保持不变�?*/
         HC595Data[1] = (HC595Data[1] & ~(1 << STEP_DIR_Y_595_BIT)) |
                        ((data[2] & 0x01) << STEP_DIR_Y_595_BIT);
         ShiftRegister_WriteAll(HC595Data);
         stepdma_pb11_request_trap(data[0] << 8 | data[1], 500u, data[3] * 200u, 100000u);
-        /* 旧调试命令绕过管理层，完成后坐标不可再作为绝对位置依据。 */
+        /* 旧调试命令绕过管理层，完成后坐标不可再作为绝对位置依据�?*/
         RobotArm_InvalidatePosition(ROBOT_AXIS_Y);
         break;
     case 0x1C:
         Protocol_DisablePb10StopSensor();
         send_frame(cmd, data);
-        /* 实际 PU1（X 轴 PB10）先停止，避免在脉冲输出期间直接切换 U86 的 DIR1(Q4)。 */
+        /* 实际 PU1（X �?PB10）先停止，避免在脉冲输出期间直接切换 U86 �?DIR1(Q4)�?*/
         if (stepdma_pb10_is_running())
         {
             Stepper2_Stop();
@@ -892,15 +969,15 @@ void handle_command(uint8_t cmd, uint8_t *data)
         Stepper2_SetDirection(data[2]);
         Delay_us(2u);
         stepdma_pb10_request_trap(data[0] << 8 | data[1], 500, data[3] * 200, 100000);
-        /* 保持旧帧行为，仅使管理层放弃该轴的旧坐标。 */
+        /* 保持旧帧行为，仅使管理层放弃该轴的旧坐标�?*/
         RobotArm_InvalidatePosition(ROBOT_AXIS_X);
         break;
     case 0x1E:
-        /* PU3 沿用两轴步进参数格式，方向由 U86 的 DIR3(Q6) 独立控制。 */
+        /* PU3 沿用两轴步进参数格式，方向由 U86 �?DIR3(Q6) 独立控制�?*/
         send_frame(cmd, data);
         (void)PU3_Stepper_Start(data[0] << 8 | data[1], data[2], 500u,
                                  data[3] * 200u, 100000u);
-        /* 旧调试命令直接控制 PU3，必须失效化管理层 Z 坐标。 */
+        /* 旧调试命令直接控�?PU3，必须失效化管理�?Z 坐标�?*/
         RobotArm_InvalidatePosition(ROBOT_AXIS_Z);
         break;
     case 0x1F:
@@ -916,7 +993,7 @@ void handle_command(uint8_t cmd, uint8_t *data)
         if (Protocol_ConfigurePb10StopSensor(data[4], data[5]))
         {
             send_frame(cmd, data);
-            /* 传感器任务同样禁止直接在运行中切换方向。 */
+            /* 传感器任务同样禁止直接在运行中切换方向�?*/
             if (stepdma_pb10_is_running())
             {
                 Stepper2_Stop();
@@ -924,7 +1001,7 @@ void handle_command(uint8_t cmd, uint8_t *data)
             Stepper2_SetDirection(data[2]);
             Delay_us(2u);
             stepdma_pb10_request_trap(data[0] << 8 | data[1], 500, data[3] * 200, 100000);
-            /* 实际 PU1（PB10）带传感器停止，管理层不能报告精确执行步数。 */
+            /* 实际 PU1（PB10）带传感器停止，管理层不能报告精确执行步数�?*/
             RobotArm_InvalidatePosition(ROBOT_AXIS_X);
         }
         else
@@ -934,7 +1011,7 @@ void handle_command(uint8_t cmd, uint8_t *data)
         }
         break;
     default:
-        /* 未知命令没有电机编号，D1 保持为零。 */
+        /* 未知命令没有电机编号，D1 保持为零�?*/
         Protocol_SendSingleMotorResult(cmd, SINGLE_MOTOR_RESULT_UNSUPPORTED, 0u);
         break;
     }
@@ -965,28 +1042,34 @@ void send_frame_usart1(uint8_t cmd, uint8_t *data)
     {
         if (j == 0)
         {
-            /* V1 帧一次提交给 USART 层，保持整帧 RS485 发送方向。 */
+            /* V1 帧一次提交给 USART 层，保持整帧 RS485 发送方向�?*/
+            USART1_SetTxDiagnosticCommand(cmd);
             (void)USART_SendBuffer(USART1, frame, 10u);
             break;
         }
-        /* 完整帧已在循环首项提交，保留循环结构以维持旧代码布局。 */
+        /* 完整帧已在循环首项提交，保留循环结构以维持旧代码布局�?*/
     }
 }
 
-static void send_frame_internal(uint8_t cmd, uint8_t *data, TxSource source)
+/**
+ * 组装并同步发送一帧固�?10B 主机协议帧�? *
+ * 所�?V1 ACK、EVENT 与周期上报最终都经过 USART1 的整帧发送边界。返回失败只可能
+ * 发生在首字节前；已写入任一字节后发送层会等待到最�?TC，禁止重发半帧�? *
+ * @param cmd 本帧命令字节�? * @param data 固定 6 字节业务数据�? * @param source 发送来源，用于区分 ACK、EVENT 与可跳过的周期上报�? * @return 1 表示完整帧已发送；0 表示本帧首字节尚未发送�? */
+static uint8_t send_frame_internal(uint8_t cmd, uint8_t *data, TxSource source)
 {
     uint8_t frame[10];
     uint8_t checksum;
     uint8_t count_business;
     int i;
 
-    /* 当前上下文供 TXE/TC timeout 快照使用。 */
+    /* 当前上下文供 TXE/TC timeout 快照使用�?*/
     dbg_usart2_tx_current_cmd = cmd;
     dbg_usart2_tx_current_source = (uint8_t)source;
     dbg_usart2_tx_current_byte_index = 0xFFu;
 
-    /* DEBUG 回复不进入业务 TX、ACK 或 EVENT 统计。 */
-    count_business = (source != TX_SOURCE_DEBUG) ? 1u : 0u;
+    /* DEBUG 回复不进入业�?TX、ACK �?EVENT 统计�?*/
+    count_business = ((source == TX_SOURCE_ACK) || (source == TX_SOURCE_EVENT)) ? 1u : 0u;
     if (count_business)
     {
         dbg_tx_cmd_count[cmd]++;
@@ -1015,7 +1098,7 @@ static void send_frame_internal(uint8_t cmd, uint8_t *data, TxSource source)
     frame[8] = 0x55;
     frame[9] = checksum;
 
-    /* 正常帧开始不得清除之前持久化的 timeout 证据。 */
+    /* 正常帧开始不得清除之前持久化�?timeout 证据�?*/
     if (count_business)
     {
         dbg_usart2_tx_last_cmd = cmd;
@@ -1023,12 +1106,13 @@ static void send_frame_internal(uint8_t cmd, uint8_t *data, TxSource source)
         dbg_usart2_tx_frames_begin++;
     }
 
-    /* V1 10B 只通过 USART1 整帧入口发送，失败时不伪装完成。 */
+    /* V1 10B 只通过 USART1 整帧入口发送，失败时不伪装完成�?*/
     dbg_usart2_tx_current_byte_index = 9u;
+    USART1_SetTxDiagnosticCommand(cmd);
     if (!USART_SendBuffer(USART1, frame, 10u))
     {
         dbg_usart2_tx_current_byte_index = 0xFFu;
-        return;
+        return 0u;
     }
     if (count_business)
     {
@@ -1040,7 +1124,7 @@ static void send_frame_internal(uint8_t cmd, uint8_t *data, TxSource source)
     {
         dbg_usart2_tx_frames_complete++;
         dbg_usart2_tx_last_complete_ms = millis();
-        /* 正常完成不得清除之前持久化的 timeout 证据。 */
+        /* 正常完成不得清除之前持久化的 timeout 证据�?*/
         if (source == TX_SOURCE_ACK)
         {
             dbg_tx_ack_complete_count[cmd]++;
@@ -1050,19 +1134,18 @@ static void send_frame_internal(uint8_t cmd, uint8_t *data, TxSource source)
             dbg_tx_event_complete_count[cmd]++;
         }
     }
+    return 1u;
 }
 
 /**
- * 发送命令 ACK 或查询回复。
- */
+ * 发送命�?ACK 或查询回复�? */
 void send_frame(uint8_t cmd, uint8_t *data)
 {
     send_frame_internal(cmd, data, TX_SOURCE_ACK);
 }
 
 /**
- * 发送周期或状态主动上报。
- */
+ * 发送周期或状态主动上报�? */
 void send_frame_event(uint8_t cmd, uint8_t *data)
 {
     send_frame_internal(cmd, data, TX_SOURCE_EVENT);
@@ -1098,10 +1181,11 @@ void send_frame2(uint8_t cmd, uint8_t *data)
     {
         if (j == 0)
         {
-            /* V1 帧一次提交给 USART 层，保持整帧 RS485 发送方向。 */
+            /* V1 帧一次提交给 USART 层，保持整帧 RS485 发送方向�?*/
+            USART1_SetTxDiagnosticCommand(cmd);
             (void)USART_SendBuffer(USART1, frame, 10u);
             break;
         }
-        /* 完整帧已在循环首项提交，保留循环结构以维持旧代码布局。 */
+        /* 完整帧已在循环首项提交，保留循环结构以维持旧代码布局�?*/
     }
 }

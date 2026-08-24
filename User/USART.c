@@ -55,6 +55,76 @@ volatile uint32_t rs485_tx_success_count = 0;
 volatile uint32_t rs485_tx_txe_timeout_count = 0;
 volatile uint32_t rs485_tx_tc_timeout_count = 0;
 volatile uint32_t rs485_tx_bytes_count = 0;
+/* 记录单次轮询实际等待的最长时间，覆盖发送前 TC、逐字节 TXE 和最终 TC。 */
+volatile uint32_t rs485_tx_max_txe_wait_ms = 0u;
+volatile uint32_t rs485_tx_max_tc_wait_ms = 0u;
+/* 最近一次 USART1 发送尝试的整帧长度、实际写入 DR 的长度和未开始发送失败原因。 */
+volatile uint16_t rs485_tx_last_expected_len = 0u;
+volatile uint16_t rs485_tx_last_sent_len = 0u;
+volatile uint8_t rs485_tx_last_failure_reason = 0u;
+/* 失败快照只在未开始发送的失败路径更新，后续成功或 0x00 上报不得覆盖。 */
+volatile uint32_t rs485_tx_failure_count = 0u;
+volatile uint16_t rs485_tx_last_error_expected_len = 0u;
+volatile uint16_t rs485_tx_last_error_sent_len = 0u;
+volatile uint8_t rs485_tx_last_error_reason = 0u;
+volatile uint8_t rs485_tx_last_error_cmd = 0xFFu;
+static volatile uint8_t usart1_tx_diagnostic_cmd = 0xFFu;
+
+#define RS485_TX_FAILURE_NONE 0u
+#define RS485_TX_FAILURE_INVALID_ARGUMENT 1u
+#define RS485_TX_FAILURE_BUSY 2u
+#define RS485_TX_FAILURE_PREVIOUS_TC_TIMEOUT 3u
+#define RS485_TX_FAILURE_FIRST_TXE_TIMEOUT 4u
+
+/**
+ * 原子保存 USART1 整帧尚未开始时的失败现场。
+ *
+ * 发送层已经保证 sent_len 大于零后不会返回；因此该记录用于区分 BUSY 等
+ * 整帧未开始的失败，且不得被之后成功发送的周期温度帧清除。
+ *
+ * @param expected_len 本次请求发送的完整帧长度。
+ * @param sent_len 失败前已写入 UART 数据寄存器的字节数。
+ * @param reason 本次未开始发送的失败原因。
+ */
+static void USART1_RecordTxFailure(uint16_t expected_len,
+                                   uint16_t sent_len,
+                                   uint8_t reason)
+{
+    uint32_t primask;
+
+    primask = __get_PRIMASK();
+    __disable_irq();
+    rs485_tx_failure_count++;
+    rs485_tx_last_error_expected_len = expected_len;
+    rs485_tx_last_error_sent_len = sent_len;
+    rs485_tx_last_error_reason = reason;
+    rs485_tx_last_error_cmd = usart1_tx_diagnostic_cmd;
+    if (!primask)
+    {
+        __enable_irq();
+    }
+}
+
+/**
+ * 设置当前 USART1 帧的协议命令诊断上下文。
+ *
+ * 该上下文只在发送尚未开始而失败时复制到持久快照，用于确认例如 CMD=0x08
+ * 是否因 tx_busy 而整帧未发送。
+ *
+ * @param cmd 即将发送的协议命令字。
+ */
+void USART1_SetTxDiagnosticCommand(uint8_t cmd)
+{
+    uint32_t primask;
+
+    primask = __get_PRIMASK();
+    __disable_irq();
+    usart1_tx_diagnostic_cmd = cmd;
+    if (!primask)
+    {
+        __enable_irq();
+    }
+}
 
 #define RS485_EN1_PORT GPIOA
 #define RS485_EN1_PIN GPIO_Pin_8
@@ -116,6 +186,32 @@ static void USART1_ReleaseTx(void)
     if (!primask)
     {
         __enable_irq();
+    }
+}
+
+/**
+ * 保存 USART1 发送等待的历史最大值。
+ *
+ * 超过软件诊断阈值后仍会等待，以保证已写入首字节的协议帧绝不被截断；
+ * 因此该值用于确认是否正是该保帧路径阻塞了主循环。
+ *
+ * @param is_txe 1 表示等待 TXE，0 表示等待 TC。
+ * @param wait_ms 本次等待的实际毫秒数。
+ */
+static void USART1_RecordMaxWait(uint8_t is_txe, uint32_t wait_ms)
+{
+    if (is_txe)
+    {
+        if (wait_ms > rs485_tx_max_txe_wait_ms)
+        {
+            rs485_tx_max_txe_wait_ms = wait_ms;
+        }
+        return;
+    }
+
+    if (wait_ms > rs485_tx_max_tc_wait_ms)
+    {
+        rs485_tx_max_tc_wait_ms = wait_ms;
     }
 }
 
@@ -680,6 +776,18 @@ void USART_SendString(USART_TypeDef *USARTx, char *str)
     /* 字符串也必须作为一个发送单元提交，避免逐字节切换 RS485 方向。 */
     (void)USART_SendBuffer(USARTx, (uint8_t *)str, length);
 }
+/**
+ * 以轮询阻塞方式完成一个 UART 发送单元。
+ *
+ * USART1 是主机 RS485 协议 UART，PA8 为方向控制、PA9 为 TX。发送权仅覆盖一整帧；
+ * 因此首字节写入 DR 后绝不能因软件超时退出，否则 PA8 切回接收会截断正在发送的协议帧。
+ * TXE 只说明数据寄存器可继续装载，最终必须等待 TC=1 才表示最后一个停止位已离开 PA9。
+ *
+ * @param USARTx 目标 UART 外设。
+ * @param buffer 连续发送数据，本函数同步完成前不会保存该地址。
+ * @param length 必须连续发送的字节数。
+ * @return 1 表示完整发送并确认 TC；0 表示首字节前未能开始本次发送。
+ */
 uint8_t USART_SendBuffer(USART_TypeDef *USARTx, uint8_t *buffer, uint16_t length)
 {
     uint16_t i;
@@ -687,16 +795,25 @@ uint8_t USART_SendBuffer(USART_TypeDef *USARTx, uint8_t *buffer, uint16_t length
     uint8_t is_rs485;
     uint8_t is_usart1;
     uint8_t usart1_tx_acquired = 0u;
+    uint8_t timeout_recorded;
 
     is_usart1 = (USARTx == USART1) ? 1u : 0u;
     if (is_usart1)
     {
         rs485_tx_call_count++;
+        rs485_tx_last_expected_len = length;
+        rs485_tx_last_sent_len = 0u;
+        rs485_tx_last_failure_reason = RS485_TX_FAILURE_NONE;
     }
 
     if ((USARTx == 0) || (buffer == 0) || (length == 0u))
     {
         /* 参数失败时尚未取得发送权，不能触碰可能属于其他帧的 PA8。 */
+        if (is_usart1)
+        {
+            rs485_tx_last_failure_reason = RS485_TX_FAILURE_INVALID_ARGUMENT;
+            USART1_RecordTxFailure(length, 0u, RS485_TX_FAILURE_INVALID_ARGUMENT);
+        }
         return 0u;
     }
 
@@ -707,6 +824,8 @@ uint8_t USART_SendBuffer(USART_TypeDef *USARTx, uint8_t *buffer, uint16_t length
         /* 取得发送权失败时绝不写 DR、TXE、TC 或 PA8，当前整帧保持完整。 */
         if (!USART1_TryAcquireTx())
         {
+            rs485_tx_last_failure_reason = RS485_TX_FAILURE_BUSY;
+            USART1_RecordTxFailure(length, 0u, RS485_TX_FAILURE_BUSY);
             return 0u;
         }
         usart1_tx_acquired = 1u;
@@ -724,9 +843,17 @@ uint8_t USART_SendBuffer(USART_TypeDef *USARTx, uint8_t *buffer, uint16_t length
                 {
                     rs485_tx_tc_timeout_count++;
                     Protocol_RecordUsart2TxTimeout(2u);
+                    rs485_tx_last_failure_reason = RS485_TX_FAILURE_PREVIOUS_TC_TIMEOUT;
+                    USART1_RecordTxFailure(length, 0u,
+                                           RS485_TX_FAILURE_PREVIOUS_TC_TIMEOUT);
+                    USART1_RecordMaxWait(0u, millis() - tx_wait_start);
                 }
                 goto tx_cleanup;
             }
+        }
+        if (is_usart1)
+        {
+            USART1_RecordMaxWait(0u, millis() - tx_wait_start);
         }
 
         /* 整帧独占 485 方向，禁止在帧内字节之间切回接收。 */
@@ -737,38 +864,63 @@ uint8_t USART_SendBuffer(USART_TypeDef *USARTx, uint8_t *buffer, uint16_t length
     for (i = 0; i < length; i++)
     {
         tx_wait_start = millis();
+        timeout_recorded = 0u;
         while (USART_GetFlagStatus(USARTx, USART_FLAG_TXE) == RESET)
         {
             if ((millis() - tx_wait_start) >= RS485_TX_WAIT_TIMEOUT_MS)
             {
-                if (is_usart1)
+                if (is_usart1 && !timeout_recorded)
                 {
                     rs485_tx_txe_timeout_count++;
                     Protocol_RecordUsart2TxTimeout(1u);
+                    timeout_recorded = 1u;
                 }
-                goto tx_cleanup;
+                if (i == 0u)
+                {
+                    /* 首字节尚未写入，可明确报告本帧未开始。 */
+                    if (is_usart1)
+                    {
+                        rs485_tx_last_failure_reason = RS485_TX_FAILURE_FIRST_TXE_TIMEOUT;
+                        USART1_RecordTxFailure(length, 0u,
+                                               RS485_TX_FAILURE_FIRST_TXE_TIMEOUT);
+                        USART1_RecordMaxWait(1u, millis() - tx_wait_start);
+                    }
+                    goto tx_cleanup;
+                }
+                /* 已写入前序字节时只能记录卡顿并继续等 TXE，禁止截断当前帧。 */
             }
+        }
+        if (is_usart1)
+        {
+            USART1_RecordMaxWait(1u, millis() - tx_wait_start);
         }
         USART_SendData(USARTx, buffer[i]);
         if (is_usart1)
         {
             rs485_tx_bytes_count++;
+            rs485_tx_last_sent_len = (uint16_t)(i + 1u);
         }
     }
 
     /* 只有最后一个字节的移位寄存器清空后，才允许释放 485 发送使能。 */
     tx_wait_start = millis();
+    timeout_recorded = 0u;
     while (USART_GetFlagStatus(USARTx, USART_FLAG_TC) == RESET)
     {
         if ((millis() - tx_wait_start) >= RS485_TX_WAIT_TIMEOUT_MS)
         {
-            if (is_usart1)
+            if (is_usart1 && !timeout_recorded)
             {
                 rs485_tx_tc_timeout_count++;
                 Protocol_RecordUsart2TxTimeout(2u);
+                timeout_recorded = 1u;
             }
-            goto tx_cleanup;
+            /* 所有字节已写入 DR，必须等待 TC，不能提前切回 PA8 接收而截断帧尾。 */
         }
+    }
+    if (is_usart1)
+    {
+        USART1_RecordMaxWait(0u, millis() - tx_wait_start);
     }
 
     if (is_rs485)
@@ -798,6 +950,7 @@ tx_cleanup:
         /* 所有 TXE/TC 超时路径同样先归还 PA8，再允许下一帧接管。 */
         USART1_ReleaseTx();
     }
+    /* 此处仅能由首字节前的失败路径进入，因此不会形成半帧。 */
     return 0u;
 }
 // 重定向fputc函数
