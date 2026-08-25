@@ -110,7 +110,7 @@ I (..\User\reversible_motor.h)(0x6A6B29CD)
 I (..\User\robot_arm.h)(0x6A82BF93)
 I (..\User\robot_arm_driver.h)(0x6A79313D)
 I (..\User\protocol_v2.h)(0x6A79481A)
-I (..\User\robot_arm_protocol.h)(0x6A7EB26C)
+I (..\User\robot_arm_protocol.h)(0x6A8BF95C)
 F (..\User\stm32f10x_conf.h)(0x6A01898B)()
 F (..\User\stm32f10x_it.c)(0x68527B36)(-c --cpu Cortex-M3 -g -O0 --apcs=interwork --split_sections -I..\User -I..\Fwilb\inc -I..\Core -I..\Startup-I C:\Users\您好！\Desktop\单片机\蛋白粉机\单片机\ProteinControl\Project\RTE-I F:\software\keil5\ARM\PACK\Keil\STM32F1xx_DFP\2.4.1\Device\Include-I F:\software\keil5\ARM\CMSIS\Include-D__UVISION_VERSION="516" -DSTM32F10X_HD -DUSE_STDPERIPH_DRIVER -DSTM32F10X_HD-o .\stm32f10x_it.o --omf_browse .\stm32f10x_it.crf --depend .\stm32f10x_it.d)
 I (..\User\stm32f10x_it.h)(0x61605442)
@@ -325,8 +325,8 @@ I (..\User\robot_arm_driver.h)(0x6A79313D)
 F (..\User\protocol_v2.c)(0x6A79481B)(-c --cpu Cortex-M3 -g -O0 --apcs=interwork --split_sections -I..\User -I..\Fwilb\inc -I..\Core -I..\Startup-I C:\Users\您好！\Desktop\单片机\蛋白粉机\单片机\ProteinControl\Project\RTE-I F:\software\keil5\ARM\PACK\Keil\STM32F1xx_DFP\2.4.1\Device\Include-I F:\software\keil5\ARM\CMSIS\Include-D__UVISION_VERSION="516" -DSTM32F10X_HD -DUSE_STDPERIPH_DRIVER -DSTM32F10X_HD-o .\protocol_v2.o --omf_browse .\protocol_v2.crf --depend .\protocol_v2.d)
 I (..\User\protocol_v2.h)(0x6A79481A)
 I (F:\software\keil5\ARM\ARMCC\include\stdint.h)(0x55AEF5F2)
-F (..\User\robot_arm_protocol.c)(0x6A7EB26D)(-c --cpu Cortex-M3 -g -O0 --apcs=interwork --split_sections -I..\User -I..\Fwilb\inc -I..\Core -I..\Startup-I C:\Users\您好！\Desktop\单片机\蛋白粉机\单片机\ProteinControl\Project\RTE-I F:\software\keil5\ARM\PACK\Keil\STM32F1xx_DFP\2.4.1\Device\Include-I F:\software\keil5\ARM\CMSIS\Include-D__UVISION_VERSION="516" -DSTM32F10X_HD -DUSE_STDPERIPH_DRIVER -DSTM32F10X_HD-o .\robot_arm_protocol.o --omf_browse .\robot_arm_protocol.crf --depend .\robot_arm_protocol.d)
-I (..\User\robot_arm_protocol.h)(0x6A7EB26C)
+F (..\User\robot_arm_protocol.c)(0x6A8BF93B)(-c --cpu Cortex-M3 -g -O0 --apcs=interwork --split_sections -I..\User -I..\Fwilb\inc -I..\Core -I..\Startup-I C:\Users\您好！\Desktop\单片机\蛋白粉机\单片机\ProteinControl\Project\RTE-I F:\software\keil5\ARM\PACK\Keil\STM32F1xx_DFP\2.4.1\Device\Include-I F:\software\keil5\ARM\CMSIS\Include-D__UVISION_VERSION="516" -DSTM32F10X_HD -DUSE_STDPERIPH_DRIVER -DSTM32F10X_HD-o .\robot_arm_protocol.o --omf_browse .\robot_arm_protocol.crf --depend .\robot_arm_protocol.d)
+I (..\User\robot_arm_protocol.h)(0x6A8BF95C)
 I (F:\software\keil5\ARM\ARMCC\include\stdint.h)(0x55AEF5F2)
 I (..\User\protocol_v2.h)(0x6A79481A)
 I (..\User\robot_arm.h)(0x6A82BF93)

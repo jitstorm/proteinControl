@@ -345,7 +345,6 @@ Section Cross References
     robot_arm_protocol.o(i.RobotArmProtocol_HandleFrame) refers to robot_arm.o(i.RobotArm_Stop) for RobotArm_Stop
     robot_arm_protocol.o(i.RobotArmProtocol_HandleFrame) refers to robot_arm_protocol.o(i.RobotArmProtocol_SendAck) for RobotArmProtocol_SendAck
     robot_arm_protocol.o(i.RobotArmProtocol_HandleFrame) refers to robot_arm_protocol.o(i.RobotArmProtocol_ProduceTerminal) for RobotArmProtocol_ProduceTerminal
-    robot_arm_protocol.o(i.RobotArmProtocol_HandleFrame) refers to robot_arm_protocol.o(i.RobotArmProtocol_TryQueueTerminal) for RobotArmProtocol_TryQueueTerminal
     robot_arm_protocol.o(i.RobotArmProtocol_HandleFrame) refers to robot_arm.o(i.RobotArm_ClearError) for RobotArm_ClearError
     robot_arm_protocol.o(i.RobotArmProtocol_HandleFrame) refers to robot_arm.o(i.RobotArm_Home) for RobotArm_Home
     robot_arm_protocol.o(i.RobotArmProtocol_HandleFrame) refers to robot_arm.o(i.RobotArm_HomeAxis) for RobotArm_HomeAxis
@@ -373,8 +372,6 @@ Section Cross References
     robot_arm_protocol.o(i.RobotArmProtocol_Queue) refers to protocol_v2.o(i.ProtocolV2_Encode) for ProtocolV2_Encode
     robot_arm_protocol.o(i.RobotArmProtocol_Queue) refers to robot_arm_protocol.o(.data) for s_tx_count
     robot_arm_protocol.o(i.RobotArmProtocol_Queue) refers to robot_arm_protocol.o(.bss) for s_stats
-    robot_arm_protocol.o(i.RobotArmProtocol_QueueEvent) refers to robot_arm_protocol.o(i.RobotArmProtocol_ClearData) for RobotArmProtocol_ClearData
-    robot_arm_protocol.o(i.RobotArmProtocol_QueueEvent) refers to robot_arm_protocol.o(i.RobotArmProtocol_Queue) for RobotArmProtocol_Queue
     robot_arm_protocol.o(i.RobotArmProtocol_RetryActiveAck) refers to robot_arm_protocol.o(i.RobotArmProtocol_SendAck) for RobotArmProtocol_SendAck
     robot_arm_protocol.o(i.RobotArmProtocol_RetryActiveAck) refers to robot_arm_protocol.o(.data) for s_pending_active_ack
     robot_arm_protocol.o(i.RobotArmProtocol_RetryStopAck) refers to robot_arm_protocol.o(i.RobotArmProtocol_SendAck) for RobotArmProtocol_SendAck
@@ -385,24 +382,21 @@ Section Cross References
     robot_arm_protocol.o(i.RobotArmProtocol_SendStatus) refers to robot_arm_protocol.o(i.RobotArmProtocol_ClearData) for RobotArmProtocol_ClearData
     robot_arm_protocol.o(i.RobotArmProtocol_SendStatus) refers to robot_arm.o(i.RobotArm_GetStatus) for RobotArm_GetStatus
     robot_arm_protocol.o(i.RobotArmProtocol_SendStatus) refers to protocol_v2.o(i.ProtocolV2_WriteI32LE) for ProtocolV2_WriteI32LE
+    robot_arm_protocol.o(i.RobotArmProtocol_SendStatus) refers to protocol_v2.o(i.ProtocolV2_WriteU16LE) for ProtocolV2_WriteU16LE
     robot_arm_protocol.o(i.RobotArmProtocol_SendStatus) refers to robot_arm_protocol.o(i.RobotArmProtocol_SendAck) for RobotArmProtocol_SendAck
     robot_arm_protocol.o(i.RobotArmProtocol_SendStatus) refers to robot_arm_protocol.o(i.RobotArmProtocol_Queue) for RobotArmProtocol_Queue
     robot_arm_protocol.o(i.RobotArmProtocol_SendStatus) refers to robot_arm_protocol.o(i.RobotArmProtocol_FlushTx) for RobotArmProtocol_FlushTx
     robot_arm_protocol.o(i.RobotArmProtocol_SendStatus) refers to robot_arm_protocol.o(.bss) for s_stats
+    robot_arm_protocol.o(i.RobotArmProtocol_SendStatus) refers to robot_arm_protocol.o(.data) for s_terminal
     robot_arm_protocol.o(i.RobotArmProtocol_Task) refers to robot_arm_protocol.o(i.RobotArmProtocol_FlushTx) for RobotArmProtocol_FlushTx
     robot_arm_protocol.o(i.RobotArmProtocol_Task) refers to robot_arm_protocol.o(i.RobotArmProtocol_RetryStopAck) for RobotArmProtocol_RetryStopAck
     robot_arm_protocol.o(i.RobotArmProtocol_Task) refers to robot_arm_protocol.o(i.RobotArmProtocol_RetryActiveAck) for RobotArmProtocol_RetryActiveAck
-    robot_arm_protocol.o(i.RobotArmProtocol_Task) refers to robot_arm_protocol.o(i.RobotArmProtocol_TryQueueTerminal) for RobotArmProtocol_TryQueueTerminal
     robot_arm_protocol.o(i.RobotArmProtocol_Task) refers to robot_arm.o(i.RobotArm_IsBusy) for RobotArm_IsBusy
     robot_arm_protocol.o(i.RobotArmProtocol_Task) refers to robot_arm.o(i.RobotArm_GetStatus) for RobotArm_GetStatus
     robot_arm_protocol.o(i.RobotArmProtocol_Task) refers to robot_arm_protocol.o(i.RobotArmProtocol_IsHomeCommand) for RobotArmProtocol_IsHomeCommand
     robot_arm_protocol.o(i.RobotArmProtocol_Task) refers to robot_arm_protocol.o(i.RobotArmProtocol_EventFromReason) for RobotArmProtocol_EventFromReason
     robot_arm_protocol.o(i.RobotArmProtocol_Task) refers to robot_arm_protocol.o(i.RobotArmProtocol_ProduceTerminal) for RobotArmProtocol_ProduceTerminal
     robot_arm_protocol.o(i.RobotArmProtocol_Task) refers to robot_arm_protocol.o(.data) for s_active
-    robot_arm_protocol.o(i.RobotArmProtocol_TryQueueTerminal) refers to robot_arm_protocol.o(i.RobotArmProtocol_QueueEvent) for RobotArmProtocol_QueueEvent
-    robot_arm_protocol.o(i.RobotArmProtocol_TryQueueTerminal) refers to robot_arm_protocol.o(i.RobotArmProtocol_FlushTx) for RobotArmProtocol_FlushTx
-    robot_arm_protocol.o(i.RobotArmProtocol_TryQueueTerminal) refers to robot_arm_protocol.o(.data) for s_active
-    robot_arm_protocol.o(i.RobotArmProtocol_TryQueueTerminal) refers to robot_arm_protocol.o(.bss) for s_stats
     pwm.o(i.GPIO_Config) refers to stm32f10x_rcc.o(i.RCC_APB2PeriphClockCmd) for RCC_APB2PeriphClockCmd
     pwm.o(i.GPIO_Config) refers to stm32f10x_gpio.o(i.GPIO_PinRemapConfig) for GPIO_PinRemapConfig
     pwm.o(i.GPIO_Config) refers to stm32f10x_gpio.o(i.GPIO_Init) for GPIO_Init
@@ -1489,59 +1483,59 @@ Image Symbol Table
 
     Symbol Name                              Value     Ov Type        Size  Object(Section)
 
-    ../clib/angel/boardlib.s                 0x00000000   Number         0  boardinit2.o ABSOLUTE
-    ../clib/angel/boardlib.s                 0x00000000   Number         0  boardshut.o ABSOLUTE
-    ../clib/angel/boardlib.s                 0x00000000   Number         0  boardinit3.o ABSOLUTE
     ../clib/angel/boardlib.s                 0x00000000   Number         0  boardinit1.o ABSOLUTE
+    ../clib/angel/boardlib.s                 0x00000000   Number         0  boardinit2.o ABSOLUTE
+    ../clib/angel/boardlib.s                 0x00000000   Number         0  boardinit3.o ABSOLUTE
+    ../clib/angel/boardlib.s                 0x00000000   Number         0  boardshut.o ABSOLUTE
     ../clib/angel/dczerorl2.s                0x00000000   Number         0  __dczerorl2.o ABSOLUTE
     ../clib/angel/handlers.s                 0x00000000   Number         0  __scatter_zi.o ABSOLUTE
-    ../clib/angel/kernel.s                   0x00000000   Number         0  rtexit2.o ABSOLUTE
-    ../clib/angel/kernel.s                   0x00000000   Number         0  __rtentry.o ABSOLUTE
-    ../clib/angel/kernel.s                   0x00000000   Number         0  rtexit.o ABSOLUTE
     ../clib/angel/kernel.s                   0x00000000   Number         0  __rtentry2.o ABSOLUTE
+    ../clib/angel/kernel.s                   0x00000000   Number         0  rtexit2.o ABSOLUTE
+    ../clib/angel/kernel.s                   0x00000000   Number         0  rtexit.o ABSOLUTE
+    ../clib/angel/kernel.s                   0x00000000   Number         0  __rtentry.o ABSOLUTE
     ../clib/angel/kernel.s                   0x00000000   Number         0  __rtentry4.o ABSOLUTE
     ../clib/angel/rt.s                       0x00000000   Number         0  rt_raise.o ABSOLUTE
+    ../clib/angel/rt.s                       0x00000000   Number         0  rt_div0.o ABSOLUTE
     ../clib/angel/rt.s                       0x00000000   Number         0  aeabi_ldiv0_sigfpe.o ABSOLUTE
     ../clib/angel/rt.s                       0x00000000   Number         0  aeabi_ldiv0.o ABSOLUTE
-    ../clib/angel/rt.s                       0x00000000   Number         0  rt_div0.o ABSOLUTE
     ../clib/angel/scatter.s                  0x00000000   Number         0  __scatter.o ABSOLUTE
     ../clib/angel/startup.s                  0x00000000   Number         0  __main.o ABSOLUTE
+    ../clib/angel/sys.s                      0x00000000   Number         0  indicate_semi.o ABSOLUTE
+    ../clib/angel/sys.s                      0x00000000   Number         0  use_no_semi.o ABSOLUTE
     ../clib/angel/sys.s                      0x00000000   Number         0  sys_stackheap_outer.o ABSOLUTE
     ../clib/angel/sys.s                      0x00000000   Number         0  libspace.o ABSOLUTE
-    ../clib/angel/sys.s                      0x00000000   Number         0  use_no_semi.o ABSOLUTE
-    ../clib/angel/sys.s                      0x00000000   Number         0  indicate_semi.o ABSOLUTE
-    ../clib/angel/sysapp.c                   0x00000000   Number         0  sys_command.o ABSOLUTE
     ../clib/angel/sysapp.c                   0x00000000   Number         0  sys_exit.o ABSOLUTE
+    ../clib/angel/sysapp.c                   0x00000000   Number         0  sys_command.o ABSOLUTE
     ../clib/angel/sysapp.c                   0x00000000   Number         0  sys_wrch.o ABSOLUTE
-    ../clib/armsys.c                         0x00000000   Number         0  no_argv.o ABSOLUTE
-    ../clib/armsys.c                         0x00000000   Number         0  argv_veneer.o ABSOLUTE
     ../clib/armsys.c                         0x00000000   Number         0  argv_veneer.o ABSOLUTE
     ../clib/armsys.c                         0x00000000   Number         0  _get_argv_nomalloc.o ABSOLUTE
+    ../clib/armsys.c                         0x00000000   Number         0  no_argv.o ABSOLUTE
+    ../clib/armsys.c                         0x00000000   Number         0  argv_veneer.o ABSOLUTE
     ../clib/heapalloc.c                      0x00000000   Number         0  hrguard.o ABSOLUTE
     ../clib/heapaux.c                        0x00000000   Number         0  heapauxi.o ABSOLUTE
+    ../clib/libinit.s                        0x00000000   Number         0  libinit.o ABSOLUTE
     ../clib/libinit.s                        0x00000000   Number         0  libshutdown.o ABSOLUTE
     ../clib/libinit.s                        0x00000000   Number         0  libshutdown2.o ABSOLUTE
     ../clib/libinit.s                        0x00000000   Number         0  libinit2.o ABSOLUTE
-    ../clib/libinit.s                        0x00000000   Number         0  libinit.o ABSOLUTE
     ../clib/longlong.s                       0x00000000   Number         0  lludivv7m.o ABSOLUTE
-    ../clib/memcpset.s                       0x00000000   Number         0  rt_memcpy_v6.o ABSOLUTE
     ../clib/memcpset.s                       0x00000000   Number         0  rt_memcpy_w.o ABSOLUTE
+    ../clib/memcpset.s                       0x00000000   Number         0  rt_memcpy_v6.o ABSOLUTE
     ../clib/signal.c                         0x00000000   Number         0  defsig_general.o ABSOLUTE
     ../clib/signal.c                         0x00000000   Number         0  defsig_fpe_inner.o ABSOLUTE
-    ../clib/signal.c                         0x00000000   Number         0  defsig_pvfn_inner.o ABSOLUTE
-    ../clib/signal.c                         0x00000000   Number         0  defsig_cppl_inner.o ABSOLUTE
-    ../clib/signal.c                         0x00000000   Number         0  __raise.o ABSOLUTE
-    ../clib/signal.c                         0x00000000   Number         0  defsig_segv_inner.o ABSOLUTE
-    ../clib/signal.c                         0x00000000   Number         0  defsig_other.o ABSOLUTE
     ../clib/signal.c                         0x00000000   Number         0  defsig_exit.o ABSOLUTE
+    ../clib/signal.c                         0x00000000   Number         0  defsig_rtred_inner.o ABSOLUTE
+    ../clib/signal.c                         0x00000000   Number         0  defsig_rtmem_inner.o ABSOLUTE
     ../clib/signal.c                         0x00000000   Number         0  defsig_rtmem_outer.o ABSOLUTE
+    ../clib/signal.c                         0x00000000   Number         0  defsig_other.o ABSOLUTE
+    ../clib/signal.c                         0x00000000   Number         0  defsig_rtmem_formal.o ABSOLUTE
     ../clib/signal.c                         0x00000000   Number         0  defsig_fpe_outer.o ABSOLUTE
     ../clib/signal.c                         0x00000000   Number         0  defsig_stak_inner.o ABSOLUTE
-    ../clib/signal.c                         0x00000000   Number         0  defsig_rtmem_formal.o ABSOLUTE
-    ../clib/signal.c                         0x00000000   Number         0  defsig_rtmem_inner.o ABSOLUTE
-    ../clib/signal.c                         0x00000000   Number         0  defsig_rtred_inner.o ABSOLUTE
-    ../clib/signal.c                         0x00000000   Number         0  defsig_abrt_inner.o ABSOLUTE
+    ../clib/signal.c                         0x00000000   Number         0  defsig_pvfn_inner.o ABSOLUTE
+    ../clib/signal.c                         0x00000000   Number         0  defsig_cppl_inner.o ABSOLUTE
+    ../clib/signal.c                         0x00000000   Number         0  defsig_segv_inner.o ABSOLUTE
+    ../clib/signal.c                         0x00000000   Number         0  __raise.o ABSOLUTE
     ../clib/signal.c                         0x00000000   Number         0  defsig_fpe_formal.o ABSOLUTE
+    ../clib/signal.c                         0x00000000   Number         0  defsig_abrt_inner.o ABSOLUTE
     ../clib/signal.s                         0x00000000   Number         0  defsig.o ABSOLUTE
     ../clib/stdlib.c                         0x00000000   Number         0  exit.o ABSOLUTE
     ../fplib/faddsub.s                       0x00000000   Number         0  faddsub_clz.o ABSOLUTE
@@ -1801,303 +1795,299 @@ Image Symbol Table
     i.RobotArmDriver_Start                   0x080024e8   Section        0  robot_arm_driver.o(i.RobotArmDriver_Start)
     i.RobotArmDriver_Stop                    0x08002594   Section        0  robot_arm_driver.o(i.RobotArmDriver_Stop)
     i.RobotArmProtocol_BindActive            0x080025bc   Section        0  robot_arm_protocol.o(i.RobotArmProtocol_BindActive)
-    RobotArmProtocol_BindActive              0x080025bd   Thumb Code    26  robot_arm_protocol.o(i.RobotArmProtocol_BindActive)
-    i.RobotArmProtocol_CanAcceptRequest      0x080025e0   Section        0  robot_arm_protocol.o(i.RobotArmProtocol_CanAcceptRequest)
-    i.RobotArmProtocol_ClearData             0x08002614   Section        0  robot_arm_protocol.o(i.RobotArmProtocol_ClearData)
-    RobotArmProtocol_ClearData               0x08002615   Thumb Code    20  robot_arm_protocol.o(i.RobotArmProtocol_ClearData)
-    i.RobotArmProtocol_EventFromReason       0x08002628   Section        0  robot_arm_protocol.o(i.RobotArmProtocol_EventFromReason)
-    RobotArmProtocol_EventFromReason         0x08002629   Thumb Code    46  robot_arm_protocol.o(i.RobotArmProtocol_EventFromReason)
-    i.RobotArmProtocol_FlushTx               0x08002658   Section        0  robot_arm_protocol.o(i.RobotArmProtocol_FlushTx)
-    RobotArmProtocol_FlushTx                 0x08002659   Thumb Code   170  robot_arm_protocol.o(i.RobotArmProtocol_FlushTx)
-    i.RobotArmProtocol_HandleFrame           0x08002720   Section        0  robot_arm_protocol.o(i.RobotArmProtocol_HandleFrame)
-    i.RobotArmProtocol_Init                  0x08002918   Section        0  robot_arm_protocol.o(i.RobotArmProtocol_Init)
-    i.RobotArmProtocol_IsHomeCommand         0x08002990   Section        0  robot_arm_protocol.o(i.RobotArmProtocol_IsHomeCommand)
-    RobotArmProtocol_IsHomeCommand           0x08002991   Thumb Code    18  robot_arm_protocol.o(i.RobotArmProtocol_IsHomeCommand)
-    i.RobotArmProtocol_MoveAxisAbsolute      0x080029a2   Section        0  robot_arm_protocol.o(i.RobotArmProtocol_MoveAxisAbsolute)
-    RobotArmProtocol_MoveAxisAbsolute        0x080029a3   Thumb Code    54  robot_arm_protocol.o(i.RobotArmProtocol_MoveAxisAbsolute)
-    i.RobotArmProtocol_MoveAxisRelative      0x080029d8   Section        0  robot_arm_protocol.o(i.RobotArmProtocol_MoveAxisRelative)
-    RobotArmProtocol_MoveAxisRelative        0x080029d9   Thumb Code    54  robot_arm_protocol.o(i.RobotArmProtocol_MoveAxisRelative)
-    i.RobotArmProtocol_ProduceTerminal       0x08002a10   Section        0  robot_arm_protocol.o(i.RobotArmProtocol_ProduceTerminal)
-    RobotArmProtocol_ProduceTerminal         0x08002a11   Thumb Code    40  robot_arm_protocol.o(i.RobotArmProtocol_ProduceTerminal)
-    i.RobotArmProtocol_Queue                 0x08002a44   Section        0  robot_arm_protocol.o(i.RobotArmProtocol_Queue)
-    RobotArmProtocol_Queue                   0x08002a45   Thumb Code   204  robot_arm_protocol.o(i.RobotArmProtocol_Queue)
-    i.RobotArmProtocol_QueueEvent            0x08002b20   Section        0  robot_arm_protocol.o(i.RobotArmProtocol_QueueEvent)
-    RobotArmProtocol_QueueEvent              0x08002b21   Thumb Code    60  robot_arm_protocol.o(i.RobotArmProtocol_QueueEvent)
-    i.RobotArmProtocol_RetryActiveAck        0x08002b5c   Section        0  robot_arm_protocol.o(i.RobotArmProtocol_RetryActiveAck)
-    RobotArmProtocol_RetryActiveAck          0x08002b5d   Thumb Code    44  robot_arm_protocol.o(i.RobotArmProtocol_RetryActiveAck)
-    i.RobotArmProtocol_RetryStopAck          0x08002b90   Section        0  robot_arm_protocol.o(i.RobotArmProtocol_RetryStopAck)
-    RobotArmProtocol_RetryStopAck            0x08002b91   Thumb Code    36  robot_arm_protocol.o(i.RobotArmProtocol_RetryStopAck)
-    i.RobotArmProtocol_SendAck               0x08002bb8   Section        0  robot_arm_protocol.o(i.RobotArmProtocol_SendAck)
-    RobotArmProtocol_SendAck                 0x08002bb9   Thumb Code    60  robot_arm_protocol.o(i.RobotArmProtocol_SendAck)
-    i.RobotArmProtocol_SendStatus            0x08002bf4   Section        0  robot_arm_protocol.o(i.RobotArmProtocol_SendStatus)
-    RobotArmProtocol_SendStatus              0x08002bf5   Thumb Code   406  robot_arm_protocol.o(i.RobotArmProtocol_SendStatus)
-    i.RobotArmProtocol_Task                  0x08002d90   Section        0  robot_arm_protocol.o(i.RobotArmProtocol_Task)
-    i.RobotArmProtocol_TryQueueTerminal      0x08002e24   Section        0  robot_arm_protocol.o(i.RobotArmProtocol_TryQueueTerminal)
-    RobotArmProtocol_TryQueueTerminal        0x08002e25   Thumb Code    90  robot_arm_protocol.o(i.RobotArmProtocol_TryQueueTerminal)
-    i.RobotArmSensor_IsReady                 0x08002e94   Section        0  robot_arm_sensor.o(i.RobotArmSensor_IsReady)
-    i.RobotArmSensor_IsTriggered             0x08002ea0   Section        0  robot_arm_sensor.o(i.RobotArmSensor_IsTriggered)
-    i.RobotArmSensor_UpdateSnapshot          0x08002eec   Section        0  robot_arm_sensor.o(i.RobotArmSensor_UpdateSnapshot)
-    i.RobotArm_BeginHomeAxis                 0x08002f18   Section        0  robot_arm.o(i.RobotArm_BeginHomeAxis)
-    RobotArm_BeginHomeAxis                   0x08002f19   Thumb Code    88  robot_arm.o(i.RobotArm_BeginHomeAxis)
-    i.RobotArm_CalculateMoveTimeout          0x08002f74   Section        0  robot_arm.o(i.RobotArm_CalculateMoveTimeout)
-    RobotArm_CalculateMoveTimeout            0x08002f75   Thumb Code   108  robot_arm.o(i.RobotArm_CalculateMoveTimeout)
-    i.RobotArm_CheckAxisTarget               0x08002fe0   Section        0  robot_arm.o(i.RobotArm_CheckAxisTarget)
-    RobotArm_CheckAxisTarget                 0x08002fe1   Thumb Code    48  robot_arm.o(i.RobotArm_CheckAxisTarget)
-    i.RobotArm_CheckPoseSafety               0x08003010   Section        0  robot_arm.o(i.RobotArm_CheckPoseSafety)
-    i.RobotArm_CheckTargetDirection          0x08003016   Section        0  robot_arm.o(i.RobotArm_CheckTargetDirection)
-    RobotArm_CheckTargetDirection            0x08003017   Thumb Code    62  robot_arm.o(i.RobotArm_CheckTargetDirection)
-    i.RobotArm_CheckTransitionSafety         0x08003054   Section        0  robot_arm.o(i.RobotArm_CheckTransitionSafety)
-    i.RobotArm_ClearError                    0x0800306c   Section        0  robot_arm.o(i.RobotArm_ClearError)
-    i.RobotArm_CompleteHomeAxis              0x080030c4   Section        0  robot_arm.o(i.RobotArm_CompleteHomeAxis)
-    RobotArm_CompleteHomeAxis                0x080030c5   Thumb Code   152  robot_arm.o(i.RobotArm_CompleteHomeAxis)
-    i.RobotArm_FailAxisMove                  0x08003160   Section        0  robot_arm.o(i.RobotArm_FailAxisMove)
-    RobotArm_FailAxisMove                    0x08003161   Thumb Code   164  robot_arm.o(i.RobotArm_FailAxisMove)
-    i.RobotArm_FailCombinedMoveStart         0x08003208   Section        0  robot_arm.o(i.RobotArm_FailCombinedMoveStart)
-    RobotArm_FailCombinedMoveStart           0x08003209   Thumb Code   104  robot_arm.o(i.RobotArm_FailCombinedMoveStart)
-    i.RobotArm_FailHome                      0x08003278   Section        0  robot_arm.o(i.RobotArm_FailHome)
-    RobotArm_FailHome                        0x08003279   Thumb Code    98  robot_arm.o(i.RobotArm_FailHome)
-    i.RobotArm_GetAxis                       0x080032e0   Section        0  robot_arm.o(i.RobotArm_GetAxis)
-    RobotArm_GetAxis                         0x080032e1   Thumb Code    26  robot_arm.o(i.RobotArm_GetAxis)
-    i.RobotArm_GetAxisState                  0x08003300   Section        0  robot_arm.o(i.RobotArm_GetAxisState)
-    i.RobotArm_GetHomeDirection              0x08003318   Section        0  robot_arm.o(i.RobotArm_GetHomeDirection)
-    RobotArm_GetHomeDirection                0x08003319   Thumb Code     8  robot_arm.o(i.RobotArm_GetHomeDirection)
-    i.RobotArm_GetHomeMaxSteps               0x08003324   Section        0  robot_arm.o(i.RobotArm_GetHomeMaxSteps)
-    RobotArm_GetHomeMaxSteps                 0x08003325   Thumb Code    10  robot_arm.o(i.RobotArm_GetHomeMaxSteps)
-    i.RobotArm_GetHomeOffset                 0x08003334   Section        0  robot_arm.o(i.RobotArm_GetHomeOffset)
-    RobotArm_GetHomeOffset                   0x08003335   Thumb Code    10  robot_arm.o(i.RobotArm_GetHomeOffset)
-    i.RobotArm_GetHomeSensor                 0x08003344   Section        0  robot_arm.o(i.RobotArm_GetHomeSensor)
-    RobotArm_GetHomeSensor                   0x08003345   Thumb Code     6  robot_arm.o(i.RobotArm_GetHomeSensor)
-    i.RobotArm_GetHomeTimeout                0x0800334c   Section        0  robot_arm.o(i.RobotArm_GetHomeTimeout)
-    RobotArm_GetHomeTimeout                  0x0800334d   Thumb Code    10  robot_arm.o(i.RobotArm_GetHomeTimeout)
-    i.RobotArm_GetStatus                     0x0800335c   Section        0  robot_arm.o(i.RobotArm_GetStatus)
-    i.RobotArm_GetX                          0x08003458   Section        0  robot_arm.o(i.RobotArm_GetX)
-    i.RobotArm_GetY                          0x08003464   Section        0  robot_arm.o(i.RobotArm_GetY)
-    i.RobotArm_GetZ                          0x08003470   Section        0  robot_arm.o(i.RobotArm_GetZ)
-    i.RobotArm_Home                          0x0800347c   Section        0  robot_arm.o(i.RobotArm_Home)
-    i.RobotArm_HomeAxis                      0x080034f8   Section        0  robot_arm.o(i.RobotArm_HomeAxis)
-    i.RobotArm_Init                          0x08003540   Section        0  robot_arm.o(i.RobotArm_Init)
-    i.RobotArm_InvalidatePosition            0x08003624   Section        0  robot_arm.o(i.RobotArm_InvalidatePosition)
-    i.RobotArm_IsAxisLimitEnabled            0x0800364c   Section        0  robot_arm.o(i.RobotArm_IsAxisLimitEnabled)
-    RobotArm_IsAxisLimitEnabled              0x0800364d   Thumb Code     8  robot_arm.o(i.RobotArm_IsAxisLimitEnabled)
-    i.RobotArm_IsBusy                        0x08003658   Section        0  robot_arm.o(i.RobotArm_IsBusy)
-    i.RobotArm_IsDirectionBlocked            0x08003688   Section        0  robot_arm.o(i.RobotArm_IsDirectionBlocked)
-    RobotArm_IsDirectionBlocked              0x08003689   Thumb Code    52  robot_arm.o(i.RobotArm_IsDirectionBlocked)
-    i.RobotArm_IsHomeEnabled                 0x080036bc   Section        0  robot_arm.o(i.RobotArm_IsHomeEnabled)
-    RobotArm_IsHomeEnabled                   0x080036bd   Thumb Code     8  robot_arm.o(i.RobotArm_IsHomeEnabled)
-    i.RobotArm_IsHomed                       0x080036c8   Section        0  robot_arm.o(i.RobotArm_IsHomed)
-    i.RobotArm_IsPositionValid               0x080036de   Section        0  robot_arm.o(i.RobotArm_IsPositionValid)
-    i.RobotArm_MoveTo                        0x080036f4   Section        0  robot_arm.o(i.RobotArm_MoveTo)
-    i.RobotArm_MoveToSafe                    0x08003894   Section        0  robot_arm.o(i.RobotArm_MoveToSafe)
-    i.RobotArm_MoveX                         0x0800397c   Section        0  robot_arm.o(i.RobotArm_MoveX)
-    i.RobotArm_MoveXRelative                 0x0800398e   Section        0  robot_arm.o(i.RobotArm_MoveXRelative)
-    i.RobotArm_MoveY                         0x080039a0   Section        0  robot_arm.o(i.RobotArm_MoveY)
-    i.RobotArm_MoveYRelative                 0x080039b2   Section        0  robot_arm.o(i.RobotArm_MoveYRelative)
-    i.RobotArm_MoveZ                         0x080039c4   Section        0  robot_arm.o(i.RobotArm_MoveZ)
-    i.RobotArm_MoveZRelative                 0x080039d6   Section        0  robot_arm.o(i.RobotArm_MoveZRelative)
-    i.RobotArm_ProcessAxisMove               0x080039e8   Section        0  robot_arm.o(i.RobotArm_ProcessAxisMove)
-    RobotArm_ProcessAxisMove                 0x080039e9   Thumb Code   152  robot_arm.o(i.RobotArm_ProcessAxisMove)
-    i.RobotArm_ResetCombinedStates           0x08003a84   Section        0  robot_arm.o(i.RobotArm_ResetCombinedStates)
-    RobotArm_ResetCombinedStates             0x08003a85   Thumb Code    42  robot_arm.o(i.RobotArm_ResetCombinedStates)
-    i.RobotArm_ResetMoveDebug                0x08003ab4   Section        0  robot_arm.o(i.RobotArm_ResetMoveDebug)
-    RobotArm_ResetMoveDebug                  0x08003ab5   Thumb Code    78  robot_arm.o(i.RobotArm_ResetMoveDebug)
-    i.RobotArm_ResultFromEndReason           0x08003b08   Section        0  robot_arm.o(i.RobotArm_ResultFromEndReason)
-    RobotArm_ResultFromEndReason             0x08003b09   Thumb Code    46  robot_arm.o(i.RobotArm_ResultFromEndReason)
-    i.RobotArm_StartAxisMoveInternal         0x08003b38   Section        0  robot_arm.o(i.RobotArm_StartAxisMoveInternal)
-    RobotArm_StartAxisMoveInternal           0x08003b39   Thumb Code   296  robot_arm.o(i.RobotArm_StartAxisMoveInternal)
-    i.RobotArm_StartHomeDriver               0x08003c68   Section        0  robot_arm.o(i.RobotArm_StartHomeDriver)
-    RobotArm_StartHomeDriver                 0x08003c69   Thumb Code    60  robot_arm.o(i.RobotArm_StartHomeDriver)
-    i.RobotArm_StartSingleAbsolute           0x08003ca4   Section        0  robot_arm.o(i.RobotArm_StartSingleAbsolute)
-    RobotArm_StartSingleAbsolute             0x08003ca5   Thumb Code   102  robot_arm.o(i.RobotArm_StartSingleAbsolute)
-    i.RobotArm_StartSingleRelative           0x08003d10   Section        0  robot_arm.o(i.RobotArm_StartSingleRelative)
-    RobotArm_StartSingleRelative             0x08003d11   Thumb Code   148  robot_arm.o(i.RobotArm_StartSingleRelative)
-    i.RobotArm_Stop                          0x08003da8   Section        0  robot_arm.o(i.RobotArm_Stop)
-    i.RobotArm_Task                          0x08003e4c   Section        0  robot_arm.o(i.RobotArm_Task)
-    i.RobotArm_TaskHome                      0x08003edc   Section        0  robot_arm.o(i.RobotArm_TaskHome)
-    RobotArm_TaskHome                        0x08003edd   Thumb Code   584  robot_arm.o(i.RobotArm_TaskHome)
-    i.RobotArm_TaskMoveTo                    0x08004128   Section        0  robot_arm.o(i.RobotArm_TaskMoveTo)
-    RobotArm_TaskMoveTo                      0x08004129   Thumb Code   432  robot_arm.o(i.RobotArm_TaskMoveTo)
-    i.RobotArm_TaskSafeMove                  0x080042e0   Section        0  robot_arm.o(i.RobotArm_TaskSafeMove)
-    RobotArm_TaskSafeMove                    0x080042e1   Thumb Code   628  robot_arm.o(i.RobotArm_TaskSafeMove)
-    i.RobotArm_TryCompleteMoveTo             0x08004558   Section        0  robot_arm.o(i.RobotArm_TryCompleteMoveTo)
-    RobotArm_TryCompleteMoveTo               0x08004559   Thumb Code   236  robot_arm.o(i.RobotArm_TryCompleteMoveTo)
-    i.RobotArm_ValidateHomeConfig            0x0800464c   Section        0  robot_arm.o(i.RobotArm_ValidateHomeConfig)
-    RobotArm_ValidateHomeConfig              0x0800464d   Thumb Code    34  robot_arm.o(i.RobotArm_ValidateHomeConfig)
-    i.RobotArm_ValidateSafeMoveConfig        0x0800466e   Section        0  robot_arm.o(i.RobotArm_ValidateSafeMoveConfig)
-    RobotArm_ValidateSafeMoveConfig          0x0800466f   Thumb Code    14  robot_arm.o(i.RobotArm_ValidateSafeMoveConfig)
-    i.SPI1_InitOnce                          0x0800467c   Section        0  spi_helper.o(i.SPI1_InitOnce)
-    i.SPI_Cmd                                0x08004758   Section        0  stm32f10x_spi.o(i.SPI_Cmd)
-    i.SPI_GPIO_Init                          0x08004770   Section        0  spi_helper.o(i.SPI_GPIO_Init)
-    i.SPI_I2S_GetFlagStatus                  0x080047e8   Section        0  stm32f10x_spi.o(i.SPI_I2S_GetFlagStatus)
-    i.SPI_I2S_ReceiveData                    0x080047fa   Section        0  stm32f10x_spi.o(i.SPI_I2S_ReceiveData)
-    i.SPI_I2S_SendData                       0x08004800   Section        0  stm32f10x_spi.o(i.SPI_I2S_SendData)
-    i.SPI_Init                               0x08004804   Section        0  stm32f10x_spi.o(i.SPI_Init)
-    i.SPI_NSSInternalSoftwareConfig          0x08004840   Section        0  stm32f10x_spi.o(i.SPI_NSSInternalSoftwareConfig)
-    i.SVC_Handler                            0x0800485e   Section        0  stm32f10x_it.o(i.SVC_Handler)
-    i.SetSysClock                            0x08004860   Section        0  system_stm32f10x.o(i.SetSysClock)
-    SetSysClock                              0x08004861   Thumb Code     8  system_stm32f10x.o(i.SetSysClock)
-    i.SetSysClockTo72                        0x08004868   Section        0  system_stm32f10x.o(i.SetSysClockTo72)
-    SetSysClockTo72                          0x08004869   Thumb Code   214  system_stm32f10x.o(i.SetSysClockTo72)
-    i.ShiftRegisterInput_Init                0x08004948   Section        0  shift_register_input.o(i.ShiftRegisterInput_Init)
-    i.ShiftRegisterInput_ReadAll             0x08004974   Section        0  shift_register_input.o(i.ShiftRegisterInput_ReadAll)
-    i.ShiftRegister_Init                     0x080049ec   Section        0  shift_register.o(i.ShiftRegister_Init)
-    i.ShiftRegister_WriteAll                 0x08004a18   Section        0  shift_register.o(i.ShiftRegister_WriteAll)
-    i.SingleMotor_ClearTask                  0x08004a78   Section        0  single_motor.o(i.SingleMotor_ClearTask)
-    SingleMotor_ClearTask                    0x08004a79   Thumb Code    16  single_motor.o(i.SingleMotor_ClearTask)
-    i.SingleMotor_GetRunningBitmap           0x08004a88   Section        0  single_motor.o(i.SingleMotor_GetRunningBitmap)
-    i.SingleMotor_Immediate                  0x08004ac8   Section        0  single_motor.o(i.SingleMotor_Immediate)
-    i.SingleMotor_Init                       0x08004b0c   Section        0  single_motor.o(i.SingleMotor_Init)
-    i.SingleMotor_IsSensorTriggered          0x08004b30   Section        0  single_motor.o(i.SingleMotor_IsSensorTriggered)
-    SingleMotor_IsSensorTriggered            0x08004b31   Thumb Code    56  single_motor.o(i.SingleMotor_IsSensorTriggered)
-    i.SingleMotor_IsValidId                  0x08004b6c   Section        0  single_motor.o(i.SingleMotor_IsValidId)
-    SingleMotor_IsValidId                    0x08004b6d   Thumb Code    16  single_motor.o(i.SingleMotor_IsValidId)
-    i.SingleMotor_RecordError                0x08004b7c   Section        0  single_motor.o(i.SingleMotor_RecordError)
-    i.SingleMotor_Set                        0x08004b94   Section        0  single_motor.o(i.SingleMotor_Set)
-    i.SingleMotor_StartSensorTimed           0x08004bf0   Section        0  single_motor.o(i.SingleMotor_StartSensorTimed)
-    i.SingleMotor_StartTimed                 0x08004c54   Section        0  single_motor.o(i.SingleMotor_StartTimed)
-    i.SingleMotor_Stop                       0x08004c90   Section        0  single_motor.o(i.SingleMotor_Stop)
-    SingleMotor_Stop                         0x08004c91   Thumb Code    34  single_motor.o(i.SingleMotor_Stop)
-    i.SingleMotor_Task                       0x08004cb8   Section        0  single_motor.o(i.SingleMotor_Task)
-    i.Stepper2_GetCompletedSteps             0x08004d48   Section        0  step_dma.o(i.Stepper2_GetCompletedSteps)
-    i.Stepper2_GetRemainingSteps             0x08004d54   Section        0  step_dma.o(i.Stepper2_GetRemainingSteps)
-    i.Stepper2_Init                          0x08004d60   Section        0  step_dma.o(i.Stepper2_Init)
-    i.Stepper2_IsBusy                        0x08004d70   Section        0  step_dma.o(i.Stepper2_IsBusy)
-    i.Stepper2_SetDirection                  0x08004d78   Section        0  step_dma.o(i.Stepper2_SetDirection)
-    i.Stepper2_Start                         0x08004db0   Section        0  step_dma.o(i.Stepper2_Start)
-    i.Stepper2_Stop                          0x08004df8   Section        0  step_dma.o(i.Stepper2_Stop)
-    i.SysTick_CLKSourceConfig                0x08004e00   Section        0  misc.o(i.SysTick_CLKSourceConfig)
-    i.SysTick_Handler                        0x08004e28   Section        0  stm32f10x_it.o(i.SysTick_Handler)
-    i.SystemClock_Config                     0x08004e2a   Section        0  clock.o(i.SystemClock_Config)
-    i.SystemInit                             0x08004e8c   Section        0  system_stm32f10x.o(i.SystemInit)
-    i.TIM1_PWM_CH2N_Config                   0x08004eec   Section        0  pwm.o(i.TIM1_PWM_CH2N_Config)
-    i.TIM2_IRQHandler                        0x08004fb8   Section        0  time.o(i.TIM2_IRQHandler)
-    i.TIM3_10us_Init                         0x08005000   Section        0  time.o(i.TIM3_10us_Init)
-    i.TIM3_IRQHandler                        0x08005058   Section        0  time.o(i.TIM3_IRQHandler)
-    i.TIM4_10us_Init                         0x0800508c   Section        0  time.o(i.TIM4_10us_Init)
-    i.TIM4_IRQHandler                        0x080050e4   Section        0  time.o(i.TIM4_IRQHandler)
-    i.TIM_ARRPreloadConfig                   0x08005100   Section        0  stm32f10x_tim.o(i.TIM_ARRPreloadConfig)
-    i.TIM_BDTRConfig                         0x08005118   Section        0  stm32f10x_tim.o(i.TIM_BDTRConfig)
-    i.TIM_BDTRStructInit                     0x08005138   Section        0  stm32f10x_tim.o(i.TIM_BDTRStructInit)
-    i.TIM_ClearFlag                          0x0800514a   Section        0  stm32f10x_tim.o(i.TIM_ClearFlag)
-    i.TIM_ClearITPendingBit                  0x08005150   Section        0  stm32f10x_tim.o(i.TIM_ClearITPendingBit)
-    i.TIM_Cmd                                0x08005156   Section        0  stm32f10x_tim.o(i.TIM_Cmd)
-    i.TIM_CtrlPWMOutputs                     0x0800516e   Section        0  stm32f10x_tim.o(i.TIM_CtrlPWMOutputs)
-    i.TIM_DMACmd                             0x0800518c   Section        0  stm32f10x_tim.o(i.TIM_DMACmd)
-    i.TIM_GenerateEvent                      0x0800519e   Section        0  stm32f10x_tim.o(i.TIM_GenerateEvent)
-    i.TIM_GetITStatus                        0x080051a2   Section        0  stm32f10x_tim.o(i.TIM_GetITStatus)
-    i.TIM_ITConfig                           0x080051c4   Section        0  stm32f10x_tim.o(i.TIM_ITConfig)
-    i.TIM_OC2Init                            0x080051d8   Section        0  stm32f10x_tim.o(i.TIM_OC2Init)
-    i.TIM_OC2PreloadConfig                   0x0800527c   Section        0  stm32f10x_tim.o(i.TIM_OC2PreloadConfig)
-    i.TIM_OCStructInit                       0x08005296   Section        0  stm32f10x_tim.o(i.TIM_OCStructInit)
-    i.TIM_PrescalerConfig                    0x080052aa   Section        0  stm32f10x_tim.o(i.TIM_PrescalerConfig)
-    i.TIM_SetAutoreload                      0x080052b0   Section        0  stm32f10x_tim.o(i.TIM_SetAutoreload)
-    i.TIM_SetCounter                         0x080052b4   Section        0  stm32f10x_tim.o(i.TIM_SetCounter)
-    i.TIM_TimeBaseInit                       0x080052b8   Section        0  stm32f10x_tim.o(i.TIM_TimeBaseInit)
-    i.TIM_TimeBaseStructInit                 0x0800535c   Section        0  stm32f10x_tim.o(i.TIM_TimeBaseStructInit)
-    i.Timer2_Init                            0x08005370   Section        0  time.o(i.Timer2_Init)
-    i.UART1GetByte                           0x080053d0   Section        0  usart.o(i.UART1GetByte)
-    i.USART1_IRQHandler                      0x080053e4   Section        0  usart.o(i.USART1_IRQHandler)
-    i.USART1_Init                            0x080054a0   Section        0  usart.o(i.USART1_Init)
-    i.USART1_RecordMaxWait                   0x08005690   Section        0  usart.o(i.USART1_RecordMaxWait)
-    USART1_RecordMaxWait                     0x08005691   Thumb Code    32  usart.o(i.USART1_RecordMaxWait)
-    i.USART1_RecordTxFailure                 0x080056b8   Section        0  usart.o(i.USART1_RecordTxFailure)
-    USART1_RecordTxFailure                   0x080056b9   Thumb Code    56  usart.o(i.USART1_RecordTxFailure)
-    i.USART1_ReleaseTx                       0x08005708   Section        0  usart.o(i.USART1_ReleaseTx)
-    USART1_ReleaseTx                         0x08005709   Thumb Code    22  usart.o(i.USART1_ReleaseTx)
-    i.USART1_SetTxDiagnosticCommand          0x08005724   Section        0  usart.o(i.USART1_SetTxDiagnosticCommand)
-    i.USART1_TryAcquireTx                    0x08005740   Section        0  usart.o(i.USART1_TryAcquireTx)
-    USART1_TryAcquireTx                      0x08005741   Thumb Code    34  usart.o(i.USART1_TryAcquireTx)
-    i.USART2_IRQHandler                      0x08005768   Section        0  usart.o(i.USART2_IRQHandler)
-    i.USART3_IRQHandler                      0x080057f8   Section        0  usart.o(i.USART3_IRQHandler)
-    i.USART3_Process                         0x08005814   Section        0  usart.o(i.USART3_Process)
-    i.USART_Cmd                              0x08005840   Section        0  stm32f10x_usart.o(i.USART_Cmd)
-    i.USART_GetFlagStatus                    0x08005858   Section        0  stm32f10x_usart.o(i.USART_GetFlagStatus)
-    i.USART_ITConfig                         0x08005872   Section        0  stm32f10x_usart.o(i.USART_ITConfig)
-    i.USART_Init                             0x080058bc   Section        0  stm32f10x_usart.o(i.USART_Init)
-    i.USART_IsProtocolFrameValid             0x08005994   Section        0  usart.o(i.USART_IsProtocolFrameValid)
-    USART_IsProtocolFrameValid               0x08005995   Thumb Code    52  usart.o(i.USART_IsProtocolFrameValid)
-    i.USART_ProcessProtocolByte              0x080059c8   Section        0  usart.o(i.USART_ProcessProtocolByte)
-    USART_ProcessProtocolByte                0x080059c9   Thumb Code   140  usart.o(i.USART_ProcessProtocolByte)
-    i.USART_ResetRxStats                     0x08005a54   Section        0  usart.o(i.USART_ResetRxStats)
-    USART_ResetRxStats                       0x08005a55   Thumb Code    12  usart.o(i.USART_ResetRxStats)
-    i.USART_RxIrqHandler                     0x08005a60   Section        0  usart.o(i.USART_RxIrqHandler)
-    USART_RxIrqHandler                       0x08005a61   Thumb Code    64  usart.o(i.USART_RxIrqHandler)
-    i.USART_SendBuffer                       0x08005aa0   Section        0  usart.o(i.USART_SendBuffer)
-    i.USART_SendData                         0x08005d00   Section        0  stm32f10x_usart.o(i.USART_SendData)
-    i.UsageFault_Handler                     0x08005d08   Section        0  stm32f10x_it.o(i.UsageFault_Handler)
-    i.__get_PRIMASK                          0x08005d0c   Section        0  usart.o(i.__get_PRIMASK)
-    __get_PRIMASK                            0x08005d0d   Thumb Code     6  usart.o(i.__get_PRIMASK)
-    i.delay_us                               0x08005d12   Section        0  delay.o(i.delay_us)
-    i.dma10_start_edges                      0x08005d30   Section        0  step_dma.o(i.dma10_start_edges)
-    dma10_start_edges                        0x08005d31   Thumb Code    70  step_dma.o(i.dma10_start_edges)
-    i.dma_start_edges                        0x08005d88   Section        0  step_dma.o(i.dma_start_edges)
-    dma_start_edges                          0x08005d89   Thumb Code    70  step_dma.o(i.dma_start_edges)
-    i.fill_dma_buf                           0x08005de0   Section        0  step_dma.o(i.fill_dma_buf)
-    fill_dma_buf                             0x08005de1   Thumb Code    38  step_dma.o(i.fill_dma_buf)
-    i.fill_dma_buf10                         0x08005e0c   Section        0  step_dma.o(i.fill_dma_buf10)
-    fill_dma_buf10                           0x08005e0d   Thumb Code    38  step_dma.o(i.fill_dma_buf10)
-    i.handle_command                         0x08005e38   Section        0  protocol.o(i.handle_command)
-    i.isqrt_u64                              0x0800636c   Section        0  step_dma.o(i.isqrt_u64)
-    isqrt_u64                                0x0800636d   Thumb Code   138  step_dma.o(i.isqrt_u64)
-    i.main                                   0x080063f8   Section        0  main.o(i.main)
-    i.millis                                 0x08006540   Section        0  time.o(i.millis)
-    i.parse_frame                            0x0800654c   Section        0  protocol.o(i.parse_frame)
-    i.send_165Data                           0x080065f8   Section        0  protocol.o(i.send_165Data)
-    i.send_165DataSource                     0x08006604   Section        0  protocol.o(i.send_165DataSource)
-    send_165DataSource                       0x08006605   Thumb Code    38  protocol.o(i.send_165DataSource)
-    i.send_frame                             0x08006630   Section        0  protocol.o(i.send_frame)
-    i.send_frame_internal                    0x08006644   Section        0  protocol.o(i.send_frame_internal)
-    send_frame_internal                      0x08006645   Thumb Code   284  protocol.o(i.send_frame_internal)
-    i.stepdma_pb10_init                      0x0800679c   Section        0  step_dma.o(i.stepdma_pb10_init)
-    i.stepdma_pb10_is_running                0x080068e0   Section        0  step_dma.o(i.stepdma_pb10_is_running)
-    i.stepdma_pb10_move_trap                 0x080068ec   Section        0  step_dma.o(i.stepdma_pb10_move_trap)
-    i.stepdma_pb10_request_trap              0x08006a4c   Section        0  step_dma.o(i.stepdma_pb10_request_trap)
-    i.stepdma_pb10_stop                      0x08006aac   Section        0  step_dma.o(i.stepdma_pb10_stop)
-    i.stepdma_pb11_get_completed_steps       0x08006b00   Section        0  step_dma.o(i.stepdma_pb11_get_completed_steps)
-    i.stepdma_pb11_get_remaining_steps       0x08006b0c   Section        0  step_dma.o(i.stepdma_pb11_get_remaining_steps)
-    i.stepdma_pb11_init                      0x08006b2c   Section        0  step_dma.o(i.stepdma_pb11_init)
-    i.stepdma_pb11_is_running                0x08006c4c   Section        0  step_dma.o(i.stepdma_pb11_is_running)
-    i.stepdma_pb11_move_trap                 0x08006c58   Section        0  step_dma.o(i.stepdma_pb11_move_trap)
-    i.stepdma_pb11_request_trap              0x08006d94   Section        0  step_dma.o(i.stepdma_pb11_request_trap)
-    i.stepdma_pb11_stop                      0x08006dd4   Section        0  step_dma.o(i.stepdma_pb11_stop)
-    i.task_165_input_scan                    0x08006e18   Section        0  main.o(i.task_165_input_scan)
-    task_165_input_scan                      0x08006e19   Thumb Code    10  main.o(i.task_165_input_scan)
-    i.task_input_change_report               0x08006e28   Section        0  main.o(i.task_input_change_report)
-    task_input_change_report                 0x08006e29   Thumb Code    92  main.o(i.task_input_change_report)
-    i.task_protocol_commands                 0x08006e90   Section        0  main.o(i.task_protocol_commands)
-    task_protocol_commands                   0x08006e91   Thumb Code    38  main.o(i.task_protocol_commands)
-    i.task_protocol_v2_send                  0x08006eb8   Section        0  main.o(i.task_protocol_v2_send)
-    task_protocol_v2_send                    0x08006eb9   Thumb Code    42  main.o(i.task_protocol_v2_send)
-    i.task_single_motor                      0x08006ee8   Section        0  main.o(i.task_single_motor)
-    task_single_motor                        0x08006ee9   Thumb Code    38  main.o(i.task_single_motor)
-    i.task_uart_frames                       0x08006f14   Section        0  main.o(i.task_uart_frames)
-    task_uart_frames                         0x08006f15   Thumb Code   100  main.o(i.task_uart_frames)
-    i.tim5_set_edge_freq                     0x08006f78   Section        0  step_dma.o(i.tim5_set_edge_freq)
-    tim5_set_edge_freq                       0x08006f79   Thumb Code   142  step_dma.o(i.tim5_set_edge_freq)
-    i.tim6_set_edge_freq                     0x08007010   Section        0  step_dma.o(i.tim6_set_edge_freq)
-    tim6_set_edge_freq                       0x08007011   Thumb Code   138  step_dma.o(i.tim6_set_edge_freq)
-    i.trap10_get_f                           0x080070a4   Section        0  step_dma.o(i.trap10_get_f)
-    trap10_get_f                             0x080070a5   Thumb Code   196  step_dma.o(i.trap10_get_f)
-    i.trap_get_f                             0x0800716c   Section        0  step_dma.o(i.trap_get_f)
-    trap_get_f                               0x0800716d   Thumb Code   196  step_dma.o(i.trap_get_f)
-    .constdata                               0x08007234   Section       38  single_motor.o(.constdata)
-    single_motor_register_index              0x08007234   Data          19  single_motor.o(.constdata)
-    single_motor_bit_index                   0x08007247   Data          19  single_motor.o(.constdata)
-    .constdata                               0x0800725c   Section      140  reversible_motor.o(.constdata)
-    g_reversible_motor_hardware              0x0800725c   Data         140  reversible_motor.o(.constdata)
-    .constdata                               0x080072e8   Section       84  robot_arm.o(.constdata)
-    enabled                                  0x080072e8   Data           3  robot_arm.o(.constdata)
-    enabled                                  0x080072eb   Data           3  robot_arm.o(.constdata)
-    direction                                0x080072ee   Data           3  robot_arm.o(.constdata)
-    steps                                    0x080072f4   Data          12  robot_arm.o(.constdata)
-    timeout                                  0x08007300   Data          12  robot_arm.o(.constdata)
-    offset                                   0x0800730c   Data          12  robot_arm.o(.constdata)
-    min_position                             0x08007318   Data          12  robot_arm.o(.constdata)
-    max_position                             0x08007324   Data          12  robot_arm.o(.constdata)
-    speed                                    0x08007330   Data          12  robot_arm.o(.constdata)
-    .constdata                               0x0800733c   Section       12  robot_arm_sensor.o(.constdata)
-    s_sensor_byte_index                      0x0800733c   Data           4  robot_arm_sensor.o(.constdata)
-    s_sensor_bit_mask                        0x08007340   Data           4  robot_arm_sensor.o(.constdata)
-    s_sensor_triggered_level                 0x08007344   Data           4  robot_arm_sensor.o(.constdata)
+    RobotArmProtocol_BindActive              0x080025bd   Thumb Code    24  robot_arm_protocol.o(i.RobotArmProtocol_BindActive)
+    i.RobotArmProtocol_CanAcceptRequest      0x080025d8   Section        0  robot_arm_protocol.o(i.RobotArmProtocol_CanAcceptRequest)
+    i.RobotArmProtocol_ClearData             0x0800260c   Section        0  robot_arm_protocol.o(i.RobotArmProtocol_ClearData)
+    RobotArmProtocol_ClearData               0x0800260d   Thumb Code    20  robot_arm_protocol.o(i.RobotArmProtocol_ClearData)
+    i.RobotArmProtocol_EventFromReason       0x08002620   Section        0  robot_arm_protocol.o(i.RobotArmProtocol_EventFromReason)
+    RobotArmProtocol_EventFromReason         0x08002621   Thumb Code    46  robot_arm_protocol.o(i.RobotArmProtocol_EventFromReason)
+    i.RobotArmProtocol_FlushTx               0x08002650   Section        0  robot_arm_protocol.o(i.RobotArmProtocol_FlushTx)
+    RobotArmProtocol_FlushTx                 0x08002651   Thumb Code   110  robot_arm_protocol.o(i.RobotArmProtocol_FlushTx)
+    i.RobotArmProtocol_HandleFrame           0x080026d4   Section        0  robot_arm_protocol.o(i.RobotArmProtocol_HandleFrame)
+    i.RobotArmProtocol_Init                  0x080028c4   Section        0  robot_arm_protocol.o(i.RobotArmProtocol_Init)
+    i.RobotArmProtocol_IsHomeCommand         0x0800294c   Section        0  robot_arm_protocol.o(i.RobotArmProtocol_IsHomeCommand)
+    RobotArmProtocol_IsHomeCommand           0x0800294d   Thumb Code    18  robot_arm_protocol.o(i.RobotArmProtocol_IsHomeCommand)
+    i.RobotArmProtocol_MoveAxisAbsolute      0x0800295e   Section        0  robot_arm_protocol.o(i.RobotArmProtocol_MoveAxisAbsolute)
+    RobotArmProtocol_MoveAxisAbsolute        0x0800295f   Thumb Code    54  robot_arm_protocol.o(i.RobotArmProtocol_MoveAxisAbsolute)
+    i.RobotArmProtocol_MoveAxisRelative      0x08002994   Section        0  robot_arm_protocol.o(i.RobotArmProtocol_MoveAxisRelative)
+    RobotArmProtocol_MoveAxisRelative        0x08002995   Thumb Code    54  robot_arm_protocol.o(i.RobotArmProtocol_MoveAxisRelative)
+    i.RobotArmProtocol_ProduceTerminal       0x080029cc   Section        0  robot_arm_protocol.o(i.RobotArmProtocol_ProduceTerminal)
+    RobotArmProtocol_ProduceTerminal         0x080029cd   Thumb Code    68  robot_arm_protocol.o(i.RobotArmProtocol_ProduceTerminal)
+    i.RobotArmProtocol_Queue                 0x08002a1c   Section        0  robot_arm_protocol.o(i.RobotArmProtocol_Queue)
+    RobotArmProtocol_Queue                   0x08002a1d   Thumb Code   204  robot_arm_protocol.o(i.RobotArmProtocol_Queue)
+    i.RobotArmProtocol_RetryActiveAck        0x08002af8   Section        0  robot_arm_protocol.o(i.RobotArmProtocol_RetryActiveAck)
+    RobotArmProtocol_RetryActiveAck          0x08002af9   Thumb Code    36  robot_arm_protocol.o(i.RobotArmProtocol_RetryActiveAck)
+    i.RobotArmProtocol_RetryStopAck          0x08002b20   Section        0  robot_arm_protocol.o(i.RobotArmProtocol_RetryStopAck)
+    RobotArmProtocol_RetryStopAck            0x08002b21   Thumb Code    36  robot_arm_protocol.o(i.RobotArmProtocol_RetryStopAck)
+    i.RobotArmProtocol_SendAck               0x08002b48   Section        0  robot_arm_protocol.o(i.RobotArmProtocol_SendAck)
+    RobotArmProtocol_SendAck                 0x08002b49   Thumb Code    60  robot_arm_protocol.o(i.RobotArmProtocol_SendAck)
+    i.RobotArmProtocol_SendStatus            0x08002b84   Section        0  robot_arm_protocol.o(i.RobotArmProtocol_SendStatus)
+    RobotArmProtocol_SendStatus              0x08002b85   Thumb Code   482  robot_arm_protocol.o(i.RobotArmProtocol_SendStatus)
+    i.RobotArmProtocol_Task                  0x08002d70   Section        0  robot_arm_protocol.o(i.RobotArmProtocol_Task)
+    i.RobotArmSensor_IsReady                 0x08002df8   Section        0  robot_arm_sensor.o(i.RobotArmSensor_IsReady)
+    i.RobotArmSensor_IsTriggered             0x08002e04   Section        0  robot_arm_sensor.o(i.RobotArmSensor_IsTriggered)
+    i.RobotArmSensor_UpdateSnapshot          0x08002e50   Section        0  robot_arm_sensor.o(i.RobotArmSensor_UpdateSnapshot)
+    i.RobotArm_BeginHomeAxis                 0x08002e7c   Section        0  robot_arm.o(i.RobotArm_BeginHomeAxis)
+    RobotArm_BeginHomeAxis                   0x08002e7d   Thumb Code    88  robot_arm.o(i.RobotArm_BeginHomeAxis)
+    i.RobotArm_CalculateMoveTimeout          0x08002ed8   Section        0  robot_arm.o(i.RobotArm_CalculateMoveTimeout)
+    RobotArm_CalculateMoveTimeout            0x08002ed9   Thumb Code   108  robot_arm.o(i.RobotArm_CalculateMoveTimeout)
+    i.RobotArm_CheckAxisTarget               0x08002f44   Section        0  robot_arm.o(i.RobotArm_CheckAxisTarget)
+    RobotArm_CheckAxisTarget                 0x08002f45   Thumb Code    48  robot_arm.o(i.RobotArm_CheckAxisTarget)
+    i.RobotArm_CheckPoseSafety               0x08002f74   Section        0  robot_arm.o(i.RobotArm_CheckPoseSafety)
+    i.RobotArm_CheckTargetDirection          0x08002f7a   Section        0  robot_arm.o(i.RobotArm_CheckTargetDirection)
+    RobotArm_CheckTargetDirection            0x08002f7b   Thumb Code    62  robot_arm.o(i.RobotArm_CheckTargetDirection)
+    i.RobotArm_CheckTransitionSafety         0x08002fb8   Section        0  robot_arm.o(i.RobotArm_CheckTransitionSafety)
+    i.RobotArm_ClearError                    0x08002fd0   Section        0  robot_arm.o(i.RobotArm_ClearError)
+    i.RobotArm_CompleteHomeAxis              0x08003028   Section        0  robot_arm.o(i.RobotArm_CompleteHomeAxis)
+    RobotArm_CompleteHomeAxis                0x08003029   Thumb Code   152  robot_arm.o(i.RobotArm_CompleteHomeAxis)
+    i.RobotArm_FailAxisMove                  0x080030c4   Section        0  robot_arm.o(i.RobotArm_FailAxisMove)
+    RobotArm_FailAxisMove                    0x080030c5   Thumb Code   164  robot_arm.o(i.RobotArm_FailAxisMove)
+    i.RobotArm_FailCombinedMoveStart         0x0800316c   Section        0  robot_arm.o(i.RobotArm_FailCombinedMoveStart)
+    RobotArm_FailCombinedMoveStart           0x0800316d   Thumb Code   104  robot_arm.o(i.RobotArm_FailCombinedMoveStart)
+    i.RobotArm_FailHome                      0x080031dc   Section        0  robot_arm.o(i.RobotArm_FailHome)
+    RobotArm_FailHome                        0x080031dd   Thumb Code    98  robot_arm.o(i.RobotArm_FailHome)
+    i.RobotArm_GetAxis                       0x08003244   Section        0  robot_arm.o(i.RobotArm_GetAxis)
+    RobotArm_GetAxis                         0x08003245   Thumb Code    26  robot_arm.o(i.RobotArm_GetAxis)
+    i.RobotArm_GetAxisState                  0x08003264   Section        0  robot_arm.o(i.RobotArm_GetAxisState)
+    i.RobotArm_GetHomeDirection              0x0800327c   Section        0  robot_arm.o(i.RobotArm_GetHomeDirection)
+    RobotArm_GetHomeDirection                0x0800327d   Thumb Code     8  robot_arm.o(i.RobotArm_GetHomeDirection)
+    i.RobotArm_GetHomeMaxSteps               0x08003288   Section        0  robot_arm.o(i.RobotArm_GetHomeMaxSteps)
+    RobotArm_GetHomeMaxSteps                 0x08003289   Thumb Code    10  robot_arm.o(i.RobotArm_GetHomeMaxSteps)
+    i.RobotArm_GetHomeOffset                 0x08003298   Section        0  robot_arm.o(i.RobotArm_GetHomeOffset)
+    RobotArm_GetHomeOffset                   0x08003299   Thumb Code    10  robot_arm.o(i.RobotArm_GetHomeOffset)
+    i.RobotArm_GetHomeSensor                 0x080032a8   Section        0  robot_arm.o(i.RobotArm_GetHomeSensor)
+    RobotArm_GetHomeSensor                   0x080032a9   Thumb Code     6  robot_arm.o(i.RobotArm_GetHomeSensor)
+    i.RobotArm_GetHomeTimeout                0x080032b0   Section        0  robot_arm.o(i.RobotArm_GetHomeTimeout)
+    RobotArm_GetHomeTimeout                  0x080032b1   Thumb Code    10  robot_arm.o(i.RobotArm_GetHomeTimeout)
+    i.RobotArm_GetStatus                     0x080032c0   Section        0  robot_arm.o(i.RobotArm_GetStatus)
+    i.RobotArm_GetX                          0x080033bc   Section        0  robot_arm.o(i.RobotArm_GetX)
+    i.RobotArm_GetY                          0x080033c8   Section        0  robot_arm.o(i.RobotArm_GetY)
+    i.RobotArm_GetZ                          0x080033d4   Section        0  robot_arm.o(i.RobotArm_GetZ)
+    i.RobotArm_Home                          0x080033e0   Section        0  robot_arm.o(i.RobotArm_Home)
+    i.RobotArm_HomeAxis                      0x0800345c   Section        0  robot_arm.o(i.RobotArm_HomeAxis)
+    i.RobotArm_Init                          0x080034a4   Section        0  robot_arm.o(i.RobotArm_Init)
+    i.RobotArm_InvalidatePosition            0x08003588   Section        0  robot_arm.o(i.RobotArm_InvalidatePosition)
+    i.RobotArm_IsAxisLimitEnabled            0x080035b0   Section        0  robot_arm.o(i.RobotArm_IsAxisLimitEnabled)
+    RobotArm_IsAxisLimitEnabled              0x080035b1   Thumb Code     8  robot_arm.o(i.RobotArm_IsAxisLimitEnabled)
+    i.RobotArm_IsBusy                        0x080035bc   Section        0  robot_arm.o(i.RobotArm_IsBusy)
+    i.RobotArm_IsDirectionBlocked            0x080035ec   Section        0  robot_arm.o(i.RobotArm_IsDirectionBlocked)
+    RobotArm_IsDirectionBlocked              0x080035ed   Thumb Code    52  robot_arm.o(i.RobotArm_IsDirectionBlocked)
+    i.RobotArm_IsHomeEnabled                 0x08003620   Section        0  robot_arm.o(i.RobotArm_IsHomeEnabled)
+    RobotArm_IsHomeEnabled                   0x08003621   Thumb Code     8  robot_arm.o(i.RobotArm_IsHomeEnabled)
+    i.RobotArm_IsHomed                       0x0800362c   Section        0  robot_arm.o(i.RobotArm_IsHomed)
+    i.RobotArm_IsPositionValid               0x08003642   Section        0  robot_arm.o(i.RobotArm_IsPositionValid)
+    i.RobotArm_MoveTo                        0x08003658   Section        0  robot_arm.o(i.RobotArm_MoveTo)
+    i.RobotArm_MoveToSafe                    0x080037f8   Section        0  robot_arm.o(i.RobotArm_MoveToSafe)
+    i.RobotArm_MoveX                         0x080038e0   Section        0  robot_arm.o(i.RobotArm_MoveX)
+    i.RobotArm_MoveXRelative                 0x080038f2   Section        0  robot_arm.o(i.RobotArm_MoveXRelative)
+    i.RobotArm_MoveY                         0x08003904   Section        0  robot_arm.o(i.RobotArm_MoveY)
+    i.RobotArm_MoveYRelative                 0x08003916   Section        0  robot_arm.o(i.RobotArm_MoveYRelative)
+    i.RobotArm_MoveZ                         0x08003928   Section        0  robot_arm.o(i.RobotArm_MoveZ)
+    i.RobotArm_MoveZRelative                 0x0800393a   Section        0  robot_arm.o(i.RobotArm_MoveZRelative)
+    i.RobotArm_ProcessAxisMove               0x0800394c   Section        0  robot_arm.o(i.RobotArm_ProcessAxisMove)
+    RobotArm_ProcessAxisMove                 0x0800394d   Thumb Code   152  robot_arm.o(i.RobotArm_ProcessAxisMove)
+    i.RobotArm_ResetCombinedStates           0x080039e8   Section        0  robot_arm.o(i.RobotArm_ResetCombinedStates)
+    RobotArm_ResetCombinedStates             0x080039e9   Thumb Code    42  robot_arm.o(i.RobotArm_ResetCombinedStates)
+    i.RobotArm_ResetMoveDebug                0x08003a18   Section        0  robot_arm.o(i.RobotArm_ResetMoveDebug)
+    RobotArm_ResetMoveDebug                  0x08003a19   Thumb Code    78  robot_arm.o(i.RobotArm_ResetMoveDebug)
+    i.RobotArm_ResultFromEndReason           0x08003a6c   Section        0  robot_arm.o(i.RobotArm_ResultFromEndReason)
+    RobotArm_ResultFromEndReason             0x08003a6d   Thumb Code    46  robot_arm.o(i.RobotArm_ResultFromEndReason)
+    i.RobotArm_StartAxisMoveInternal         0x08003a9c   Section        0  robot_arm.o(i.RobotArm_StartAxisMoveInternal)
+    RobotArm_StartAxisMoveInternal           0x08003a9d   Thumb Code   296  robot_arm.o(i.RobotArm_StartAxisMoveInternal)
+    i.RobotArm_StartHomeDriver               0x08003bcc   Section        0  robot_arm.o(i.RobotArm_StartHomeDriver)
+    RobotArm_StartHomeDriver                 0x08003bcd   Thumb Code    60  robot_arm.o(i.RobotArm_StartHomeDriver)
+    i.RobotArm_StartSingleAbsolute           0x08003c08   Section        0  robot_arm.o(i.RobotArm_StartSingleAbsolute)
+    RobotArm_StartSingleAbsolute             0x08003c09   Thumb Code   102  robot_arm.o(i.RobotArm_StartSingleAbsolute)
+    i.RobotArm_StartSingleRelative           0x08003c74   Section        0  robot_arm.o(i.RobotArm_StartSingleRelative)
+    RobotArm_StartSingleRelative             0x08003c75   Thumb Code   148  robot_arm.o(i.RobotArm_StartSingleRelative)
+    i.RobotArm_Stop                          0x08003d0c   Section        0  robot_arm.o(i.RobotArm_Stop)
+    i.RobotArm_Task                          0x08003db0   Section        0  robot_arm.o(i.RobotArm_Task)
+    i.RobotArm_TaskHome                      0x08003e40   Section        0  robot_arm.o(i.RobotArm_TaskHome)
+    RobotArm_TaskHome                        0x08003e41   Thumb Code   584  robot_arm.o(i.RobotArm_TaskHome)
+    i.RobotArm_TaskMoveTo                    0x0800408c   Section        0  robot_arm.o(i.RobotArm_TaskMoveTo)
+    RobotArm_TaskMoveTo                      0x0800408d   Thumb Code   432  robot_arm.o(i.RobotArm_TaskMoveTo)
+    i.RobotArm_TaskSafeMove                  0x08004244   Section        0  robot_arm.o(i.RobotArm_TaskSafeMove)
+    RobotArm_TaskSafeMove                    0x08004245   Thumb Code   628  robot_arm.o(i.RobotArm_TaskSafeMove)
+    i.RobotArm_TryCompleteMoveTo             0x080044bc   Section        0  robot_arm.o(i.RobotArm_TryCompleteMoveTo)
+    RobotArm_TryCompleteMoveTo               0x080044bd   Thumb Code   236  robot_arm.o(i.RobotArm_TryCompleteMoveTo)
+    i.RobotArm_ValidateHomeConfig            0x080045b0   Section        0  robot_arm.o(i.RobotArm_ValidateHomeConfig)
+    RobotArm_ValidateHomeConfig              0x080045b1   Thumb Code    34  robot_arm.o(i.RobotArm_ValidateHomeConfig)
+    i.RobotArm_ValidateSafeMoveConfig        0x080045d2   Section        0  robot_arm.o(i.RobotArm_ValidateSafeMoveConfig)
+    RobotArm_ValidateSafeMoveConfig          0x080045d3   Thumb Code    14  robot_arm.o(i.RobotArm_ValidateSafeMoveConfig)
+    i.SPI1_InitOnce                          0x080045e0   Section        0  spi_helper.o(i.SPI1_InitOnce)
+    i.SPI_Cmd                                0x080046bc   Section        0  stm32f10x_spi.o(i.SPI_Cmd)
+    i.SPI_GPIO_Init                          0x080046d4   Section        0  spi_helper.o(i.SPI_GPIO_Init)
+    i.SPI_I2S_GetFlagStatus                  0x0800474c   Section        0  stm32f10x_spi.o(i.SPI_I2S_GetFlagStatus)
+    i.SPI_I2S_ReceiveData                    0x0800475e   Section        0  stm32f10x_spi.o(i.SPI_I2S_ReceiveData)
+    i.SPI_I2S_SendData                       0x08004764   Section        0  stm32f10x_spi.o(i.SPI_I2S_SendData)
+    i.SPI_Init                               0x08004768   Section        0  stm32f10x_spi.o(i.SPI_Init)
+    i.SPI_NSSInternalSoftwareConfig          0x080047a4   Section        0  stm32f10x_spi.o(i.SPI_NSSInternalSoftwareConfig)
+    i.SVC_Handler                            0x080047c2   Section        0  stm32f10x_it.o(i.SVC_Handler)
+    i.SetSysClock                            0x080047c4   Section        0  system_stm32f10x.o(i.SetSysClock)
+    SetSysClock                              0x080047c5   Thumb Code     8  system_stm32f10x.o(i.SetSysClock)
+    i.SetSysClockTo72                        0x080047cc   Section        0  system_stm32f10x.o(i.SetSysClockTo72)
+    SetSysClockTo72                          0x080047cd   Thumb Code   214  system_stm32f10x.o(i.SetSysClockTo72)
+    i.ShiftRegisterInput_Init                0x080048ac   Section        0  shift_register_input.o(i.ShiftRegisterInput_Init)
+    i.ShiftRegisterInput_ReadAll             0x080048d8   Section        0  shift_register_input.o(i.ShiftRegisterInput_ReadAll)
+    i.ShiftRegister_Init                     0x08004950   Section        0  shift_register.o(i.ShiftRegister_Init)
+    i.ShiftRegister_WriteAll                 0x0800497c   Section        0  shift_register.o(i.ShiftRegister_WriteAll)
+    i.SingleMotor_ClearTask                  0x080049dc   Section        0  single_motor.o(i.SingleMotor_ClearTask)
+    SingleMotor_ClearTask                    0x080049dd   Thumb Code    16  single_motor.o(i.SingleMotor_ClearTask)
+    i.SingleMotor_GetRunningBitmap           0x080049ec   Section        0  single_motor.o(i.SingleMotor_GetRunningBitmap)
+    i.SingleMotor_Immediate                  0x08004a2c   Section        0  single_motor.o(i.SingleMotor_Immediate)
+    i.SingleMotor_Init                       0x08004a70   Section        0  single_motor.o(i.SingleMotor_Init)
+    i.SingleMotor_IsSensorTriggered          0x08004a94   Section        0  single_motor.o(i.SingleMotor_IsSensorTriggered)
+    SingleMotor_IsSensorTriggered            0x08004a95   Thumb Code    56  single_motor.o(i.SingleMotor_IsSensorTriggered)
+    i.SingleMotor_IsValidId                  0x08004ad0   Section        0  single_motor.o(i.SingleMotor_IsValidId)
+    SingleMotor_IsValidId                    0x08004ad1   Thumb Code    16  single_motor.o(i.SingleMotor_IsValidId)
+    i.SingleMotor_RecordError                0x08004ae0   Section        0  single_motor.o(i.SingleMotor_RecordError)
+    i.SingleMotor_Set                        0x08004af8   Section        0  single_motor.o(i.SingleMotor_Set)
+    i.SingleMotor_StartSensorTimed           0x08004b54   Section        0  single_motor.o(i.SingleMotor_StartSensorTimed)
+    i.SingleMotor_StartTimed                 0x08004bb8   Section        0  single_motor.o(i.SingleMotor_StartTimed)
+    i.SingleMotor_Stop                       0x08004bf4   Section        0  single_motor.o(i.SingleMotor_Stop)
+    SingleMotor_Stop                         0x08004bf5   Thumb Code    34  single_motor.o(i.SingleMotor_Stop)
+    i.SingleMotor_Task                       0x08004c1c   Section        0  single_motor.o(i.SingleMotor_Task)
+    i.Stepper2_GetCompletedSteps             0x08004cac   Section        0  step_dma.o(i.Stepper2_GetCompletedSteps)
+    i.Stepper2_GetRemainingSteps             0x08004cb8   Section        0  step_dma.o(i.Stepper2_GetRemainingSteps)
+    i.Stepper2_Init                          0x08004cc4   Section        0  step_dma.o(i.Stepper2_Init)
+    i.Stepper2_IsBusy                        0x08004cd4   Section        0  step_dma.o(i.Stepper2_IsBusy)
+    i.Stepper2_SetDirection                  0x08004cdc   Section        0  step_dma.o(i.Stepper2_SetDirection)
+    i.Stepper2_Start                         0x08004d14   Section        0  step_dma.o(i.Stepper2_Start)
+    i.Stepper2_Stop                          0x08004d5c   Section        0  step_dma.o(i.Stepper2_Stop)
+    i.SysTick_CLKSourceConfig                0x08004d64   Section        0  misc.o(i.SysTick_CLKSourceConfig)
+    i.SysTick_Handler                        0x08004d8c   Section        0  stm32f10x_it.o(i.SysTick_Handler)
+    i.SystemClock_Config                     0x08004d8e   Section        0  clock.o(i.SystemClock_Config)
+    i.SystemInit                             0x08004df0   Section        0  system_stm32f10x.o(i.SystemInit)
+    i.TIM1_PWM_CH2N_Config                   0x08004e50   Section        0  pwm.o(i.TIM1_PWM_CH2N_Config)
+    i.TIM2_IRQHandler                        0x08004f1c   Section        0  time.o(i.TIM2_IRQHandler)
+    i.TIM3_10us_Init                         0x08004f64   Section        0  time.o(i.TIM3_10us_Init)
+    i.TIM3_IRQHandler                        0x08004fbc   Section        0  time.o(i.TIM3_IRQHandler)
+    i.TIM4_10us_Init                         0x08004ff0   Section        0  time.o(i.TIM4_10us_Init)
+    i.TIM4_IRQHandler                        0x08005048   Section        0  time.o(i.TIM4_IRQHandler)
+    i.TIM_ARRPreloadConfig                   0x08005064   Section        0  stm32f10x_tim.o(i.TIM_ARRPreloadConfig)
+    i.TIM_BDTRConfig                         0x0800507c   Section        0  stm32f10x_tim.o(i.TIM_BDTRConfig)
+    i.TIM_BDTRStructInit                     0x0800509c   Section        0  stm32f10x_tim.o(i.TIM_BDTRStructInit)
+    i.TIM_ClearFlag                          0x080050ae   Section        0  stm32f10x_tim.o(i.TIM_ClearFlag)
+    i.TIM_ClearITPendingBit                  0x080050b4   Section        0  stm32f10x_tim.o(i.TIM_ClearITPendingBit)
+    i.TIM_Cmd                                0x080050ba   Section        0  stm32f10x_tim.o(i.TIM_Cmd)
+    i.TIM_CtrlPWMOutputs                     0x080050d2   Section        0  stm32f10x_tim.o(i.TIM_CtrlPWMOutputs)
+    i.TIM_DMACmd                             0x080050f0   Section        0  stm32f10x_tim.o(i.TIM_DMACmd)
+    i.TIM_GenerateEvent                      0x08005102   Section        0  stm32f10x_tim.o(i.TIM_GenerateEvent)
+    i.TIM_GetITStatus                        0x08005106   Section        0  stm32f10x_tim.o(i.TIM_GetITStatus)
+    i.TIM_ITConfig                           0x08005128   Section        0  stm32f10x_tim.o(i.TIM_ITConfig)
+    i.TIM_OC2Init                            0x0800513c   Section        0  stm32f10x_tim.o(i.TIM_OC2Init)
+    i.TIM_OC2PreloadConfig                   0x080051e0   Section        0  stm32f10x_tim.o(i.TIM_OC2PreloadConfig)
+    i.TIM_OCStructInit                       0x080051fa   Section        0  stm32f10x_tim.o(i.TIM_OCStructInit)
+    i.TIM_PrescalerConfig                    0x0800520e   Section        0  stm32f10x_tim.o(i.TIM_PrescalerConfig)
+    i.TIM_SetAutoreload                      0x08005214   Section        0  stm32f10x_tim.o(i.TIM_SetAutoreload)
+    i.TIM_SetCounter                         0x08005218   Section        0  stm32f10x_tim.o(i.TIM_SetCounter)
+    i.TIM_TimeBaseInit                       0x0800521c   Section        0  stm32f10x_tim.o(i.TIM_TimeBaseInit)
+    i.TIM_TimeBaseStructInit                 0x080052c0   Section        0  stm32f10x_tim.o(i.TIM_TimeBaseStructInit)
+    i.Timer2_Init                            0x080052d4   Section        0  time.o(i.Timer2_Init)
+    i.UART1GetByte                           0x08005334   Section        0  usart.o(i.UART1GetByte)
+    i.USART1_IRQHandler                      0x08005348   Section        0  usart.o(i.USART1_IRQHandler)
+    i.USART1_Init                            0x08005404   Section        0  usart.o(i.USART1_Init)
+    i.USART1_RecordMaxWait                   0x080055f4   Section        0  usart.o(i.USART1_RecordMaxWait)
+    USART1_RecordMaxWait                     0x080055f5   Thumb Code    32  usart.o(i.USART1_RecordMaxWait)
+    i.USART1_RecordTxFailure                 0x0800561c   Section        0  usart.o(i.USART1_RecordTxFailure)
+    USART1_RecordTxFailure                   0x0800561d   Thumb Code    56  usart.o(i.USART1_RecordTxFailure)
+    i.USART1_ReleaseTx                       0x0800566c   Section        0  usart.o(i.USART1_ReleaseTx)
+    USART1_ReleaseTx                         0x0800566d   Thumb Code    22  usart.o(i.USART1_ReleaseTx)
+    i.USART1_SetTxDiagnosticCommand          0x08005688   Section        0  usart.o(i.USART1_SetTxDiagnosticCommand)
+    i.USART1_TryAcquireTx                    0x080056a4   Section        0  usart.o(i.USART1_TryAcquireTx)
+    USART1_TryAcquireTx                      0x080056a5   Thumb Code    34  usart.o(i.USART1_TryAcquireTx)
+    i.USART2_IRQHandler                      0x080056cc   Section        0  usart.o(i.USART2_IRQHandler)
+    i.USART3_IRQHandler                      0x0800575c   Section        0  usart.o(i.USART3_IRQHandler)
+    i.USART3_Process                         0x08005778   Section        0  usart.o(i.USART3_Process)
+    i.USART_Cmd                              0x080057a4   Section        0  stm32f10x_usart.o(i.USART_Cmd)
+    i.USART_GetFlagStatus                    0x080057bc   Section        0  stm32f10x_usart.o(i.USART_GetFlagStatus)
+    i.USART_ITConfig                         0x080057d6   Section        0  stm32f10x_usart.o(i.USART_ITConfig)
+    i.USART_Init                             0x08005820   Section        0  stm32f10x_usart.o(i.USART_Init)
+    i.USART_IsProtocolFrameValid             0x080058f8   Section        0  usart.o(i.USART_IsProtocolFrameValid)
+    USART_IsProtocolFrameValid               0x080058f9   Thumb Code    52  usart.o(i.USART_IsProtocolFrameValid)
+    i.USART_ProcessProtocolByte              0x0800592c   Section        0  usart.o(i.USART_ProcessProtocolByte)
+    USART_ProcessProtocolByte                0x0800592d   Thumb Code   140  usart.o(i.USART_ProcessProtocolByte)
+    i.USART_ResetRxStats                     0x080059b8   Section        0  usart.o(i.USART_ResetRxStats)
+    USART_ResetRxStats                       0x080059b9   Thumb Code    12  usart.o(i.USART_ResetRxStats)
+    i.USART_RxIrqHandler                     0x080059c4   Section        0  usart.o(i.USART_RxIrqHandler)
+    USART_RxIrqHandler                       0x080059c5   Thumb Code    64  usart.o(i.USART_RxIrqHandler)
+    i.USART_SendBuffer                       0x08005a04   Section        0  usart.o(i.USART_SendBuffer)
+    i.USART_SendData                         0x08005c64   Section        0  stm32f10x_usart.o(i.USART_SendData)
+    i.UsageFault_Handler                     0x08005c6c   Section        0  stm32f10x_it.o(i.UsageFault_Handler)
+    i.__get_PRIMASK                          0x08005c70   Section        0  usart.o(i.__get_PRIMASK)
+    __get_PRIMASK                            0x08005c71   Thumb Code     6  usart.o(i.__get_PRIMASK)
+    i.delay_us                               0x08005c76   Section        0  delay.o(i.delay_us)
+    i.dma10_start_edges                      0x08005c94   Section        0  step_dma.o(i.dma10_start_edges)
+    dma10_start_edges                        0x08005c95   Thumb Code    70  step_dma.o(i.dma10_start_edges)
+    i.dma_start_edges                        0x08005cec   Section        0  step_dma.o(i.dma_start_edges)
+    dma_start_edges                          0x08005ced   Thumb Code    70  step_dma.o(i.dma_start_edges)
+    i.fill_dma_buf                           0x08005d44   Section        0  step_dma.o(i.fill_dma_buf)
+    fill_dma_buf                             0x08005d45   Thumb Code    38  step_dma.o(i.fill_dma_buf)
+    i.fill_dma_buf10                         0x08005d70   Section        0  step_dma.o(i.fill_dma_buf10)
+    fill_dma_buf10                           0x08005d71   Thumb Code    38  step_dma.o(i.fill_dma_buf10)
+    i.handle_command                         0x08005d9c   Section        0  protocol.o(i.handle_command)
+    i.isqrt_u64                              0x080062d0   Section        0  step_dma.o(i.isqrt_u64)
+    isqrt_u64                                0x080062d1   Thumb Code   138  step_dma.o(i.isqrt_u64)
+    i.main                                   0x0800635c   Section        0  main.o(i.main)
+    i.millis                                 0x080064a4   Section        0  time.o(i.millis)
+    i.parse_frame                            0x080064b0   Section        0  protocol.o(i.parse_frame)
+    i.send_165Data                           0x0800655c   Section        0  protocol.o(i.send_165Data)
+    i.send_165DataSource                     0x08006568   Section        0  protocol.o(i.send_165DataSource)
+    send_165DataSource                       0x08006569   Thumb Code    38  protocol.o(i.send_165DataSource)
+    i.send_frame                             0x08006594   Section        0  protocol.o(i.send_frame)
+    i.send_frame_internal                    0x080065a8   Section        0  protocol.o(i.send_frame_internal)
+    send_frame_internal                      0x080065a9   Thumb Code   284  protocol.o(i.send_frame_internal)
+    i.stepdma_pb10_init                      0x08006700   Section        0  step_dma.o(i.stepdma_pb10_init)
+    i.stepdma_pb10_is_running                0x08006844   Section        0  step_dma.o(i.stepdma_pb10_is_running)
+    i.stepdma_pb10_move_trap                 0x08006850   Section        0  step_dma.o(i.stepdma_pb10_move_trap)
+    i.stepdma_pb10_request_trap              0x080069b0   Section        0  step_dma.o(i.stepdma_pb10_request_trap)
+    i.stepdma_pb10_stop                      0x08006a10   Section        0  step_dma.o(i.stepdma_pb10_stop)
+    i.stepdma_pb11_get_completed_steps       0x08006a64   Section        0  step_dma.o(i.stepdma_pb11_get_completed_steps)
+    i.stepdma_pb11_get_remaining_steps       0x08006a70   Section        0  step_dma.o(i.stepdma_pb11_get_remaining_steps)
+    i.stepdma_pb11_init                      0x08006a90   Section        0  step_dma.o(i.stepdma_pb11_init)
+    i.stepdma_pb11_is_running                0x08006bb0   Section        0  step_dma.o(i.stepdma_pb11_is_running)
+    i.stepdma_pb11_move_trap                 0x08006bbc   Section        0  step_dma.o(i.stepdma_pb11_move_trap)
+    i.stepdma_pb11_request_trap              0x08006cf8   Section        0  step_dma.o(i.stepdma_pb11_request_trap)
+    i.stepdma_pb11_stop                      0x08006d38   Section        0  step_dma.o(i.stepdma_pb11_stop)
+    i.task_165_input_scan                    0x08006d7c   Section        0  main.o(i.task_165_input_scan)
+    task_165_input_scan                      0x08006d7d   Thumb Code    10  main.o(i.task_165_input_scan)
+    i.task_input_change_report               0x08006d8c   Section        0  main.o(i.task_input_change_report)
+    task_input_change_report                 0x08006d8d   Thumb Code    92  main.o(i.task_input_change_report)
+    i.task_protocol_commands                 0x08006df4   Section        0  main.o(i.task_protocol_commands)
+    task_protocol_commands                   0x08006df5   Thumb Code    38  main.o(i.task_protocol_commands)
+    i.task_protocol_v2_send                  0x08006e1c   Section        0  main.o(i.task_protocol_v2_send)
+    task_protocol_v2_send                    0x08006e1d   Thumb Code    42  main.o(i.task_protocol_v2_send)
+    i.task_single_motor                      0x08006e4c   Section        0  main.o(i.task_single_motor)
+    task_single_motor                        0x08006e4d   Thumb Code    38  main.o(i.task_single_motor)
+    i.task_uart_frames                       0x08006e78   Section        0  main.o(i.task_uart_frames)
+    task_uart_frames                         0x08006e79   Thumb Code   100  main.o(i.task_uart_frames)
+    i.tim5_set_edge_freq                     0x08006edc   Section        0  step_dma.o(i.tim5_set_edge_freq)
+    tim5_set_edge_freq                       0x08006edd   Thumb Code   142  step_dma.o(i.tim5_set_edge_freq)
+    i.tim6_set_edge_freq                     0x08006f74   Section        0  step_dma.o(i.tim6_set_edge_freq)
+    tim6_set_edge_freq                       0x08006f75   Thumb Code   138  step_dma.o(i.tim6_set_edge_freq)
+    i.trap10_get_f                           0x08007008   Section        0  step_dma.o(i.trap10_get_f)
+    trap10_get_f                             0x08007009   Thumb Code   196  step_dma.o(i.trap10_get_f)
+    i.trap_get_f                             0x080070d0   Section        0  step_dma.o(i.trap_get_f)
+    trap_get_f                               0x080070d1   Thumb Code   196  step_dma.o(i.trap_get_f)
+    .constdata                               0x08007198   Section       38  single_motor.o(.constdata)
+    single_motor_register_index              0x08007198   Data          19  single_motor.o(.constdata)
+    single_motor_bit_index                   0x080071ab   Data          19  single_motor.o(.constdata)
+    .constdata                               0x080071c0   Section      140  reversible_motor.o(.constdata)
+    g_reversible_motor_hardware              0x080071c0   Data         140  reversible_motor.o(.constdata)
+    .constdata                               0x0800724c   Section       84  robot_arm.o(.constdata)
+    enabled                                  0x0800724c   Data           3  robot_arm.o(.constdata)
+    enabled                                  0x0800724f   Data           3  robot_arm.o(.constdata)
+    direction                                0x08007252   Data           3  robot_arm.o(.constdata)
+    steps                                    0x08007258   Data          12  robot_arm.o(.constdata)
+    timeout                                  0x08007264   Data          12  robot_arm.o(.constdata)
+    offset                                   0x08007270   Data          12  robot_arm.o(.constdata)
+    min_position                             0x0800727c   Data          12  robot_arm.o(.constdata)
+    max_position                             0x08007288   Data          12  robot_arm.o(.constdata)
+    speed                                    0x08007294   Data          12  robot_arm.o(.constdata)
+    .constdata                               0x080072a0   Section       12  robot_arm_sensor.o(.constdata)
+    s_sensor_byte_index                      0x080072a0   Data           4  robot_arm_sensor.o(.constdata)
+    s_sensor_bit_mask                        0x080072a4   Data           4  robot_arm_sensor.o(.constdata)
+    s_sensor_triggered_level                 0x080072a8   Data           4  robot_arm_sensor.o(.constdata)
     .data                                    0x20000000   Section        4  delay.o(.data)
     fac_us                                   0x20000000   Data           1  delay.o(.data)
     fac_ms                                   0x20000002   Data           2  delay.o(.data)
@@ -2140,15 +2130,15 @@ Image Symbol Table
     s_v2_head                                0x2000014c   Data           1  protocol_v2.o(.data)
     s_v2_tail                                0x2000014d   Data           1  protocol_v2.o(.data)
     s_v2_count                               0x2000014e   Data           1  protocol_v2.o(.data)
-    .data                                    0x20000150   Section       25  robot_arm_protocol.o(.data)
+    .data                                    0x20000150   Section       27  robot_arm_protocol.o(.data)
     s_tx_callback                            0x20000150   Data           4  robot_arm_protocol.o(.data)
     s_active                                 0x20000154   Data           6  robot_arm_protocol.o(.data)
-    s_terminal                               0x2000015a   Data           3  robot_arm_protocol.o(.data)
-    s_pending_stop_ack                       0x2000015e   Data           4  robot_arm_protocol.o(.data)
-    s_pending_active_ack                     0x20000162   Data           4  robot_arm_protocol.o(.data)
-    s_tx_head                                0x20000166   Data           1  robot_arm_protocol.o(.data)
-    s_tx_tail                                0x20000167   Data           1  robot_arm_protocol.o(.data)
-    s_tx_count                               0x20000168   Data           1  robot_arm_protocol.o(.data)
+    s_terminal                               0x2000015a   Data           6  robot_arm_protocol.o(.data)
+    s_pending_stop_ack                       0x20000160   Data           4  robot_arm_protocol.o(.data)
+    s_pending_active_ack                     0x20000164   Data           4  robot_arm_protocol.o(.data)
+    s_tx_head                                0x20000168   Data           1  robot_arm_protocol.o(.data)
+    s_tx_tail                                0x20000169   Data           1  robot_arm_protocol.o(.data)
+    s_tx_count                               0x2000016a   Data           1  robot_arm_protocol.o(.data)
     .data                                    0x2000016c   Section       97  motor_ctrl.o(.data)
     shift_data                               0x200001cc   Data           1  motor_ctrl.o(.data)
     .data                                    0x200001d0   Section        5  single_motor.o(.data)
@@ -2455,131 +2445,131 @@ Image Symbol Table
     RobotArmDriver_IsBusy                    0x08002491   Thumb Code    38  robot_arm_driver.o(i.RobotArmDriver_IsBusy)
     RobotArmDriver_Start                     0x080024e9   Thumb Code   168  robot_arm_driver.o(i.RobotArmDriver_Start)
     RobotArmDriver_Stop                      0x08002595   Thumb Code    40  robot_arm_driver.o(i.RobotArmDriver_Stop)
-    RobotArmProtocol_CanAcceptRequest        0x080025e1   Thumb Code    38  robot_arm_protocol.o(i.RobotArmProtocol_CanAcceptRequest)
-    RobotArmProtocol_HandleFrame             0x08002721   Thumb Code   488  robot_arm_protocol.o(i.RobotArmProtocol_HandleFrame)
-    RobotArmProtocol_Init                    0x08002919   Thumb Code    84  robot_arm_protocol.o(i.RobotArmProtocol_Init)
-    RobotArmProtocol_Task                    0x08002d91   Thumb Code   140  robot_arm_protocol.o(i.RobotArmProtocol_Task)
-    RobotArmSensor_IsReady                   0x08002e95   Thumb Code     6  robot_arm_sensor.o(i.RobotArmSensor_IsReady)
-    RobotArmSensor_IsTriggered               0x08002ea1   Thumb Code    56  robot_arm_sensor.o(i.RobotArmSensor_IsTriggered)
-    RobotArmSensor_UpdateSnapshot            0x08002eed   Thumb Code    34  robot_arm_sensor.o(i.RobotArmSensor_UpdateSnapshot)
-    RobotArm_CheckPoseSafety                 0x08003011   Thumb Code     6  robot_arm.o(i.RobotArm_CheckPoseSafety)
-    RobotArm_CheckTransitionSafety           0x08003055   Thumb Code    24  robot_arm.o(i.RobotArm_CheckTransitionSafety)
-    RobotArm_ClearError                      0x0800306d   Thumb Code    82  robot_arm.o(i.RobotArm_ClearError)
-    RobotArm_GetAxisState                    0x08003301   Thumb Code    22  robot_arm.o(i.RobotArm_GetAxisState)
-    RobotArm_GetStatus                       0x0800335d   Thumb Code   248  robot_arm.o(i.RobotArm_GetStatus)
-    RobotArm_GetX                            0x08003459   Thumb Code     6  robot_arm.o(i.RobotArm_GetX)
-    RobotArm_GetY                            0x08003465   Thumb Code     6  robot_arm.o(i.RobotArm_GetY)
-    RobotArm_GetZ                            0x08003471   Thumb Code     6  robot_arm.o(i.RobotArm_GetZ)
-    RobotArm_Home                            0x0800347d   Thumb Code   120  robot_arm.o(i.RobotArm_Home)
-    RobotArm_HomeAxis                        0x080034f9   Thumb Code    68  robot_arm.o(i.RobotArm_HomeAxis)
-    RobotArm_Init                            0x08003541   Thumb Code   212  robot_arm.o(i.RobotArm_Init)
-    RobotArm_InvalidatePosition              0x08003625   Thumb Code    38  robot_arm.o(i.RobotArm_InvalidatePosition)
-    RobotArm_IsBusy                          0x08003659   Thumb Code    42  robot_arm.o(i.RobotArm_IsBusy)
-    RobotArm_IsHomed                         0x080036c9   Thumb Code    22  robot_arm.o(i.RobotArm_IsHomed)
-    RobotArm_IsPositionValid                 0x080036df   Thumb Code    22  robot_arm.o(i.RobotArm_IsPositionValid)
-    RobotArm_MoveTo                          0x080036f5   Thumb Code   408  robot_arm.o(i.RobotArm_MoveTo)
-    RobotArm_MoveToSafe                      0x08003895   Thumb Code   228  robot_arm.o(i.RobotArm_MoveToSafe)
-    RobotArm_MoveX                           0x0800397d   Thumb Code    18  robot_arm.o(i.RobotArm_MoveX)
-    RobotArm_MoveXRelative                   0x0800398f   Thumb Code    18  robot_arm.o(i.RobotArm_MoveXRelative)
-    RobotArm_MoveY                           0x080039a1   Thumb Code    18  robot_arm.o(i.RobotArm_MoveY)
-    RobotArm_MoveYRelative                   0x080039b3   Thumb Code    18  robot_arm.o(i.RobotArm_MoveYRelative)
-    RobotArm_MoveZ                           0x080039c5   Thumb Code    18  robot_arm.o(i.RobotArm_MoveZ)
-    RobotArm_MoveZRelative                   0x080039d7   Thumb Code    18  robot_arm.o(i.RobotArm_MoveZRelative)
-    RobotArm_Stop                            0x08003da9   Thumb Code   156  robot_arm.o(i.RobotArm_Stop)
-    RobotArm_Task                            0x08003e4d   Thumb Code   138  robot_arm.o(i.RobotArm_Task)
-    SPI1_InitOnce                            0x0800467d   Thumb Code   202  spi_helper.o(i.SPI1_InitOnce)
-    SPI_Cmd                                  0x08004759   Thumb Code    24  stm32f10x_spi.o(i.SPI_Cmd)
-    SPI_GPIO_Init                            0x08004771   Thumb Code   116  spi_helper.o(i.SPI_GPIO_Init)
-    SPI_I2S_GetFlagStatus                    0x080047e9   Thumb Code    18  stm32f10x_spi.o(i.SPI_I2S_GetFlagStatus)
-    SPI_I2S_ReceiveData                      0x080047fb   Thumb Code     6  stm32f10x_spi.o(i.SPI_I2S_ReceiveData)
-    SPI_I2S_SendData                         0x08004801   Thumb Code     4  stm32f10x_spi.o(i.SPI_I2S_SendData)
-    SPI_Init                                 0x08004805   Thumb Code    60  stm32f10x_spi.o(i.SPI_Init)
-    SPI_NSSInternalSoftwareConfig            0x08004841   Thumb Code    30  stm32f10x_spi.o(i.SPI_NSSInternalSoftwareConfig)
-    SVC_Handler                              0x0800485f   Thumb Code     2  stm32f10x_it.o(i.SVC_Handler)
-    ShiftRegisterInput_Init                  0x08004949   Thumb Code    40  shift_register_input.o(i.ShiftRegisterInput_Init)
-    ShiftRegisterInput_ReadAll               0x08004975   Thumb Code   112  shift_register_input.o(i.ShiftRegisterInput_ReadAll)
-    ShiftRegister_Init                       0x080049ed   Thumb Code    40  shift_register.o(i.ShiftRegister_Init)
-    ShiftRegister_WriteAll                   0x08004a19   Thumb Code    86  shift_register.o(i.ShiftRegister_WriteAll)
-    SingleMotor_GetRunningBitmap             0x08004a89   Thumb Code    60  single_motor.o(i.SingleMotor_GetRunningBitmap)
-    SingleMotor_Immediate                    0x08004ac9   Thumb Code    62  single_motor.o(i.SingleMotor_Immediate)
-    SingleMotor_Init                         0x08004b0d   Thumb Code    32  single_motor.o(i.SingleMotor_Init)
-    SingleMotor_RecordError                  0x08004b7d   Thumb Code    16  single_motor.o(i.SingleMotor_RecordError)
-    SingleMotor_Set                          0x08004b95   Thumb Code    80  single_motor.o(i.SingleMotor_Set)
-    SingleMotor_StartSensorTimed             0x08004bf1   Thumb Code    96  single_motor.o(i.SingleMotor_StartSensorTimed)
-    SingleMotor_StartTimed                   0x08004c55   Thumb Code    56  single_motor.o(i.SingleMotor_StartTimed)
-    SingleMotor_Task                         0x08004cb9   Thumb Code   140  single_motor.o(i.SingleMotor_Task)
-    Stepper2_GetCompletedSteps               0x08004d49   Thumb Code     6  step_dma.o(i.Stepper2_GetCompletedSteps)
-    Stepper2_GetRemainingSteps               0x08004d55   Thumb Code     6  step_dma.o(i.Stepper2_GetRemainingSteps)
-    Stepper2_Init                            0x08004d61   Thumb Code    10  step_dma.o(i.Stepper2_Init)
-    Stepper2_IsBusy                          0x08004d71   Thumb Code     8  step_dma.o(i.Stepper2_IsBusy)
-    Stepper2_SetDirection                    0x08004d79   Thumb Code    50  step_dma.o(i.Stepper2_SetDirection)
-    Stepper2_Start                           0x08004db1   Thumb Code    68  step_dma.o(i.Stepper2_Start)
-    Stepper2_Stop                            0x08004df9   Thumb Code     8  step_dma.o(i.Stepper2_Stop)
-    SysTick_CLKSourceConfig                  0x08004e01   Thumb Code    40  misc.o(i.SysTick_CLKSourceConfig)
-    SysTick_Handler                          0x08004e29   Thumb Code     2  stm32f10x_it.o(i.SysTick_Handler)
-    SystemClock_Config                       0x08004e2b   Thumb Code    98  clock.o(i.SystemClock_Config)
-    SystemInit                               0x08004e8d   Thumb Code    78  system_stm32f10x.o(i.SystemInit)
-    TIM1_PWM_CH2N_Config                     0x08004eed   Thumb Code   200  pwm.o(i.TIM1_PWM_CH2N_Config)
-    TIM2_IRQHandler                          0x08004fb9   Thumb Code    60  time.o(i.TIM2_IRQHandler)
-    TIM3_10us_Init                           0x08005001   Thumb Code    76  time.o(i.TIM3_10us_Init)
-    TIM3_IRQHandler                          0x08005059   Thumb Code    42  time.o(i.TIM3_IRQHandler)
-    TIM4_10us_Init                           0x0800508d   Thumb Code    74  time.o(i.TIM4_10us_Init)
-    TIM4_IRQHandler                          0x080050e5   Thumb Code    22  time.o(i.TIM4_IRQHandler)
-    TIM_ARRPreloadConfig                     0x08005101   Thumb Code    24  stm32f10x_tim.o(i.TIM_ARRPreloadConfig)
-    TIM_BDTRConfig                           0x08005119   Thumb Code    32  stm32f10x_tim.o(i.TIM_BDTRConfig)
-    TIM_BDTRStructInit                       0x08005139   Thumb Code    18  stm32f10x_tim.o(i.TIM_BDTRStructInit)
-    TIM_ClearFlag                            0x0800514b   Thumb Code     6  stm32f10x_tim.o(i.TIM_ClearFlag)
-    TIM_ClearITPendingBit                    0x08005151   Thumb Code     6  stm32f10x_tim.o(i.TIM_ClearITPendingBit)
-    TIM_Cmd                                  0x08005157   Thumb Code    24  stm32f10x_tim.o(i.TIM_Cmd)
-    TIM_CtrlPWMOutputs                       0x0800516f   Thumb Code    30  stm32f10x_tim.o(i.TIM_CtrlPWMOutputs)
-    TIM_DMACmd                               0x0800518d   Thumb Code    18  stm32f10x_tim.o(i.TIM_DMACmd)
-    TIM_GenerateEvent                        0x0800519f   Thumb Code     4  stm32f10x_tim.o(i.TIM_GenerateEvent)
-    TIM_GetITStatus                          0x080051a3   Thumb Code    34  stm32f10x_tim.o(i.TIM_GetITStatus)
-    TIM_ITConfig                             0x080051c5   Thumb Code    18  stm32f10x_tim.o(i.TIM_ITConfig)
-    TIM_OC2Init                              0x080051d9   Thumb Code   154  stm32f10x_tim.o(i.TIM_OC2Init)
-    TIM_OC2PreloadConfig                     0x0800527d   Thumb Code    26  stm32f10x_tim.o(i.TIM_OC2PreloadConfig)
-    TIM_OCStructInit                         0x08005297   Thumb Code    20  stm32f10x_tim.o(i.TIM_OCStructInit)
-    TIM_PrescalerConfig                      0x080052ab   Thumb Code     6  stm32f10x_tim.o(i.TIM_PrescalerConfig)
-    TIM_SetAutoreload                        0x080052b1   Thumb Code     4  stm32f10x_tim.o(i.TIM_SetAutoreload)
-    TIM_SetCounter                           0x080052b5   Thumb Code     4  stm32f10x_tim.o(i.TIM_SetCounter)
-    TIM_TimeBaseInit                         0x080052b9   Thumb Code   122  stm32f10x_tim.o(i.TIM_TimeBaseInit)
-    TIM_TimeBaseStructInit                   0x0800535d   Thumb Code    18  stm32f10x_tim.o(i.TIM_TimeBaseStructInit)
-    Timer2_Init                              0x08005371   Thumb Code    88  time.o(i.Timer2_Init)
-    UART1GetByte                             0x080053d1   Thumb Code    14  usart.o(i.UART1GetByte)
-    USART1_IRQHandler                        0x080053e5   Thumb Code   152  usart.o(i.USART1_IRQHandler)
-    USART1_Init                              0x080054a1   Thumb Code   440  usart.o(i.USART1_Init)
-    USART1_SetTxDiagnosticCommand            0x08005725   Thumb Code    22  usart.o(i.USART1_SetTxDiagnosticCommand)
-    USART2_IRQHandler                        0x08005769   Thumb Code   118  usart.o(i.USART2_IRQHandler)
-    USART3_IRQHandler                        0x080057f9   Thumb Code    14  usart.o(i.USART3_IRQHandler)
-    USART3_Process                           0x08005815   Thumb Code    30  usart.o(i.USART3_Process)
-    USART_Cmd                                0x08005841   Thumb Code    24  stm32f10x_usart.o(i.USART_Cmd)
-    USART_GetFlagStatus                      0x08005859   Thumb Code    26  stm32f10x_usart.o(i.USART_GetFlagStatus)
-    USART_ITConfig                           0x08005873   Thumb Code    74  stm32f10x_usart.o(i.USART_ITConfig)
-    USART_Init                               0x080058bd   Thumb Code   210  stm32f10x_usart.o(i.USART_Init)
-    USART_SendBuffer                         0x08005aa1   Thumb Code   568  usart.o(i.USART_SendBuffer)
-    USART_SendData                           0x08005d01   Thumb Code     8  stm32f10x_usart.o(i.USART_SendData)
-    UsageFault_Handler                       0x08005d09   Thumb Code     4  stm32f10x_it.o(i.UsageFault_Handler)
-    delay_us                                 0x08005d13   Thumb Code    30  delay.o(i.delay_us)
-    handle_command                           0x08005e39   Thumb Code  1326  protocol.o(i.handle_command)
-    main                                     0x080063f9   Thumb Code   294  main.o(i.main)
-    millis                                   0x08006541   Thumb Code     6  time.o(i.millis)
-    parse_frame                              0x0800654d   Thumb Code   148  protocol.o(i.parse_frame)
-    send_165Data                             0x080065f9   Thumb Code    10  protocol.o(i.send_165Data)
-    send_frame                               0x08006631   Thumb Code    18  protocol.o(i.send_frame)
-    stepdma_pb10_init                        0x0800679d   Thumb Code   274  step_dma.o(i.stepdma_pb10_init)
-    stepdma_pb10_is_running                  0x080068e1   Thumb Code     6  step_dma.o(i.stepdma_pb10_is_running)
-    stepdma_pb10_move_trap                   0x080068ed   Thumb Code   326  step_dma.o(i.stepdma_pb10_move_trap)
-    stepdma_pb10_request_trap                0x08006a4d   Thumb Code    88  step_dma.o(i.stepdma_pb10_request_trap)
-    stepdma_pb10_stop                        0x08006aad   Thumb Code    52  step_dma.o(i.stepdma_pb10_stop)
-    stepdma_pb11_get_completed_steps         0x08006b01   Thumb Code     6  step_dma.o(i.stepdma_pb11_get_completed_steps)
-    stepdma_pb11_get_remaining_steps         0x08006b0d   Thumb Code    28  step_dma.o(i.stepdma_pb11_get_remaining_steps)
-    stepdma_pb11_init                        0x08006b2d   Thumb Code   254  step_dma.o(i.stepdma_pb11_init)
-    stepdma_pb11_is_running                  0x08006c4d   Thumb Code     6  step_dma.o(i.stepdma_pb11_is_running)
-    stepdma_pb11_move_trap                   0x08006c59   Thumb Code   302  step_dma.o(i.stepdma_pb11_move_trap)
-    stepdma_pb11_request_trap                0x08006d95   Thumb Code    54  step_dma.o(i.stepdma_pb11_request_trap)
-    stepdma_pb11_stop                        0x08006dd5   Thumb Code    44  step_dma.o(i.stepdma_pb11_stop)
-    Region$$Table$$Base                      0x08007348   Number         0  anon$$obj.o(Region$$Table)
-    Region$$Table$$Limit                     0x08007368   Number         0  anon$$obj.o(Region$$Table)
+    RobotArmProtocol_CanAcceptRequest        0x080025d9   Thumb Code    38  robot_arm_protocol.o(i.RobotArmProtocol_CanAcceptRequest)
+    RobotArmProtocol_HandleFrame             0x080026d5   Thumb Code   484  robot_arm_protocol.o(i.RobotArmProtocol_HandleFrame)
+    RobotArmProtocol_Init                    0x080028c5   Thumb Code    98  robot_arm_protocol.o(i.RobotArmProtocol_Init)
+    RobotArmProtocol_Task                    0x08002d71   Thumb Code   132  robot_arm_protocol.o(i.RobotArmProtocol_Task)
+    RobotArmSensor_IsReady                   0x08002df9   Thumb Code     6  robot_arm_sensor.o(i.RobotArmSensor_IsReady)
+    RobotArmSensor_IsTriggered               0x08002e05   Thumb Code    56  robot_arm_sensor.o(i.RobotArmSensor_IsTriggered)
+    RobotArmSensor_UpdateSnapshot            0x08002e51   Thumb Code    34  robot_arm_sensor.o(i.RobotArmSensor_UpdateSnapshot)
+    RobotArm_CheckPoseSafety                 0x08002f75   Thumb Code     6  robot_arm.o(i.RobotArm_CheckPoseSafety)
+    RobotArm_CheckTransitionSafety           0x08002fb9   Thumb Code    24  robot_arm.o(i.RobotArm_CheckTransitionSafety)
+    RobotArm_ClearError                      0x08002fd1   Thumb Code    82  robot_arm.o(i.RobotArm_ClearError)
+    RobotArm_GetAxisState                    0x08003265   Thumb Code    22  robot_arm.o(i.RobotArm_GetAxisState)
+    RobotArm_GetStatus                       0x080032c1   Thumb Code   248  robot_arm.o(i.RobotArm_GetStatus)
+    RobotArm_GetX                            0x080033bd   Thumb Code     6  robot_arm.o(i.RobotArm_GetX)
+    RobotArm_GetY                            0x080033c9   Thumb Code     6  robot_arm.o(i.RobotArm_GetY)
+    RobotArm_GetZ                            0x080033d5   Thumb Code     6  robot_arm.o(i.RobotArm_GetZ)
+    RobotArm_Home                            0x080033e1   Thumb Code   120  robot_arm.o(i.RobotArm_Home)
+    RobotArm_HomeAxis                        0x0800345d   Thumb Code    68  robot_arm.o(i.RobotArm_HomeAxis)
+    RobotArm_Init                            0x080034a5   Thumb Code   212  robot_arm.o(i.RobotArm_Init)
+    RobotArm_InvalidatePosition              0x08003589   Thumb Code    38  robot_arm.o(i.RobotArm_InvalidatePosition)
+    RobotArm_IsBusy                          0x080035bd   Thumb Code    42  robot_arm.o(i.RobotArm_IsBusy)
+    RobotArm_IsHomed                         0x0800362d   Thumb Code    22  robot_arm.o(i.RobotArm_IsHomed)
+    RobotArm_IsPositionValid                 0x08003643   Thumb Code    22  robot_arm.o(i.RobotArm_IsPositionValid)
+    RobotArm_MoveTo                          0x08003659   Thumb Code   408  robot_arm.o(i.RobotArm_MoveTo)
+    RobotArm_MoveToSafe                      0x080037f9   Thumb Code   228  robot_arm.o(i.RobotArm_MoveToSafe)
+    RobotArm_MoveX                           0x080038e1   Thumb Code    18  robot_arm.o(i.RobotArm_MoveX)
+    RobotArm_MoveXRelative                   0x080038f3   Thumb Code    18  robot_arm.o(i.RobotArm_MoveXRelative)
+    RobotArm_MoveY                           0x08003905   Thumb Code    18  robot_arm.o(i.RobotArm_MoveY)
+    RobotArm_MoveYRelative                   0x08003917   Thumb Code    18  robot_arm.o(i.RobotArm_MoveYRelative)
+    RobotArm_MoveZ                           0x08003929   Thumb Code    18  robot_arm.o(i.RobotArm_MoveZ)
+    RobotArm_MoveZRelative                   0x0800393b   Thumb Code    18  robot_arm.o(i.RobotArm_MoveZRelative)
+    RobotArm_Stop                            0x08003d0d   Thumb Code   156  robot_arm.o(i.RobotArm_Stop)
+    RobotArm_Task                            0x08003db1   Thumb Code   138  robot_arm.o(i.RobotArm_Task)
+    SPI1_InitOnce                            0x080045e1   Thumb Code   202  spi_helper.o(i.SPI1_InitOnce)
+    SPI_Cmd                                  0x080046bd   Thumb Code    24  stm32f10x_spi.o(i.SPI_Cmd)
+    SPI_GPIO_Init                            0x080046d5   Thumb Code   116  spi_helper.o(i.SPI_GPIO_Init)
+    SPI_I2S_GetFlagStatus                    0x0800474d   Thumb Code    18  stm32f10x_spi.o(i.SPI_I2S_GetFlagStatus)
+    SPI_I2S_ReceiveData                      0x0800475f   Thumb Code     6  stm32f10x_spi.o(i.SPI_I2S_ReceiveData)
+    SPI_I2S_SendData                         0x08004765   Thumb Code     4  stm32f10x_spi.o(i.SPI_I2S_SendData)
+    SPI_Init                                 0x08004769   Thumb Code    60  stm32f10x_spi.o(i.SPI_Init)
+    SPI_NSSInternalSoftwareConfig            0x080047a5   Thumb Code    30  stm32f10x_spi.o(i.SPI_NSSInternalSoftwareConfig)
+    SVC_Handler                              0x080047c3   Thumb Code     2  stm32f10x_it.o(i.SVC_Handler)
+    ShiftRegisterInput_Init                  0x080048ad   Thumb Code    40  shift_register_input.o(i.ShiftRegisterInput_Init)
+    ShiftRegisterInput_ReadAll               0x080048d9   Thumb Code   112  shift_register_input.o(i.ShiftRegisterInput_ReadAll)
+    ShiftRegister_Init                       0x08004951   Thumb Code    40  shift_register.o(i.ShiftRegister_Init)
+    ShiftRegister_WriteAll                   0x0800497d   Thumb Code    86  shift_register.o(i.ShiftRegister_WriteAll)
+    SingleMotor_GetRunningBitmap             0x080049ed   Thumb Code    60  single_motor.o(i.SingleMotor_GetRunningBitmap)
+    SingleMotor_Immediate                    0x08004a2d   Thumb Code    62  single_motor.o(i.SingleMotor_Immediate)
+    SingleMotor_Init                         0x08004a71   Thumb Code    32  single_motor.o(i.SingleMotor_Init)
+    SingleMotor_RecordError                  0x08004ae1   Thumb Code    16  single_motor.o(i.SingleMotor_RecordError)
+    SingleMotor_Set                          0x08004af9   Thumb Code    80  single_motor.o(i.SingleMotor_Set)
+    SingleMotor_StartSensorTimed             0x08004b55   Thumb Code    96  single_motor.o(i.SingleMotor_StartSensorTimed)
+    SingleMotor_StartTimed                   0x08004bb9   Thumb Code    56  single_motor.o(i.SingleMotor_StartTimed)
+    SingleMotor_Task                         0x08004c1d   Thumb Code   140  single_motor.o(i.SingleMotor_Task)
+    Stepper2_GetCompletedSteps               0x08004cad   Thumb Code     6  step_dma.o(i.Stepper2_GetCompletedSteps)
+    Stepper2_GetRemainingSteps               0x08004cb9   Thumb Code     6  step_dma.o(i.Stepper2_GetRemainingSteps)
+    Stepper2_Init                            0x08004cc5   Thumb Code    10  step_dma.o(i.Stepper2_Init)
+    Stepper2_IsBusy                          0x08004cd5   Thumb Code     8  step_dma.o(i.Stepper2_IsBusy)
+    Stepper2_SetDirection                    0x08004cdd   Thumb Code    50  step_dma.o(i.Stepper2_SetDirection)
+    Stepper2_Start                           0x08004d15   Thumb Code    68  step_dma.o(i.Stepper2_Start)
+    Stepper2_Stop                            0x08004d5d   Thumb Code     8  step_dma.o(i.Stepper2_Stop)
+    SysTick_CLKSourceConfig                  0x08004d65   Thumb Code    40  misc.o(i.SysTick_CLKSourceConfig)
+    SysTick_Handler                          0x08004d8d   Thumb Code     2  stm32f10x_it.o(i.SysTick_Handler)
+    SystemClock_Config                       0x08004d8f   Thumb Code    98  clock.o(i.SystemClock_Config)
+    SystemInit                               0x08004df1   Thumb Code    78  system_stm32f10x.o(i.SystemInit)
+    TIM1_PWM_CH2N_Config                     0x08004e51   Thumb Code   200  pwm.o(i.TIM1_PWM_CH2N_Config)
+    TIM2_IRQHandler                          0x08004f1d   Thumb Code    60  time.o(i.TIM2_IRQHandler)
+    TIM3_10us_Init                           0x08004f65   Thumb Code    76  time.o(i.TIM3_10us_Init)
+    TIM3_IRQHandler                          0x08004fbd   Thumb Code    42  time.o(i.TIM3_IRQHandler)
+    TIM4_10us_Init                           0x08004ff1   Thumb Code    74  time.o(i.TIM4_10us_Init)
+    TIM4_IRQHandler                          0x08005049   Thumb Code    22  time.o(i.TIM4_IRQHandler)
+    TIM_ARRPreloadConfig                     0x08005065   Thumb Code    24  stm32f10x_tim.o(i.TIM_ARRPreloadConfig)
+    TIM_BDTRConfig                           0x0800507d   Thumb Code    32  stm32f10x_tim.o(i.TIM_BDTRConfig)
+    TIM_BDTRStructInit                       0x0800509d   Thumb Code    18  stm32f10x_tim.o(i.TIM_BDTRStructInit)
+    TIM_ClearFlag                            0x080050af   Thumb Code     6  stm32f10x_tim.o(i.TIM_ClearFlag)
+    TIM_ClearITPendingBit                    0x080050b5   Thumb Code     6  stm32f10x_tim.o(i.TIM_ClearITPendingBit)
+    TIM_Cmd                                  0x080050bb   Thumb Code    24  stm32f10x_tim.o(i.TIM_Cmd)
+    TIM_CtrlPWMOutputs                       0x080050d3   Thumb Code    30  stm32f10x_tim.o(i.TIM_CtrlPWMOutputs)
+    TIM_DMACmd                               0x080050f1   Thumb Code    18  stm32f10x_tim.o(i.TIM_DMACmd)
+    TIM_GenerateEvent                        0x08005103   Thumb Code     4  stm32f10x_tim.o(i.TIM_GenerateEvent)
+    TIM_GetITStatus                          0x08005107   Thumb Code    34  stm32f10x_tim.o(i.TIM_GetITStatus)
+    TIM_ITConfig                             0x08005129   Thumb Code    18  stm32f10x_tim.o(i.TIM_ITConfig)
+    TIM_OC2Init                              0x0800513d   Thumb Code   154  stm32f10x_tim.o(i.TIM_OC2Init)
+    TIM_OC2PreloadConfig                     0x080051e1   Thumb Code    26  stm32f10x_tim.o(i.TIM_OC2PreloadConfig)
+    TIM_OCStructInit                         0x080051fb   Thumb Code    20  stm32f10x_tim.o(i.TIM_OCStructInit)
+    TIM_PrescalerConfig                      0x0800520f   Thumb Code     6  stm32f10x_tim.o(i.TIM_PrescalerConfig)
+    TIM_SetAutoreload                        0x08005215   Thumb Code     4  stm32f10x_tim.o(i.TIM_SetAutoreload)
+    TIM_SetCounter                           0x08005219   Thumb Code     4  stm32f10x_tim.o(i.TIM_SetCounter)
+    TIM_TimeBaseInit                         0x0800521d   Thumb Code   122  stm32f10x_tim.o(i.TIM_TimeBaseInit)
+    TIM_TimeBaseStructInit                   0x080052c1   Thumb Code    18  stm32f10x_tim.o(i.TIM_TimeBaseStructInit)
+    Timer2_Init                              0x080052d5   Thumb Code    88  time.o(i.Timer2_Init)
+    UART1GetByte                             0x08005335   Thumb Code    14  usart.o(i.UART1GetByte)
+    USART1_IRQHandler                        0x08005349   Thumb Code   152  usart.o(i.USART1_IRQHandler)
+    USART1_Init                              0x08005405   Thumb Code   440  usart.o(i.USART1_Init)
+    USART1_SetTxDiagnosticCommand            0x08005689   Thumb Code    22  usart.o(i.USART1_SetTxDiagnosticCommand)
+    USART2_IRQHandler                        0x080056cd   Thumb Code   118  usart.o(i.USART2_IRQHandler)
+    USART3_IRQHandler                        0x0800575d   Thumb Code    14  usart.o(i.USART3_IRQHandler)
+    USART3_Process                           0x08005779   Thumb Code    30  usart.o(i.USART3_Process)
+    USART_Cmd                                0x080057a5   Thumb Code    24  stm32f10x_usart.o(i.USART_Cmd)
+    USART_GetFlagStatus                      0x080057bd   Thumb Code    26  stm32f10x_usart.o(i.USART_GetFlagStatus)
+    USART_ITConfig                           0x080057d7   Thumb Code    74  stm32f10x_usart.o(i.USART_ITConfig)
+    USART_Init                               0x08005821   Thumb Code   210  stm32f10x_usart.o(i.USART_Init)
+    USART_SendBuffer                         0x08005a05   Thumb Code   568  usart.o(i.USART_SendBuffer)
+    USART_SendData                           0x08005c65   Thumb Code     8  stm32f10x_usart.o(i.USART_SendData)
+    UsageFault_Handler                       0x08005c6d   Thumb Code     4  stm32f10x_it.o(i.UsageFault_Handler)
+    delay_us                                 0x08005c77   Thumb Code    30  delay.o(i.delay_us)
+    handle_command                           0x08005d9d   Thumb Code  1326  protocol.o(i.handle_command)
+    main                                     0x0800635d   Thumb Code   294  main.o(i.main)
+    millis                                   0x080064a5   Thumb Code     6  time.o(i.millis)
+    parse_frame                              0x080064b1   Thumb Code   148  protocol.o(i.parse_frame)
+    send_165Data                             0x0800655d   Thumb Code    10  protocol.o(i.send_165Data)
+    send_frame                               0x08006595   Thumb Code    18  protocol.o(i.send_frame)
+    stepdma_pb10_init                        0x08006701   Thumb Code   274  step_dma.o(i.stepdma_pb10_init)
+    stepdma_pb10_is_running                  0x08006845   Thumb Code     6  step_dma.o(i.stepdma_pb10_is_running)
+    stepdma_pb10_move_trap                   0x08006851   Thumb Code   326  step_dma.o(i.stepdma_pb10_move_trap)
+    stepdma_pb10_request_trap                0x080069b1   Thumb Code    88  step_dma.o(i.stepdma_pb10_request_trap)
+    stepdma_pb10_stop                        0x08006a11   Thumb Code    52  step_dma.o(i.stepdma_pb10_stop)
+    stepdma_pb11_get_completed_steps         0x08006a65   Thumb Code     6  step_dma.o(i.stepdma_pb11_get_completed_steps)
+    stepdma_pb11_get_remaining_steps         0x08006a71   Thumb Code    28  step_dma.o(i.stepdma_pb11_get_remaining_steps)
+    stepdma_pb11_init                        0x08006a91   Thumb Code   254  step_dma.o(i.stepdma_pb11_init)
+    stepdma_pb11_is_running                  0x08006bb1   Thumb Code     6  step_dma.o(i.stepdma_pb11_is_running)
+    stepdma_pb11_move_trap                   0x08006bbd   Thumb Code   302  step_dma.o(i.stepdma_pb11_move_trap)
+    stepdma_pb11_request_trap                0x08006cf9   Thumb Code    54  step_dma.o(i.stepdma_pb11_request_trap)
+    stepdma_pb11_stop                        0x08006d39   Thumb Code    44  step_dma.o(i.stepdma_pb11_stop)
+    Region$$Table$$Base                      0x080072ac   Number         0  anon$$obj.o(Region$$Table)
+    Region$$Table$$Limit                     0x080072cc   Number         0  anon$$obj.o(Region$$Table)
     dbg_main_stage                           0x20000004   Data           1  main.o(.data)
     dbg_main_loop_last_duration_ms           0x20000008   Data           4  main.o(.data)
     dbg_main_loop_max_duration_ms            0x2000000c   Data           4  main.o(.data)
@@ -2699,111 +2689,111 @@ Memory Map of the image
 
   Image Entry point : 0x08000131
 
-  Load Region LR_IROM1 (Base: 0x08000000, Size: 0x000075c4, Max: 0x00080000, ABSOLUTE, COMPRESSED[0x000073c4])
+  Load Region LR_IROM1 (Base: 0x08000000, Size: 0x00007528, Max: 0x00080000, ABSOLUTE, COMPRESSED[0x00007328])
 
-    Execution Region ER_IROM1 (Base: 0x08000000, Size: 0x00007368, Max: 0x00080000, ABSOLUTE)
+    Execution Region ER_IROM1 (Base: 0x08000000, Size: 0x000072cc, Max: 0x00080000, ABSOLUTE)
 
     Base Addr    Size         Type   Attr      Idx    E Section Name        Object
 
-    0x08000000   0x00000130   Data   RO         3666    RESET               startup_stm32f10x_hd.o
-    0x08000130   0x00000008   Code   RO         3681  * !!!main             c_w.l(__main.o)
-    0x08000138   0x00000034   Code   RO         3883    !!!scatter          c_w.l(__scatter.o)
-    0x0800016c   0x0000005a   Code   RO         3881    !!dczerorl2         c_w.l(__dczerorl2.o)
+    0x08000000   0x00000130   Data   RO         3656    RESET               startup_stm32f10x_hd.o
+    0x08000130   0x00000008   Code   RO         3671  * !!!main             c_w.l(__main.o)
+    0x08000138   0x00000034   Code   RO         3873    !!!scatter          c_w.l(__scatter.o)
+    0x0800016c   0x0000005a   Code   RO         3871    !!dczerorl2         c_w.l(__dczerorl2.o)
     0x080001c6   0x00000002   PAD
-    0x080001c8   0x0000001c   Code   RO         3885    !!handler_zi        c_w.l(__scatter_zi.o)
-    0x080001e4   0x00000002   Code   RO         3751    .ARM.Collect$$libinit$$00000000  c_w.l(libinit.o)
-    0x080001e6   0x00000000   Code   RO         3764    .ARM.Collect$$libinit$$00000002  c_w.l(libinit2.o)
-    0x080001e6   0x00000000   Code   RO         3766    .ARM.Collect$$libinit$$00000004  c_w.l(libinit2.o)
-    0x080001e6   0x00000000   Code   RO         3769    .ARM.Collect$$libinit$$0000000A  c_w.l(libinit2.o)
-    0x080001e6   0x00000000   Code   RO         3771    .ARM.Collect$$libinit$$0000000C  c_w.l(libinit2.o)
-    0x080001e6   0x00000000   Code   RO         3773    .ARM.Collect$$libinit$$0000000E  c_w.l(libinit2.o)
-    0x080001e6   0x00000000   Code   RO         3776    .ARM.Collect$$libinit$$00000011  c_w.l(libinit2.o)
-    0x080001e6   0x00000000   Code   RO         3778    .ARM.Collect$$libinit$$00000013  c_w.l(libinit2.o)
-    0x080001e6   0x00000000   Code   RO         3780    .ARM.Collect$$libinit$$00000015  c_w.l(libinit2.o)
-    0x080001e6   0x00000000   Code   RO         3782    .ARM.Collect$$libinit$$00000017  c_w.l(libinit2.o)
-    0x080001e6   0x00000000   Code   RO         3784    .ARM.Collect$$libinit$$00000019  c_w.l(libinit2.o)
-    0x080001e6   0x00000000   Code   RO         3786    .ARM.Collect$$libinit$$0000001B  c_w.l(libinit2.o)
-    0x080001e6   0x00000000   Code   RO         3788    .ARM.Collect$$libinit$$0000001D  c_w.l(libinit2.o)
-    0x080001e6   0x00000000   Code   RO         3790    .ARM.Collect$$libinit$$0000001F  c_w.l(libinit2.o)
-    0x080001e6   0x00000000   Code   RO         3792    .ARM.Collect$$libinit$$00000021  c_w.l(libinit2.o)
-    0x080001e6   0x00000000   Code   RO         3794    .ARM.Collect$$libinit$$00000023  c_w.l(libinit2.o)
-    0x080001e6   0x00000000   Code   RO         3796    .ARM.Collect$$libinit$$00000025  c_w.l(libinit2.o)
-    0x080001e6   0x00000000   Code   RO         3800    .ARM.Collect$$libinit$$0000002C  c_w.l(libinit2.o)
-    0x080001e6   0x00000000   Code   RO         3802    .ARM.Collect$$libinit$$0000002E  c_w.l(libinit2.o)
-    0x080001e6   0x00000000   Code   RO         3804    .ARM.Collect$$libinit$$00000030  c_w.l(libinit2.o)
-    0x080001e6   0x00000000   Code   RO         3806    .ARM.Collect$$libinit$$00000032  c_w.l(libinit2.o)
-    0x080001e6   0x00000002   Code   RO         3807    .ARM.Collect$$libinit$$00000033  c_w.l(libinit2.o)
-    0x080001e8   0x00000002   Code   RO         3838    .ARM.Collect$$libshutdown$$00000000  c_w.l(libshutdown.o)
-    0x080001ea   0x00000000   Code   RO         3864    .ARM.Collect$$libshutdown$$00000002  c_w.l(libshutdown2.o)
-    0x080001ea   0x00000000   Code   RO         3866    .ARM.Collect$$libshutdown$$00000004  c_w.l(libshutdown2.o)
-    0x080001ea   0x00000000   Code   RO         3869    .ARM.Collect$$libshutdown$$00000007  c_w.l(libshutdown2.o)
-    0x080001ea   0x00000000   Code   RO         3872    .ARM.Collect$$libshutdown$$0000000A  c_w.l(libshutdown2.o)
-    0x080001ea   0x00000000   Code   RO         3874    .ARM.Collect$$libshutdown$$0000000C  c_w.l(libshutdown2.o)
-    0x080001ea   0x00000000   Code   RO         3877    .ARM.Collect$$libshutdown$$0000000F  c_w.l(libshutdown2.o)
-    0x080001ea   0x00000002   Code   RO         3878    .ARM.Collect$$libshutdown$$00000010  c_w.l(libshutdown2.o)
-    0x080001ec   0x00000000   Code   RO         3709    .ARM.Collect$$rtentry$$00000000  c_w.l(__rtentry.o)
-    0x080001ec   0x00000000   Code   RO         3722    .ARM.Collect$$rtentry$$00000002  c_w.l(__rtentry2.o)
-    0x080001ec   0x00000006   Code   RO         3734    .ARM.Collect$$rtentry$$00000004  c_w.l(__rtentry4.o)
-    0x080001f2   0x00000000   Code   RO         3724    .ARM.Collect$$rtentry$$00000009  c_w.l(__rtentry2.o)
-    0x080001f2   0x00000004   Code   RO         3725    .ARM.Collect$$rtentry$$0000000A  c_w.l(__rtentry2.o)
-    0x080001f6   0x00000000   Code   RO         3727    .ARM.Collect$$rtentry$$0000000C  c_w.l(__rtentry2.o)
-    0x080001f6   0x00000008   Code   RO         3728    .ARM.Collect$$rtentry$$0000000D  c_w.l(__rtentry2.o)
-    0x080001fe   0x00000002   Code   RO         3755    .ARM.Collect$$rtexit$$00000000  c_w.l(rtexit.o)
-    0x08000200   0x00000000   Code   RO         3811    .ARM.Collect$$rtexit$$00000002  c_w.l(rtexit2.o)
-    0x08000200   0x00000004   Code   RO         3812    .ARM.Collect$$rtexit$$00000003  c_w.l(rtexit2.o)
-    0x08000204   0x00000006   Code   RO         3813    .ARM.Collect$$rtexit$$00000004  c_w.l(rtexit2.o)
+    0x080001c8   0x0000001c   Code   RO         3875    !!handler_zi        c_w.l(__scatter_zi.o)
+    0x080001e4   0x00000002   Code   RO         3741    .ARM.Collect$$libinit$$00000000  c_w.l(libinit.o)
+    0x080001e6   0x00000000   Code   RO         3754    .ARM.Collect$$libinit$$00000002  c_w.l(libinit2.o)
+    0x080001e6   0x00000000   Code   RO         3756    .ARM.Collect$$libinit$$00000004  c_w.l(libinit2.o)
+    0x080001e6   0x00000000   Code   RO         3759    .ARM.Collect$$libinit$$0000000A  c_w.l(libinit2.o)
+    0x080001e6   0x00000000   Code   RO         3761    .ARM.Collect$$libinit$$0000000C  c_w.l(libinit2.o)
+    0x080001e6   0x00000000   Code   RO         3763    .ARM.Collect$$libinit$$0000000E  c_w.l(libinit2.o)
+    0x080001e6   0x00000000   Code   RO         3766    .ARM.Collect$$libinit$$00000011  c_w.l(libinit2.o)
+    0x080001e6   0x00000000   Code   RO         3768    .ARM.Collect$$libinit$$00000013  c_w.l(libinit2.o)
+    0x080001e6   0x00000000   Code   RO         3770    .ARM.Collect$$libinit$$00000015  c_w.l(libinit2.o)
+    0x080001e6   0x00000000   Code   RO         3772    .ARM.Collect$$libinit$$00000017  c_w.l(libinit2.o)
+    0x080001e6   0x00000000   Code   RO         3774    .ARM.Collect$$libinit$$00000019  c_w.l(libinit2.o)
+    0x080001e6   0x00000000   Code   RO         3776    .ARM.Collect$$libinit$$0000001B  c_w.l(libinit2.o)
+    0x080001e6   0x00000000   Code   RO         3778    .ARM.Collect$$libinit$$0000001D  c_w.l(libinit2.o)
+    0x080001e6   0x00000000   Code   RO         3780    .ARM.Collect$$libinit$$0000001F  c_w.l(libinit2.o)
+    0x080001e6   0x00000000   Code   RO         3782    .ARM.Collect$$libinit$$00000021  c_w.l(libinit2.o)
+    0x080001e6   0x00000000   Code   RO         3784    .ARM.Collect$$libinit$$00000023  c_w.l(libinit2.o)
+    0x080001e6   0x00000000   Code   RO         3786    .ARM.Collect$$libinit$$00000025  c_w.l(libinit2.o)
+    0x080001e6   0x00000000   Code   RO         3790    .ARM.Collect$$libinit$$0000002C  c_w.l(libinit2.o)
+    0x080001e6   0x00000000   Code   RO         3792    .ARM.Collect$$libinit$$0000002E  c_w.l(libinit2.o)
+    0x080001e6   0x00000000   Code   RO         3794    .ARM.Collect$$libinit$$00000030  c_w.l(libinit2.o)
+    0x080001e6   0x00000000   Code   RO         3796    .ARM.Collect$$libinit$$00000032  c_w.l(libinit2.o)
+    0x080001e6   0x00000002   Code   RO         3797    .ARM.Collect$$libinit$$00000033  c_w.l(libinit2.o)
+    0x080001e8   0x00000002   Code   RO         3828    .ARM.Collect$$libshutdown$$00000000  c_w.l(libshutdown.o)
+    0x080001ea   0x00000000   Code   RO         3854    .ARM.Collect$$libshutdown$$00000002  c_w.l(libshutdown2.o)
+    0x080001ea   0x00000000   Code   RO         3856    .ARM.Collect$$libshutdown$$00000004  c_w.l(libshutdown2.o)
+    0x080001ea   0x00000000   Code   RO         3859    .ARM.Collect$$libshutdown$$00000007  c_w.l(libshutdown2.o)
+    0x080001ea   0x00000000   Code   RO         3862    .ARM.Collect$$libshutdown$$0000000A  c_w.l(libshutdown2.o)
+    0x080001ea   0x00000000   Code   RO         3864    .ARM.Collect$$libshutdown$$0000000C  c_w.l(libshutdown2.o)
+    0x080001ea   0x00000000   Code   RO         3867    .ARM.Collect$$libshutdown$$0000000F  c_w.l(libshutdown2.o)
+    0x080001ea   0x00000002   Code   RO         3868    .ARM.Collect$$libshutdown$$00000010  c_w.l(libshutdown2.o)
+    0x080001ec   0x00000000   Code   RO         3699    .ARM.Collect$$rtentry$$00000000  c_w.l(__rtentry.o)
+    0x080001ec   0x00000000   Code   RO         3712    .ARM.Collect$$rtentry$$00000002  c_w.l(__rtentry2.o)
+    0x080001ec   0x00000006   Code   RO         3724    .ARM.Collect$$rtentry$$00000004  c_w.l(__rtentry4.o)
+    0x080001f2   0x00000000   Code   RO         3714    .ARM.Collect$$rtentry$$00000009  c_w.l(__rtentry2.o)
+    0x080001f2   0x00000004   Code   RO         3715    .ARM.Collect$$rtentry$$0000000A  c_w.l(__rtentry2.o)
+    0x080001f6   0x00000000   Code   RO         3717    .ARM.Collect$$rtentry$$0000000C  c_w.l(__rtentry2.o)
+    0x080001f6   0x00000008   Code   RO         3718    .ARM.Collect$$rtentry$$0000000D  c_w.l(__rtentry2.o)
+    0x080001fe   0x00000002   Code   RO         3745    .ARM.Collect$$rtexit$$00000000  c_w.l(rtexit.o)
+    0x08000200   0x00000000   Code   RO         3801    .ARM.Collect$$rtexit$$00000002  c_w.l(rtexit2.o)
+    0x08000200   0x00000004   Code   RO         3802    .ARM.Collect$$rtexit$$00000003  c_w.l(rtexit2.o)
+    0x08000204   0x00000006   Code   RO         3803    .ARM.Collect$$rtexit$$00000004  c_w.l(rtexit2.o)
     0x0800020a   0x00000002   PAD
-    0x0800020c   0x00000040   Code   RO         3667    .text               startup_stm32f10x_hd.o
-    0x0800024c   0x000000ee   Code   RO         3673    .text               c_w.l(lludivv7m.o)
-    0x0800033a   0x0000008a   Code   RO         3675    .text               c_w.l(rt_memcpy_v6.o)
-    0x080003c4   0x00000064   Code   RO         3677    .text               c_w.l(rt_memcpy_w.o)
-    0x08000428   0x00000006   Code   RO         3679    .text               c_w.l(heapauxi.o)
-    0x0800042e   0x0000004a   Code   RO         3738    .text               c_w.l(sys_stackheap_outer.o)
-    0x08000478   0x00000012   Code   RO         3740    .text               c_w.l(exit.o)
+    0x0800020c   0x00000040   Code   RO         3657    .text               startup_stm32f10x_hd.o
+    0x0800024c   0x000000ee   Code   RO         3663    .text               c_w.l(lludivv7m.o)
+    0x0800033a   0x0000008a   Code   RO         3665    .text               c_w.l(rt_memcpy_v6.o)
+    0x080003c4   0x00000064   Code   RO         3667    .text               c_w.l(rt_memcpy_w.o)
+    0x08000428   0x00000006   Code   RO         3669    .text               c_w.l(heapauxi.o)
+    0x0800042e   0x0000004a   Code   RO         3728    .text               c_w.l(sys_stackheap_outer.o)
+    0x08000478   0x00000012   Code   RO         3730    .text               c_w.l(exit.o)
     0x0800048a   0x00000002   PAD
-    0x0800048c   0x00000008   Code   RO         3752    .text               c_w.l(libspace.o)
-    0x08000494   0x0000000c   Code   RO         3808    .text               c_w.l(sys_exit.o)
-    0x080004a0   0x00000002   Code   RO         3827    .text               c_w.l(use_no_semi.o)
-    0x080004a2   0x00000000   Code   RO         3829    .text               c_w.l(indicate_semi.o)
+    0x0800048c   0x00000008   Code   RO         3742    .text               c_w.l(libspace.o)
+    0x08000494   0x0000000c   Code   RO         3798    .text               c_w.l(sys_exit.o)
+    0x080004a0   0x00000002   Code   RO         3817    .text               c_w.l(use_no_semi.o)
+    0x080004a2   0x00000000   Code   RO         3819    .text               c_w.l(indicate_semi.o)
     0x080004a2   0x00000004   Code   RO          278    i.BusFault_Handler  stm32f10x_it.o
     0x080004a6   0x00000002   PAD
-    0x080004a8   0x0000028c   Code   RO         1679    i.DMA2_Channel2_IRQHandler  step_dma.o
-    0x08000734   0x00000198   Code   RO         1680    i.DMA2_Channel3_IRQHandler  step_dma.o
-    0x080008cc   0x00000094   Code   RO         1681    i.DMA2_Channel4_5_IRQHandler  step_dma.o
-    0x08000960   0x0000001c   Code   RO         3045    i.DMA_ClearITPendingBit  stm32f10x_dma.o
-    0x0800097c   0x00000018   Code   RO         3046    i.DMA_Cmd           stm32f10x_dma.o
-    0x08000994   0x0000014c   Code   RO         3047    i.DMA_DeInit        stm32f10x_dma.o
-    0x08000ae0   0x0000002c   Code   RO         3050    i.DMA_GetITStatus   stm32f10x_dma.o
-    0x08000b0c   0x00000012   Code   RO         3051    i.DMA_ITConfig      stm32f10x_dma.o
-    0x08000b1e   0x0000003c   Code   RO         3052    i.DMA_Init          stm32f10x_dma.o
+    0x080004a8   0x0000028c   Code   RO         1669    i.DMA2_Channel2_IRQHandler  step_dma.o
+    0x08000734   0x00000198   Code   RO         1670    i.DMA2_Channel3_IRQHandler  step_dma.o
+    0x080008cc   0x00000094   Code   RO         1671    i.DMA2_Channel4_5_IRQHandler  step_dma.o
+    0x08000960   0x0000001c   Code   RO         3035    i.DMA_ClearITPendingBit  stm32f10x_dma.o
+    0x0800097c   0x00000018   Code   RO         3036    i.DMA_Cmd           stm32f10x_dma.o
+    0x08000994   0x0000014c   Code   RO         3037    i.DMA_DeInit        stm32f10x_dma.o
+    0x08000ae0   0x0000002c   Code   RO         3040    i.DMA_GetITStatus   stm32f10x_dma.o
+    0x08000b0c   0x00000012   Code   RO         3041    i.DMA_ITConfig      stm32f10x_dma.o
+    0x08000b1e   0x0000003c   Code   RO         3042    i.DMA_Init          stm32f10x_dma.o
     0x08000b5a   0x00000002   Code   RO          279    i.DebugMon_Handler  stm32f10x_it.o
     0x08000b5c   0x00000044   Code   RO          105    i.Delay_Init        delay.o
     0x08000ba0   0x0000003c   Code   RO          107    i.Delay_us          delay.o
-    0x08000bdc   0x00000038   Code   RO         1117    i.GPIO_Config       pwm.o
-    0x08000c14   0x00000116   Code   RO         2412    i.GPIO_Init         stm32f10x_gpio.o
+    0x08000bdc   0x00000038   Code   RO         1107    i.GPIO_Config       pwm.o
+    0x08000c14   0x00000116   Code   RO         2402    i.GPIO_Init         stm32f10x_gpio.o
     0x08000d2a   0x00000002   PAD
-    0x08000d2c   0x00000090   Code   RO         2414    i.GPIO_PinRemapConfig  stm32f10x_gpio.o
-    0x08000dbc   0x00000004   Code   RO         2419    i.GPIO_ResetBits    stm32f10x_gpio.o
-    0x08000dc0   0x00000004   Code   RO         2420    i.GPIO_SetBits      stm32f10x_gpio.o
+    0x08000d2c   0x00000090   Code   RO         2404    i.GPIO_PinRemapConfig  stm32f10x_gpio.o
+    0x08000dbc   0x00000004   Code   RO         2409    i.GPIO_ResetBits    stm32f10x_gpio.o
+    0x08000dc0   0x00000004   Code   RO         2410    i.GPIO_SetBits      stm32f10x_gpio.o
     0x08000dc4   0x00000004   Code   RO          280    i.HardFault_Handler  stm32f10x_it.o
-    0x08000dc8   0x00000090   Code   RO         1577    i.MAX31855_Init     max31855.o
+    0x08000dc8   0x00000090   Code   RO         1567    i.MAX31855_Init     max31855.o
     0x08000e58   0x0000001c   Code   RO          151    i.Main_DebugBeginStage  main.o
     0x08000e74   0x00000040   Code   RO          152    i.Main_DebugEndStage  main.o
     0x08000eb4   0x00000004   Code   RO          281    i.MemManage_Handler  stm32f10x_it.o
-    0x08000eb8   0x000000bc   Code   RO         1285    i.Motor_InitAll     motor_ctrl.o
+    0x08000eb8   0x000000bc   Code   RO         1275    i.Motor_InitAll     motor_ctrl.o
     0x08000f74   0x00000002   Code   RO          282    i.NMI_Handler       stm32f10x_it.o
     0x08000f76   0x00000002   PAD
-    0x08000f78   0x00000070   Code   RO         2370    i.NVIC_Init         misc.o
-    0x08000fe8   0x00000014   Code   RO         2371    i.NVIC_PriorityGroupConfig  misc.o
-    0x08000ffc   0x00000068   Code   RO         1682    i.PU3_LoadChunk     step_dma.o
-    0x08001064   0x0000002c   Code   RO         1683    i.PU3_SetDirection  step_dma.o
-    0x08001090   0x00000060   Code   RO         1684    i.PU3_SetEdgeFrequency  step_dma.o
-    0x080010f0   0x0000000c   Code   RO         1685    i.PU3_Stepper_GetCompletedSteps  step_dma.o
-    0x080010fc   0x0000000c   Code   RO         1686    i.PU3_Stepper_GetRemainingSteps  step_dma.o
-    0x08001108   0x00000110   Code   RO         1687    i.PU3_Stepper_Init  step_dma.o
-    0x08001218   0x0000000c   Code   RO         1688    i.PU3_Stepper_IsRunning  step_dma.o
-    0x08001224   0x00000098   Code   RO         1689    i.PU3_Stepper_Start  step_dma.o
-    0x080012bc   0x00000048   Code   RO         1690    i.PU3_Stepper_Stop  step_dma.o
+    0x08000f78   0x00000070   Code   RO         2360    i.NVIC_Init         misc.o
+    0x08000fe8   0x00000014   Code   RO         2361    i.NVIC_PriorityGroupConfig  misc.o
+    0x08000ffc   0x00000068   Code   RO         1672    i.PU3_LoadChunk     step_dma.o
+    0x08001064   0x0000002c   Code   RO         1673    i.PU3_SetDirection  step_dma.o
+    0x08001090   0x00000060   Code   RO         1674    i.PU3_SetEdgeFrequency  step_dma.o
+    0x080010f0   0x0000000c   Code   RO         1675    i.PU3_Stepper_GetCompletedSteps  step_dma.o
+    0x080010fc   0x0000000c   Code   RO         1676    i.PU3_Stepper_GetRemainingSteps  step_dma.o
+    0x08001108   0x00000110   Code   RO         1677    i.PU3_Stepper_Init  step_dma.o
+    0x08001218   0x0000000c   Code   RO         1678    i.PU3_Stepper_IsRunning  step_dma.o
+    0x08001224   0x00000098   Code   RO         1679    i.PU3_Stepper_Start  step_dma.o
+    0x080012bc   0x00000048   Code   RO         1680    i.PU3_Stepper_Stop  step_dma.o
     0x08001304   0x00000002   Code   RO          283    i.PendSV_Handler    stm32f10x_it.o
     0x08001306   0x00000046   Code   RO          869    i.ProtocolV2_CalculateCrc  protocol_v2.o
     0x0800134c   0x00000014   Code   RO          870    i.ProtocolV2_ClearBytes  protocol_v2.o
@@ -2842,273 +2832,271 @@ Memory Map of the image
     0x08001b3c   0x00000032   Code   RO          667    i.Protocol_SendSingleMotorTimedResult  protocol.o
     0x08001b6e   0x00000002   PAD
     0x08001b70   0x0000006c   Code   RO          668    i.Protocol_TakeCommand  protocol.o
-    0x08001bdc   0x00000020   Code   RO         2521    i.RCC_AHBPeriphClockCmd  stm32f10x_rcc.o
-    0x08001bfc   0x00000020   Code   RO         2522    i.RCC_APB1PeriphClockCmd  stm32f10x_rcc.o
-    0x08001c1c   0x00000020   Code   RO         2524    i.RCC_APB2PeriphClockCmd  stm32f10x_rcc.o
-    0x08001c3c   0x0000004c   Code   RO         2531    i.RCC_DeInit        stm32f10x_rcc.o
-    0x08001c88   0x000000d4   Code   RO         2532    i.RCC_GetClocksFreq  stm32f10x_rcc.o
-    0x08001d5c   0x0000003c   Code   RO         2533    i.RCC_GetFlagStatus  stm32f10x_rcc.o
-    0x08001d98   0x00000010   Code   RO         2535    i.RCC_GetSYSCLKSource  stm32f10x_rcc.o
-    0x08001da8   0x00000018   Code   RO         2536    i.RCC_HCLKConfig    stm32f10x_rcc.o
-    0x08001dc0   0x0000004c   Code   RO         2537    i.RCC_HSEConfig     stm32f10x_rcc.o
-    0x08001e0c   0x00000034   Code   RO         2540    i.RCC_LSEConfig     stm32f10x_rcc.o
-    0x08001e40   0x00000018   Code   RO         2543    i.RCC_PCLK1Config   stm32f10x_rcc.o
-    0x08001e58   0x00000018   Code   RO         2544    i.RCC_PCLK2Config   stm32f10x_rcc.o
-    0x08001e70   0x0000000c   Code   RO         2545    i.RCC_PLLCmd        stm32f10x_rcc.o
-    0x08001e7c   0x0000001c   Code   RO         2546    i.RCC_PLLConfig     stm32f10x_rcc.o
-    0x08001e98   0x00000018   Code   RO         2549    i.RCC_SYSCLKConfig  stm32f10x_rcc.o
-    0x08001eb0   0x00000038   Code   RO         2551    i.RCC_WaitForHSEStartUp  stm32f10x_rcc.o
+    0x08001bdc   0x00000020   Code   RO         2511    i.RCC_AHBPeriphClockCmd  stm32f10x_rcc.o
+    0x08001bfc   0x00000020   Code   RO         2512    i.RCC_APB1PeriphClockCmd  stm32f10x_rcc.o
+    0x08001c1c   0x00000020   Code   RO         2514    i.RCC_APB2PeriphClockCmd  stm32f10x_rcc.o
+    0x08001c3c   0x0000004c   Code   RO         2521    i.RCC_DeInit        stm32f10x_rcc.o
+    0x08001c88   0x000000d4   Code   RO         2522    i.RCC_GetClocksFreq  stm32f10x_rcc.o
+    0x08001d5c   0x0000003c   Code   RO         2523    i.RCC_GetFlagStatus  stm32f10x_rcc.o
+    0x08001d98   0x00000010   Code   RO         2525    i.RCC_GetSYSCLKSource  stm32f10x_rcc.o
+    0x08001da8   0x00000018   Code   RO         2526    i.RCC_HCLKConfig    stm32f10x_rcc.o
+    0x08001dc0   0x0000004c   Code   RO         2527    i.RCC_HSEConfig     stm32f10x_rcc.o
+    0x08001e0c   0x00000034   Code   RO         2530    i.RCC_LSEConfig     stm32f10x_rcc.o
+    0x08001e40   0x00000018   Code   RO         2533    i.RCC_PCLK1Config   stm32f10x_rcc.o
+    0x08001e58   0x00000018   Code   RO         2534    i.RCC_PCLK2Config   stm32f10x_rcc.o
+    0x08001e70   0x0000000c   Code   RO         2535    i.RCC_PLLCmd        stm32f10x_rcc.o
+    0x08001e7c   0x0000001c   Code   RO         2536    i.RCC_PLLConfig     stm32f10x_rcc.o
+    0x08001e98   0x00000018   Code   RO         2539    i.RCC_SYSCLKConfig  stm32f10x_rcc.o
+    0x08001eb0   0x00000038   Code   RO         2541    i.RCC_WaitForHSEStartUp  stm32f10x_rcc.o
     0x08001ee8   0x00000034   Code   RO          342    i.RS485_SetReceive  usart.o
     0x08001f1c   0x00000034   Code   RO          343    i.RS485_SetTransmit  usart.o
-    0x08001f50   0x0000001e   Code   RO         1401    i.ReversibleMotor_ClearTask  reversible_motor.o
+    0x08001f50   0x0000001e   Code   RO         1391    i.ReversibleMotor_ClearTask  reversible_motor.o
     0x08001f6e   0x00000002   PAD
-    0x08001f70   0x000000a8   Code   RO         1402    i.ReversibleMotor_ConfigureStart  reversible_motor.o
-    0x08002018   0x00000014   Code   RO         1403    i.ReversibleMotor_GetHardware  reversible_motor.o
-    0x0800202c   0x00000012   Code   RO         1404    i.ReversibleMotor_GetRunMode  reversible_motor.o
-    0x0800203e   0x0000002a   Code   RO         1405    i.ReversibleMotor_HardwareEnable  reversible_motor.o
-    0x08002068   0x00000098   Code   RO         1406    i.ReversibleMotor_HardwareSetDirection  reversible_motor.o
-    0x08002100   0x00000016   Code   RO         1407    i.ReversibleMotor_HardwareStop  reversible_motor.o
-    0x08002116   0x00000042   Code   RO         1408    i.ReversibleMotor_Immediate  reversible_motor.o
-    0x08002158   0x00000038   Code   RO         1409    i.ReversibleMotor_Init  reversible_motor.o
-    0x08002190   0x00000084   Code   RO         1410    i.ReversibleMotor_InitGpioHardware  reversible_motor.o
-    0x08002214   0x00000012   Code   RO         1411    i.ReversibleMotor_IsDirection  reversible_motor.o
+    0x08001f70   0x000000a8   Code   RO         1392    i.ReversibleMotor_ConfigureStart  reversible_motor.o
+    0x08002018   0x00000014   Code   RO         1393    i.ReversibleMotor_GetHardware  reversible_motor.o
+    0x0800202c   0x00000012   Code   RO         1394    i.ReversibleMotor_GetRunMode  reversible_motor.o
+    0x0800203e   0x0000002a   Code   RO         1395    i.ReversibleMotor_HardwareEnable  reversible_motor.o
+    0x08002068   0x00000098   Code   RO         1396    i.ReversibleMotor_HardwareSetDirection  reversible_motor.o
+    0x08002100   0x00000016   Code   RO         1397    i.ReversibleMotor_HardwareStop  reversible_motor.o
+    0x08002116   0x00000042   Code   RO         1398    i.ReversibleMotor_Immediate  reversible_motor.o
+    0x08002158   0x00000038   Code   RO         1399    i.ReversibleMotor_Init  reversible_motor.o
+    0x08002190   0x00000084   Code   RO         1400    i.ReversibleMotor_InitGpioHardware  reversible_motor.o
+    0x08002214   0x00000012   Code   RO         1401    i.ReversibleMotor_IsDirection  reversible_motor.o
     0x08002226   0x00000002   PAD
-    0x08002228   0x00000044   Code   RO         1412    i.ReversibleMotor_IsSensorTriggered  reversible_motor.o
-    0x0800226c   0x00000010   Code   RO         1413    i.ReversibleMotor_IsValidId  reversible_motor.o
-    0x0800227c   0x00000018   Code   RO         1414    i.ReversibleMotor_RecordError  reversible_motor.o
-    0x08002294   0x00000032   Code   RO         1416    i.ReversibleMotor_StartSensorTimed  reversible_motor.o
-    0x080022c6   0x00000022   Code   RO         1417    i.ReversibleMotor_StartTimed  reversible_motor.o
-    0x080022e8   0x00000028   Code   RO         1418    i.ReversibleMotor_Stop  reversible_motor.o
-    0x08002310   0x000000c0   Code   RO         1419    i.ReversibleMotor_Task  reversible_motor.o
+    0x08002228   0x00000044   Code   RO         1402    i.ReversibleMotor_IsSensorTriggered  reversible_motor.o
+    0x0800226c   0x00000010   Code   RO         1403    i.ReversibleMotor_IsValidId  reversible_motor.o
+    0x0800227c   0x00000018   Code   RO         1404    i.ReversibleMotor_RecordError  reversible_motor.o
+    0x08002294   0x00000032   Code   RO         1406    i.ReversibleMotor_StartSensorTimed  reversible_motor.o
+    0x080022c6   0x00000022   Code   RO         1407    i.ReversibleMotor_StartTimed  reversible_motor.o
+    0x080022e8   0x00000028   Code   RO         1408    i.ReversibleMotor_Stop  reversible_motor.o
+    0x08002310   0x000000c0   Code   RO         1409    i.ReversibleMotor_Task  reversible_motor.o
     0x080023d0   0x0000000c   Code   RO          523    i.RingBuffer_Init   ringbuffer.o
     0x080023dc   0x00000032   Code   RO          524    i.RingBuffer_ReadByte  ringbuffer.o
     0x0800240e   0x00000036   Code   RO          525    i.RingBuffer_WriteByte  ringbuffer.o
-    0x08002444   0x00000026   Code   RO         2257    i.RobotArmDriver_GetCompletedSteps  robot_arm_driver.o
-    0x0800246a   0x00000026   Code   RO         2258    i.RobotArmDriver_GetRemainingSteps  robot_arm_driver.o
-    0x08002490   0x00000026   Code   RO         2259    i.RobotArmDriver_IsBusy  robot_arm_driver.o
+    0x08002444   0x00000026   Code   RO         2247    i.RobotArmDriver_GetCompletedSteps  robot_arm_driver.o
+    0x0800246a   0x00000026   Code   RO         2248    i.RobotArmDriver_GetRemainingSteps  robot_arm_driver.o
+    0x08002490   0x00000026   Code   RO         2249    i.RobotArmDriver_IsBusy  robot_arm_driver.o
     0x080024b6   0x00000002   PAD
-    0x080024b8   0x00000030   Code   RO         2260    i.RobotArmDriver_SetPb11Direction  robot_arm_driver.o
-    0x080024e8   0x000000ac   Code   RO         2261    i.RobotArmDriver_Start  robot_arm_driver.o
-    0x08002594   0x00000028   Code   RO         2262    i.RobotArmDriver_Stop  robot_arm_driver.o
-    0x080025bc   0x00000024   Code   RO         1003    i.RobotArmProtocol_BindActive  robot_arm_protocol.o
-    0x080025e0   0x00000034   Code   RO         1004    i.RobotArmProtocol_CanAcceptRequest  robot_arm_protocol.o
-    0x08002614   0x00000014   Code   RO         1005    i.RobotArmProtocol_ClearData  robot_arm_protocol.o
-    0x08002628   0x0000002e   Code   RO         1006    i.RobotArmProtocol_EventFromReason  robot_arm_protocol.o
-    0x08002656   0x00000002   PAD
-    0x08002658   0x000000c8   Code   RO         1007    i.RobotArmProtocol_FlushTx  robot_arm_protocol.o
-    0x08002720   0x000001f8   Code   RO         1009    i.RobotArmProtocol_HandleFrame  robot_arm_protocol.o
-    0x08002918   0x00000078   Code   RO         1010    i.RobotArmProtocol_Init  robot_arm_protocol.o
-    0x08002990   0x00000012   Code   RO         1011    i.RobotArmProtocol_IsHomeCommand  robot_arm_protocol.o
-    0x080029a2   0x00000036   Code   RO         1012    i.RobotArmProtocol_MoveAxisAbsolute  robot_arm_protocol.o
-    0x080029d8   0x00000036   Code   RO         1013    i.RobotArmProtocol_MoveAxisRelative  robot_arm_protocol.o
-    0x08002a0e   0x00000002   PAD
-    0x08002a10   0x00000034   Code   RO         1014    i.RobotArmProtocol_ProduceTerminal  robot_arm_protocol.o
-    0x08002a44   0x000000dc   Code   RO         1015    i.RobotArmProtocol_Queue  robot_arm_protocol.o
-    0x08002b20   0x0000003c   Code   RO         1016    i.RobotArmProtocol_QueueEvent  robot_arm_protocol.o
-    0x08002b5c   0x00000034   Code   RO         1017    i.RobotArmProtocol_RetryActiveAck  robot_arm_protocol.o
-    0x08002b90   0x00000028   Code   RO         1018    i.RobotArmProtocol_RetryStopAck  robot_arm_protocol.o
-    0x08002bb8   0x0000003c   Code   RO         1019    i.RobotArmProtocol_SendAck  robot_arm_protocol.o
-    0x08002bf4   0x0000019c   Code   RO         1020    i.RobotArmProtocol_SendStatus  robot_arm_protocol.o
-    0x08002d90   0x00000094   Code   RO         1021    i.RobotArmProtocol_Task  robot_arm_protocol.o
-    0x08002e24   0x00000070   Code   RO         1022    i.RobotArmProtocol_TryQueueTerminal  robot_arm_protocol.o
-    0x08002e94   0x0000000c   Code   RO         2298    i.RobotArmSensor_IsReady  robot_arm_sensor.o
-    0x08002ea0   0x0000004c   Code   RO         2299    i.RobotArmSensor_IsTriggered  robot_arm_sensor.o
-    0x08002eec   0x0000002c   Code   RO         2300    i.RobotArmSensor_UpdateSnapshot  robot_arm_sensor.o
-    0x08002f18   0x0000005c   Code   RO         1928    i.RobotArm_BeginHomeAxis  robot_arm.o
-    0x08002f74   0x0000006c   Code   RO         1929    i.RobotArm_CalculateMoveTimeout  robot_arm.o
-    0x08002fe0   0x00000030   Code   RO         1930    i.RobotArm_CheckAxisTarget  robot_arm.o
-    0x08003010   0x00000006   Code   RO         1931    i.RobotArm_CheckPoseSafety  robot_arm.o
-    0x08003016   0x0000003e   Code   RO         1932    i.RobotArm_CheckTargetDirection  robot_arm.o
-    0x08003054   0x00000018   Code   RO         1933    i.RobotArm_CheckTransitionSafety  robot_arm.o
-    0x0800306c   0x00000058   Code   RO         1934    i.RobotArm_ClearError  robot_arm.o
-    0x080030c4   0x0000009c   Code   RO         1935    i.RobotArm_CompleteHomeAxis  robot_arm.o
-    0x08003160   0x000000a8   Code   RO         1936    i.RobotArm_FailAxisMove  robot_arm.o
-    0x08003208   0x00000070   Code   RO         1937    i.RobotArm_FailCombinedMoveStart  robot_arm.o
-    0x08003278   0x00000068   Code   RO         1938    i.RobotArm_FailHome  robot_arm.o
-    0x080032e0   0x00000020   Code   RO         1939    i.RobotArm_GetAxis  robot_arm.o
-    0x08003300   0x00000016   Code   RO         1940    i.RobotArm_GetAxisState  robot_arm.o
-    0x08003316   0x00000002   PAD
-    0x08003318   0x0000000c   Code   RO         1941    i.RobotArm_GetHomeDirection  robot_arm.o
-    0x08003324   0x00000010   Code   RO         1942    i.RobotArm_GetHomeMaxSteps  robot_arm.o
-    0x08003334   0x00000010   Code   RO         1943    i.RobotArm_GetHomeOffset  robot_arm.o
-    0x08003344   0x00000006   Code   RO         1944    i.RobotArm_GetHomeSensor  robot_arm.o
-    0x0800334a   0x00000002   PAD
-    0x0800334c   0x00000010   Code   RO         1945    i.RobotArm_GetHomeTimeout  robot_arm.o
-    0x0800335c   0x000000fc   Code   RO         1948    i.RobotArm_GetStatus  robot_arm.o
-    0x08003458   0x0000000c   Code   RO         1949    i.RobotArm_GetX     robot_arm.o
-    0x08003464   0x0000000c   Code   RO         1950    i.RobotArm_GetY     robot_arm.o
-    0x08003470   0x0000000c   Code   RO         1951    i.RobotArm_GetZ     robot_arm.o
-    0x0800347c   0x0000007c   Code   RO         1952    i.RobotArm_Home     robot_arm.o
-    0x080034f8   0x00000048   Code   RO         1953    i.RobotArm_HomeAxis  robot_arm.o
-    0x08003540   0x000000e4   Code   RO         1954    i.RobotArm_Init     robot_arm.o
-    0x08003624   0x00000026   Code   RO         1955    i.RobotArm_InvalidatePosition  robot_arm.o
-    0x0800364a   0x00000002   PAD
-    0x0800364c   0x0000000c   Code   RO         1956    i.RobotArm_IsAxisLimitEnabled  robot_arm.o
-    0x08003658   0x00000030   Code   RO         1957    i.RobotArm_IsBusy   robot_arm.o
-    0x08003688   0x00000034   Code   RO         1958    i.RobotArm_IsDirectionBlocked  robot_arm.o
-    0x080036bc   0x0000000c   Code   RO         1959    i.RobotArm_IsHomeEnabled  robot_arm.o
-    0x080036c8   0x00000016   Code   RO         1960    i.RobotArm_IsHomed  robot_arm.o
-    0x080036de   0x00000016   Code   RO         1961    i.RobotArm_IsPositionValid  robot_arm.o
-    0x080036f4   0x000001a0   Code   RO         1962    i.RobotArm_MoveTo   robot_arm.o
-    0x08003894   0x000000e8   Code   RO         1963    i.RobotArm_MoveToSafe  robot_arm.o
-    0x0800397c   0x00000012   Code   RO         1964    i.RobotArm_MoveX    robot_arm.o
-    0x0800398e   0x00000012   Code   RO         1965    i.RobotArm_MoveXRelative  robot_arm.o
-    0x080039a0   0x00000012   Code   RO         1966    i.RobotArm_MoveY    robot_arm.o
-    0x080039b2   0x00000012   Code   RO         1967    i.RobotArm_MoveYRelative  robot_arm.o
-    0x080039c4   0x00000012   Code   RO         1968    i.RobotArm_MoveZ    robot_arm.o
-    0x080039d6   0x00000012   Code   RO         1969    i.RobotArm_MoveZRelative  robot_arm.o
-    0x080039e8   0x0000009c   Code   RO         1970    i.RobotArm_ProcessAxisMove  robot_arm.o
-    0x08003a84   0x00000030   Code   RO         1971    i.RobotArm_ResetCombinedStates  robot_arm.o
-    0x08003ab4   0x00000054   Code   RO         1972    i.RobotArm_ResetMoveDebug  robot_arm.o
-    0x08003b08   0x0000002e   Code   RO         1973    i.RobotArm_ResultFromEndReason  robot_arm.o
-    0x08003b36   0x00000002   PAD
-    0x08003b38   0x00000130   Code   RO         1974    i.RobotArm_StartAxisMoveInternal  robot_arm.o
-    0x08003c68   0x0000003c   Code   RO         1975    i.RobotArm_StartHomeDriver  robot_arm.o
-    0x08003ca4   0x0000006c   Code   RO         1976    i.RobotArm_StartSingleAbsolute  robot_arm.o
-    0x08003d10   0x00000098   Code   RO         1977    i.RobotArm_StartSingleRelative  robot_arm.o
-    0x08003da8   0x000000a4   Code   RO         1978    i.RobotArm_Stop     robot_arm.o
-    0x08003e4c   0x00000090   Code   RO         1979    i.RobotArm_Task     robot_arm.o
-    0x08003edc   0x0000024c   Code   RO         1980    i.RobotArm_TaskHome  robot_arm.o
-    0x08004128   0x000001b8   Code   RO         1981    i.RobotArm_TaskMoveTo  robot_arm.o
-    0x080042e0   0x00000278   Code   RO         1982    i.RobotArm_TaskSafeMove  robot_arm.o
-    0x08004558   0x000000f4   Code   RO         1983    i.RobotArm_TryCompleteMoveTo  robot_arm.o
-    0x0800464c   0x00000022   Code   RO         1984    i.RobotArm_ValidateHomeConfig  robot_arm.o
-    0x0800466e   0x0000000e   Code   RO         1985    i.RobotArm_ValidateSafeMoveConfig  robot_arm.o
-    0x0800467c   0x000000dc   Code   RO          618    i.SPI1_InitOnce     spi_helper.o
-    0x08004758   0x00000018   Code   RO         2905    i.SPI_Cmd           stm32f10x_spi.o
-    0x08004770   0x00000078   Code   RO          619    i.SPI_GPIO_Init     spi_helper.o
-    0x080047e8   0x00000012   Code   RO         2913    i.SPI_I2S_GetFlagStatus  stm32f10x_spi.o
-    0x080047fa   0x00000006   Code   RO         2916    i.SPI_I2S_ReceiveData  stm32f10x_spi.o
-    0x08004800   0x00000004   Code   RO         2917    i.SPI_I2S_SendData  stm32f10x_spi.o
-    0x08004804   0x0000003c   Code   RO         2918    i.SPI_Init          stm32f10x_spi.o
-    0x08004840   0x0000001e   Code   RO         2919    i.SPI_NSSInternalSoftwareConfig  stm32f10x_spi.o
-    0x0800485e   0x00000002   Code   RO          284    i.SVC_Handler       stm32f10x_it.o
-    0x08004860   0x00000008   Code   RO         2336    i.SetSysClock       system_stm32f10x.o
-    0x08004868   0x000000e0   Code   RO         2337    i.SetSysClockTo72   system_stm32f10x.o
-    0x08004948   0x0000002c   Code   RO          557    i.ShiftRegisterInput_Init  shift_register_input.o
-    0x08004974   0x00000078   Code   RO          558    i.ShiftRegisterInput_ReadAll  shift_register_input.o
-    0x080049ec   0x0000002c   Code   RO          587    i.ShiftRegister_Init  shift_register.o
-    0x08004a18   0x00000060   Code   RO          589    i.ShiftRegister_WriteAll  shift_register.o
-    0x08004a78   0x00000010   Code   RO         1319    i.SingleMotor_ClearTask  single_motor.o
-    0x08004a88   0x00000040   Code   RO         1320    i.SingleMotor_GetRunningBitmap  single_motor.o
-    0x08004ac8   0x00000044   Code   RO         1321    i.SingleMotor_Immediate  single_motor.o
-    0x08004b0c   0x00000024   Code   RO         1322    i.SingleMotor_Init  single_motor.o
-    0x08004b30   0x0000003c   Code   RO         1323    i.SingleMotor_IsSensorTriggered  single_motor.o
-    0x08004b6c   0x00000010   Code   RO         1324    i.SingleMotor_IsValidId  single_motor.o
-    0x08004b7c   0x00000018   Code   RO         1325    i.SingleMotor_RecordError  single_motor.o
-    0x08004b94   0x0000005c   Code   RO         1326    i.SingleMotor_Set   single_motor.o
-    0x08004bf0   0x00000064   Code   RO         1327    i.SingleMotor_StartSensorTimed  single_motor.o
-    0x08004c54   0x0000003c   Code   RO         1328    i.SingleMotor_StartTimed  single_motor.o
-    0x08004c90   0x00000028   Code   RO         1329    i.SingleMotor_Stop  single_motor.o
-    0x08004cb8   0x00000090   Code   RO         1330    i.SingleMotor_Task  single_motor.o
-    0x08004d48   0x0000000c   Code   RO         1691    i.Stepper2_GetCompletedSteps  step_dma.o
-    0x08004d54   0x0000000c   Code   RO         1692    i.Stepper2_GetRemainingSteps  step_dma.o
-    0x08004d60   0x00000010   Code   RO         1693    i.Stepper2_Init     step_dma.o
-    0x08004d70   0x00000008   Code   RO         1694    i.Stepper2_IsBusy   step_dma.o
-    0x08004d78   0x00000038   Code   RO         1695    i.Stepper2_SetDirection  step_dma.o
-    0x08004db0   0x00000048   Code   RO         1696    i.Stepper2_Start    step_dma.o
-    0x08004df8   0x00000008   Code   RO         1697    i.Stepper2_Stop     step_dma.o
-    0x08004e00   0x00000028   Code   RO         2374    i.SysTick_CLKSourceConfig  misc.o
-    0x08004e28   0x00000002   Code   RO          285    i.SysTick_Handler   stm32f10x_it.o
-    0x08004e2a   0x00000062   Code   RO            1    i.SystemClock_Config  clock.o
-    0x08004e8c   0x00000060   Code   RO         2339    i.SystemInit        system_stm32f10x.o
-    0x08004eec   0x000000cc   Code   RO         1140    i.TIM1_PWM_CH2N_Config  pwm.o
-    0x08004fb8   0x00000048   Code   RO         1518    i.TIM2_IRQHandler   time.o
-    0x08005000   0x00000058   Code   RO         1519    i.TIM3_10us_Init    time.o
-    0x08005058   0x00000034   Code   RO         1520    i.TIM3_IRQHandler   time.o
-    0x0800508c   0x00000058   Code   RO         1521    i.TIM4_10us_Init    time.o
-    0x080050e4   0x0000001c   Code   RO         1522    i.TIM4_IRQHandler   time.o
-    0x08005100   0x00000018   Code   RO         3120    i.TIM_ARRPreloadConfig  stm32f10x_tim.o
-    0x08005118   0x00000020   Code   RO         3121    i.TIM_BDTRConfig    stm32f10x_tim.o
-    0x08005138   0x00000012   Code   RO         3122    i.TIM_BDTRStructInit  stm32f10x_tim.o
-    0x0800514a   0x00000006   Code   RO         3126    i.TIM_ClearFlag     stm32f10x_tim.o
-    0x08005150   0x00000006   Code   RO         3127    i.TIM_ClearITPendingBit  stm32f10x_tim.o
-    0x08005156   0x00000018   Code   RO         3132    i.TIM_Cmd           stm32f10x_tim.o
-    0x0800516e   0x0000001e   Code   RO         3134    i.TIM_CtrlPWMOutputs  stm32f10x_tim.o
-    0x0800518c   0x00000012   Code   RO         3135    i.TIM_DMACmd        stm32f10x_tim.o
-    0x0800519e   0x00000004   Code   RO         3146    i.TIM_GenerateEvent  stm32f10x_tim.o
-    0x080051a2   0x00000022   Code   RO         3153    i.TIM_GetITStatus   stm32f10x_tim.o
-    0x080051c4   0x00000012   Code   RO         3157    i.TIM_ITConfig      stm32f10x_tim.o
-    0x080051d6   0x00000002   PAD
-    0x080051d8   0x000000a4   Code   RO         3166    i.TIM_OC2Init       stm32f10x_tim.o
-    0x0800527c   0x0000001a   Code   RO         3169    i.TIM_OC2PreloadConfig  stm32f10x_tim.o
-    0x08005296   0x00000014   Code   RO         3179    i.TIM_OCStructInit  stm32f10x_tim.o
-    0x080052aa   0x00000006   Code   RO         3181    i.TIM_PrescalerConfig  stm32f10x_tim.o
-    0x080052b0   0x00000004   Code   RO         3191    i.TIM_SetAutoreload  stm32f10x_tim.o
-    0x080052b4   0x00000004   Code   RO         3197    i.TIM_SetCounter    stm32f10x_tim.o
-    0x080052b8   0x000000a4   Code   RO         3203    i.TIM_TimeBaseInit  stm32f10x_tim.o
-    0x0800535c   0x00000012   Code   RO         3204    i.TIM_TimeBaseStructInit  stm32f10x_tim.o
-    0x0800536e   0x00000002   PAD
-    0x08005370   0x00000060   Code   RO         1523    i.Timer2_Init       time.o
-    0x080053d0   0x00000014   Code   RO          344    i.UART1GetByte      usart.o
-    0x080053e4   0x000000bc   Code   RO          347    i.USART1_IRQHandler  usart.o
-    0x080054a0   0x000001f0   Code   RO          348    i.USART1_Init       usart.o
-    0x08005690   0x00000028   Code   RO          353    i.USART1_RecordMaxWait  usart.o
-    0x080056b8   0x00000050   Code   RO          354    i.USART1_RecordTxFailure  usart.o
-    0x08005708   0x0000001c   Code   RO          355    i.USART1_ReleaseTx  usart.o
-    0x08005724   0x0000001c   Code   RO          356    i.USART1_SetTxDiagnosticCommand  usart.o
-    0x08005740   0x00000028   Code   RO          358    i.USART1_TryAcquireTx  usart.o
-    0x08005768   0x00000090   Code   RO          359    i.USART2_IRQHandler  usart.o
-    0x080057f8   0x0000001c   Code   RO          360    i.USART3_IRQHandler  usart.o
-    0x08005814   0x0000002c   Code   RO          361    i.USART3_Process    usart.o
-    0x08005840   0x00000018   Code   RO         2724    i.USART_Cmd         stm32f10x_usart.o
-    0x08005858   0x0000001a   Code   RO         2727    i.USART_GetFlagStatus  stm32f10x_usart.o
-    0x08005872   0x0000004a   Code   RO         2730    i.USART_ITConfig    stm32f10x_usart.o
-    0x080058bc   0x000000d8   Code   RO         2731    i.USART_Init        stm32f10x_usart.o
-    0x08005994   0x00000034   Code   RO          362    i.USART_IsProtocolFrameValid  usart.o
-    0x080059c8   0x0000008c   Code   RO          363    i.USART_ProcessProtocolByte  usart.o
-    0x08005a54   0x0000000c   Code   RO          364    i.USART_ResetRxStats  usart.o
-    0x08005a60   0x00000040   Code   RO          365    i.USART_RxIrqHandler  usart.o
-    0x08005aa0   0x00000260   Code   RO          366    i.USART_SendBuffer  usart.o
-    0x08005d00   0x00000008   Code   RO         2741    i.USART_SendData    stm32f10x_usart.o
-    0x08005d08   0x00000004   Code   RO          286    i.UsageFault_Handler  stm32f10x_it.o
-    0x08005d0c   0x00000006   Code   RO          369    i.__get_PRIMASK     usart.o
-    0x08005d12   0x0000001e   Code   RO          109    i.delay_us          delay.o
-    0x08005d30   0x00000058   Code   RO         1698    i.dma10_start_edges  step_dma.o
-    0x08005d88   0x00000058   Code   RO         1699    i.dma_start_edges   step_dma.o
-    0x08005de0   0x0000002c   Code   RO         1700    i.fill_dma_buf      step_dma.o
-    0x08005e0c   0x0000002c   Code   RO         1701    i.fill_dma_buf10    step_dma.o
-    0x08005e38   0x00000534   Code   RO          676    i.handle_command    protocol.o
-    0x0800636c   0x0000008a   Code   RO         1702    i.isqrt_u64         step_dma.o
-    0x080063f6   0x00000002   PAD
-    0x080063f8   0x00000148   Code   RO          153    i.main              main.o
-    0x08006540   0x0000000c   Code   RO         1524    i.millis            time.o
-    0x0800654c   0x000000ac   Code   RO          678    i.parse_frame       protocol.o
-    0x080065f8   0x0000000a   Code   RO          680    i.send_165Data      protocol.o
-    0x08006602   0x00000002   PAD
-    0x08006604   0x0000002c   Code   RO          681    i.send_165DataSource  protocol.o
-    0x08006630   0x00000012   Code   RO          682    i.send_frame        protocol.o
-    0x08006642   0x00000002   PAD
-    0x08006644   0x00000158   Code   RO          685    i.send_frame_internal  protocol.o
-    0x0800679c   0x00000144   Code   RO         1703    i.stepdma_pb10_init  step_dma.o
-    0x080068e0   0x0000000c   Code   RO         1704    i.stepdma_pb10_is_running  step_dma.o
-    0x080068ec   0x00000160   Code   RO         1706    i.stepdma_pb10_move_trap  step_dma.o
-    0x08006a4c   0x00000060   Code   RO         1707    i.stepdma_pb10_request_trap  step_dma.o
-    0x08006aac   0x00000054   Code   RO         1708    i.stepdma_pb10_stop  step_dma.o
-    0x08006b00   0x0000000c   Code   RO         1709    i.stepdma_pb11_get_completed_steps  step_dma.o
-    0x08006b0c   0x00000020   Code   RO         1710    i.stepdma_pb11_get_remaining_steps  step_dma.o
-    0x08006b2c   0x00000120   Code   RO         1711    i.stepdma_pb11_init  step_dma.o
-    0x08006c4c   0x0000000c   Code   RO         1712    i.stepdma_pb11_is_running  step_dma.o
-    0x08006c58   0x0000013c   Code   RO         1714    i.stepdma_pb11_move_trap  step_dma.o
-    0x08006d94   0x00000040   Code   RO         1715    i.stepdma_pb11_request_trap  step_dma.o
-    0x08006dd4   0x00000044   Code   RO         1716    i.stepdma_pb11_stop  step_dma.o
-    0x08006e18   0x00000010   Code   RO          154    i.task_165_input_scan  main.o
-    0x08006e28   0x00000068   Code   RO          155    i.task_input_change_report  main.o
-    0x08006e90   0x00000026   Code   RO          156    i.task_protocol_commands  main.o
-    0x08006eb6   0x00000002   PAD
-    0x08006eb8   0x00000030   Code   RO          157    i.task_protocol_v2_send  main.o
-    0x08006ee8   0x0000002c   Code   RO          158    i.task_single_motor  main.o
-    0x08006f14   0x00000064   Code   RO          160    i.task_uart_frames  main.o
-    0x08006f78   0x00000098   Code   RO         1717    i.tim5_set_edge_freq  step_dma.o
-    0x08007010   0x00000094   Code   RO         1718    i.tim6_set_edge_freq  step_dma.o
-    0x080070a4   0x000000c8   Code   RO         1719    i.trap10_get_f      step_dma.o
-    0x0800716c   0x000000c8   Code   RO         1720    i.trap_get_f        step_dma.o
-    0x08007234   0x00000026   Data   RO         1332    .constdata          single_motor.o
-    0x0800725a   0x00000002   PAD
-    0x0800725c   0x0000008c   Data   RO         1421    .constdata          reversible_motor.o
-    0x080072e8   0x00000054   Data   RO         1987    .constdata          robot_arm.o
-    0x0800733c   0x0000000c   Data   RO         2301    .constdata          robot_arm_sensor.o
-    0x08007348   0x00000020   Data   RO         3879    Region$$Table       anon$$obj.o
+    0x080024b8   0x00000030   Code   RO         2250    i.RobotArmDriver_SetPb11Direction  robot_arm_driver.o
+    0x080024e8   0x000000ac   Code   RO         2251    i.RobotArmDriver_Start  robot_arm_driver.o
+    0x08002594   0x00000028   Code   RO         2252    i.RobotArmDriver_Stop  robot_arm_driver.o
+    0x080025bc   0x0000001c   Code   RO         1003    i.RobotArmProtocol_BindActive  robot_arm_protocol.o
+    0x080025d8   0x00000034   Code   RO         1004    i.RobotArmProtocol_CanAcceptRequest  robot_arm_protocol.o
+    0x0800260c   0x00000014   Code   RO         1005    i.RobotArmProtocol_ClearData  robot_arm_protocol.o
+    0x08002620   0x0000002e   Code   RO         1006    i.RobotArmProtocol_EventFromReason  robot_arm_protocol.o
+    0x0800264e   0x00000002   PAD
+    0x08002650   0x00000084   Code   RO         1007    i.RobotArmProtocol_FlushTx  robot_arm_protocol.o
+    0x080026d4   0x000001f0   Code   RO         1009    i.RobotArmProtocol_HandleFrame  robot_arm_protocol.o
+    0x080028c4   0x00000088   Code   RO         1010    i.RobotArmProtocol_Init  robot_arm_protocol.o
+    0x0800294c   0x00000012   Code   RO         1011    i.RobotArmProtocol_IsHomeCommand  robot_arm_protocol.o
+    0x0800295e   0x00000036   Code   RO         1012    i.RobotArmProtocol_MoveAxisAbsolute  robot_arm_protocol.o
+    0x08002994   0x00000036   Code   RO         1013    i.RobotArmProtocol_MoveAxisRelative  robot_arm_protocol.o
+    0x080029ca   0x00000002   PAD
+    0x080029cc   0x00000050   Code   RO         1014    i.RobotArmProtocol_ProduceTerminal  robot_arm_protocol.o
+    0x08002a1c   0x000000dc   Code   RO         1015    i.RobotArmProtocol_Queue  robot_arm_protocol.o
+    0x08002af8   0x00000028   Code   RO         1016    i.RobotArmProtocol_RetryActiveAck  robot_arm_protocol.o
+    0x08002b20   0x00000028   Code   RO         1017    i.RobotArmProtocol_RetryStopAck  robot_arm_protocol.o
+    0x08002b48   0x0000003c   Code   RO         1018    i.RobotArmProtocol_SendAck  robot_arm_protocol.o
+    0x08002b84   0x000001ec   Code   RO         1019    i.RobotArmProtocol_SendStatus  robot_arm_protocol.o
+    0x08002d70   0x00000088   Code   RO         1020    i.RobotArmProtocol_Task  robot_arm_protocol.o
+    0x08002df8   0x0000000c   Code   RO         2288    i.RobotArmSensor_IsReady  robot_arm_sensor.o
+    0x08002e04   0x0000004c   Code   RO         2289    i.RobotArmSensor_IsTriggered  robot_arm_sensor.o
+    0x08002e50   0x0000002c   Code   RO         2290    i.RobotArmSensor_UpdateSnapshot  robot_arm_sensor.o
+    0x08002e7c   0x0000005c   Code   RO         1918    i.RobotArm_BeginHomeAxis  robot_arm.o
+    0x08002ed8   0x0000006c   Code   RO         1919    i.RobotArm_CalculateMoveTimeout  robot_arm.o
+    0x08002f44   0x00000030   Code   RO         1920    i.RobotArm_CheckAxisTarget  robot_arm.o
+    0x08002f74   0x00000006   Code   RO         1921    i.RobotArm_CheckPoseSafety  robot_arm.o
+    0x08002f7a   0x0000003e   Code   RO         1922    i.RobotArm_CheckTargetDirection  robot_arm.o
+    0x08002fb8   0x00000018   Code   RO         1923    i.RobotArm_CheckTransitionSafety  robot_arm.o
+    0x08002fd0   0x00000058   Code   RO         1924    i.RobotArm_ClearError  robot_arm.o
+    0x08003028   0x0000009c   Code   RO         1925    i.RobotArm_CompleteHomeAxis  robot_arm.o
+    0x080030c4   0x000000a8   Code   RO         1926    i.RobotArm_FailAxisMove  robot_arm.o
+    0x0800316c   0x00000070   Code   RO         1927    i.RobotArm_FailCombinedMoveStart  robot_arm.o
+    0x080031dc   0x00000068   Code   RO         1928    i.RobotArm_FailHome  robot_arm.o
+    0x08003244   0x00000020   Code   RO         1929    i.RobotArm_GetAxis  robot_arm.o
+    0x08003264   0x00000016   Code   RO         1930    i.RobotArm_GetAxisState  robot_arm.o
+    0x0800327a   0x00000002   PAD
+    0x0800327c   0x0000000c   Code   RO         1931    i.RobotArm_GetHomeDirection  robot_arm.o
+    0x08003288   0x00000010   Code   RO         1932    i.RobotArm_GetHomeMaxSteps  robot_arm.o
+    0x08003298   0x00000010   Code   RO         1933    i.RobotArm_GetHomeOffset  robot_arm.o
+    0x080032a8   0x00000006   Code   RO         1934    i.RobotArm_GetHomeSensor  robot_arm.o
+    0x080032ae   0x00000002   PAD
+    0x080032b0   0x00000010   Code   RO         1935    i.RobotArm_GetHomeTimeout  robot_arm.o
+    0x080032c0   0x000000fc   Code   RO         1938    i.RobotArm_GetStatus  robot_arm.o
+    0x080033bc   0x0000000c   Code   RO         1939    i.RobotArm_GetX     robot_arm.o
+    0x080033c8   0x0000000c   Code   RO         1940    i.RobotArm_GetY     robot_arm.o
+    0x080033d4   0x0000000c   Code   RO         1941    i.RobotArm_GetZ     robot_arm.o
+    0x080033e0   0x0000007c   Code   RO         1942    i.RobotArm_Home     robot_arm.o
+    0x0800345c   0x00000048   Code   RO         1943    i.RobotArm_HomeAxis  robot_arm.o
+    0x080034a4   0x000000e4   Code   RO         1944    i.RobotArm_Init     robot_arm.o
+    0x08003588   0x00000026   Code   RO         1945    i.RobotArm_InvalidatePosition  robot_arm.o
+    0x080035ae   0x00000002   PAD
+    0x080035b0   0x0000000c   Code   RO         1946    i.RobotArm_IsAxisLimitEnabled  robot_arm.o
+    0x080035bc   0x00000030   Code   RO         1947    i.RobotArm_IsBusy   robot_arm.o
+    0x080035ec   0x00000034   Code   RO         1948    i.RobotArm_IsDirectionBlocked  robot_arm.o
+    0x08003620   0x0000000c   Code   RO         1949    i.RobotArm_IsHomeEnabled  robot_arm.o
+    0x0800362c   0x00000016   Code   RO         1950    i.RobotArm_IsHomed  robot_arm.o
+    0x08003642   0x00000016   Code   RO         1951    i.RobotArm_IsPositionValid  robot_arm.o
+    0x08003658   0x000001a0   Code   RO         1952    i.RobotArm_MoveTo   robot_arm.o
+    0x080037f8   0x000000e8   Code   RO         1953    i.RobotArm_MoveToSafe  robot_arm.o
+    0x080038e0   0x00000012   Code   RO         1954    i.RobotArm_MoveX    robot_arm.o
+    0x080038f2   0x00000012   Code   RO         1955    i.RobotArm_MoveXRelative  robot_arm.o
+    0x08003904   0x00000012   Code   RO         1956    i.RobotArm_MoveY    robot_arm.o
+    0x08003916   0x00000012   Code   RO         1957    i.RobotArm_MoveYRelative  robot_arm.o
+    0x08003928   0x00000012   Code   RO         1958    i.RobotArm_MoveZ    robot_arm.o
+    0x0800393a   0x00000012   Code   RO         1959    i.RobotArm_MoveZRelative  robot_arm.o
+    0x0800394c   0x0000009c   Code   RO         1960    i.RobotArm_ProcessAxisMove  robot_arm.o
+    0x080039e8   0x00000030   Code   RO         1961    i.RobotArm_ResetCombinedStates  robot_arm.o
+    0x08003a18   0x00000054   Code   RO         1962    i.RobotArm_ResetMoveDebug  robot_arm.o
+    0x08003a6c   0x0000002e   Code   RO         1963    i.RobotArm_ResultFromEndReason  robot_arm.o
+    0x08003a9a   0x00000002   PAD
+    0x08003a9c   0x00000130   Code   RO         1964    i.RobotArm_StartAxisMoveInternal  robot_arm.o
+    0x08003bcc   0x0000003c   Code   RO         1965    i.RobotArm_StartHomeDriver  robot_arm.o
+    0x08003c08   0x0000006c   Code   RO         1966    i.RobotArm_StartSingleAbsolute  robot_arm.o
+    0x08003c74   0x00000098   Code   RO         1967    i.RobotArm_StartSingleRelative  robot_arm.o
+    0x08003d0c   0x000000a4   Code   RO         1968    i.RobotArm_Stop     robot_arm.o
+    0x08003db0   0x00000090   Code   RO         1969    i.RobotArm_Task     robot_arm.o
+    0x08003e40   0x0000024c   Code   RO         1970    i.RobotArm_TaskHome  robot_arm.o
+    0x0800408c   0x000001b8   Code   RO         1971    i.RobotArm_TaskMoveTo  robot_arm.o
+    0x08004244   0x00000278   Code   RO         1972    i.RobotArm_TaskSafeMove  robot_arm.o
+    0x080044bc   0x000000f4   Code   RO         1973    i.RobotArm_TryCompleteMoveTo  robot_arm.o
+    0x080045b0   0x00000022   Code   RO         1974    i.RobotArm_ValidateHomeConfig  robot_arm.o
+    0x080045d2   0x0000000e   Code   RO         1975    i.RobotArm_ValidateSafeMoveConfig  robot_arm.o
+    0x080045e0   0x000000dc   Code   RO          618    i.SPI1_InitOnce     spi_helper.o
+    0x080046bc   0x00000018   Code   RO         2895    i.SPI_Cmd           stm32f10x_spi.o
+    0x080046d4   0x00000078   Code   RO          619    i.SPI_GPIO_Init     spi_helper.o
+    0x0800474c   0x00000012   Code   RO         2903    i.SPI_I2S_GetFlagStatus  stm32f10x_spi.o
+    0x0800475e   0x00000006   Code   RO         2906    i.SPI_I2S_ReceiveData  stm32f10x_spi.o
+    0x08004764   0x00000004   Code   RO         2907    i.SPI_I2S_SendData  stm32f10x_spi.o
+    0x08004768   0x0000003c   Code   RO         2908    i.SPI_Init          stm32f10x_spi.o
+    0x080047a4   0x0000001e   Code   RO         2909    i.SPI_NSSInternalSoftwareConfig  stm32f10x_spi.o
+    0x080047c2   0x00000002   Code   RO          284    i.SVC_Handler       stm32f10x_it.o
+    0x080047c4   0x00000008   Code   RO         2326    i.SetSysClock       system_stm32f10x.o
+    0x080047cc   0x000000e0   Code   RO         2327    i.SetSysClockTo72   system_stm32f10x.o
+    0x080048ac   0x0000002c   Code   RO          557    i.ShiftRegisterInput_Init  shift_register_input.o
+    0x080048d8   0x00000078   Code   RO          558    i.ShiftRegisterInput_ReadAll  shift_register_input.o
+    0x08004950   0x0000002c   Code   RO          587    i.ShiftRegister_Init  shift_register.o
+    0x0800497c   0x00000060   Code   RO          589    i.ShiftRegister_WriteAll  shift_register.o
+    0x080049dc   0x00000010   Code   RO         1309    i.SingleMotor_ClearTask  single_motor.o
+    0x080049ec   0x00000040   Code   RO         1310    i.SingleMotor_GetRunningBitmap  single_motor.o
+    0x08004a2c   0x00000044   Code   RO         1311    i.SingleMotor_Immediate  single_motor.o
+    0x08004a70   0x00000024   Code   RO         1312    i.SingleMotor_Init  single_motor.o
+    0x08004a94   0x0000003c   Code   RO         1313    i.SingleMotor_IsSensorTriggered  single_motor.o
+    0x08004ad0   0x00000010   Code   RO         1314    i.SingleMotor_IsValidId  single_motor.o
+    0x08004ae0   0x00000018   Code   RO         1315    i.SingleMotor_RecordError  single_motor.o
+    0x08004af8   0x0000005c   Code   RO         1316    i.SingleMotor_Set   single_motor.o
+    0x08004b54   0x00000064   Code   RO         1317    i.SingleMotor_StartSensorTimed  single_motor.o
+    0x08004bb8   0x0000003c   Code   RO         1318    i.SingleMotor_StartTimed  single_motor.o
+    0x08004bf4   0x00000028   Code   RO         1319    i.SingleMotor_Stop  single_motor.o
+    0x08004c1c   0x00000090   Code   RO         1320    i.SingleMotor_Task  single_motor.o
+    0x08004cac   0x0000000c   Code   RO         1681    i.Stepper2_GetCompletedSteps  step_dma.o
+    0x08004cb8   0x0000000c   Code   RO         1682    i.Stepper2_GetRemainingSteps  step_dma.o
+    0x08004cc4   0x00000010   Code   RO         1683    i.Stepper2_Init     step_dma.o
+    0x08004cd4   0x00000008   Code   RO         1684    i.Stepper2_IsBusy   step_dma.o
+    0x08004cdc   0x00000038   Code   RO         1685    i.Stepper2_SetDirection  step_dma.o
+    0x08004d14   0x00000048   Code   RO         1686    i.Stepper2_Start    step_dma.o
+    0x08004d5c   0x00000008   Code   RO         1687    i.Stepper2_Stop     step_dma.o
+    0x08004d64   0x00000028   Code   RO         2364    i.SysTick_CLKSourceConfig  misc.o
+    0x08004d8c   0x00000002   Code   RO          285    i.SysTick_Handler   stm32f10x_it.o
+    0x08004d8e   0x00000062   Code   RO            1    i.SystemClock_Config  clock.o
+    0x08004df0   0x00000060   Code   RO         2329    i.SystemInit        system_stm32f10x.o
+    0x08004e50   0x000000cc   Code   RO         1130    i.TIM1_PWM_CH2N_Config  pwm.o
+    0x08004f1c   0x00000048   Code   RO         1508    i.TIM2_IRQHandler   time.o
+    0x08004f64   0x00000058   Code   RO         1509    i.TIM3_10us_Init    time.o
+    0x08004fbc   0x00000034   Code   RO         1510    i.TIM3_IRQHandler   time.o
+    0x08004ff0   0x00000058   Code   RO         1511    i.TIM4_10us_Init    time.o
+    0x08005048   0x0000001c   Code   RO         1512    i.TIM4_IRQHandler   time.o
+    0x08005064   0x00000018   Code   RO         3110    i.TIM_ARRPreloadConfig  stm32f10x_tim.o
+    0x0800507c   0x00000020   Code   RO         3111    i.TIM_BDTRConfig    stm32f10x_tim.o
+    0x0800509c   0x00000012   Code   RO         3112    i.TIM_BDTRStructInit  stm32f10x_tim.o
+    0x080050ae   0x00000006   Code   RO         3116    i.TIM_ClearFlag     stm32f10x_tim.o
+    0x080050b4   0x00000006   Code   RO         3117    i.TIM_ClearITPendingBit  stm32f10x_tim.o
+    0x080050ba   0x00000018   Code   RO         3122    i.TIM_Cmd           stm32f10x_tim.o
+    0x080050d2   0x0000001e   Code   RO         3124    i.TIM_CtrlPWMOutputs  stm32f10x_tim.o
+    0x080050f0   0x00000012   Code   RO         3125    i.TIM_DMACmd        stm32f10x_tim.o
+    0x08005102   0x00000004   Code   RO         3136    i.TIM_GenerateEvent  stm32f10x_tim.o
+    0x08005106   0x00000022   Code   RO         3143    i.TIM_GetITStatus   stm32f10x_tim.o
+    0x08005128   0x00000012   Code   RO         3147    i.TIM_ITConfig      stm32f10x_tim.o
+    0x0800513a   0x00000002   PAD
+    0x0800513c   0x000000a4   Code   RO         3156    i.TIM_OC2Init       stm32f10x_tim.o
+    0x080051e0   0x0000001a   Code   RO         3159    i.TIM_OC2PreloadConfig  stm32f10x_tim.o
+    0x080051fa   0x00000014   Code   RO         3169    i.TIM_OCStructInit  stm32f10x_tim.o
+    0x0800520e   0x00000006   Code   RO         3171    i.TIM_PrescalerConfig  stm32f10x_tim.o
+    0x08005214   0x00000004   Code   RO         3181    i.TIM_SetAutoreload  stm32f10x_tim.o
+    0x08005218   0x00000004   Code   RO         3187    i.TIM_SetCounter    stm32f10x_tim.o
+    0x0800521c   0x000000a4   Code   RO         3193    i.TIM_TimeBaseInit  stm32f10x_tim.o
+    0x080052c0   0x00000012   Code   RO         3194    i.TIM_TimeBaseStructInit  stm32f10x_tim.o
+    0x080052d2   0x00000002   PAD
+    0x080052d4   0x00000060   Code   RO         1513    i.Timer2_Init       time.o
+    0x08005334   0x00000014   Code   RO          344    i.UART1GetByte      usart.o
+    0x08005348   0x000000bc   Code   RO          347    i.USART1_IRQHandler  usart.o
+    0x08005404   0x000001f0   Code   RO          348    i.USART1_Init       usart.o
+    0x080055f4   0x00000028   Code   RO          353    i.USART1_RecordMaxWait  usart.o
+    0x0800561c   0x00000050   Code   RO          354    i.USART1_RecordTxFailure  usart.o
+    0x0800566c   0x0000001c   Code   RO          355    i.USART1_ReleaseTx  usart.o
+    0x08005688   0x0000001c   Code   RO          356    i.USART1_SetTxDiagnosticCommand  usart.o
+    0x080056a4   0x00000028   Code   RO          358    i.USART1_TryAcquireTx  usart.o
+    0x080056cc   0x00000090   Code   RO          359    i.USART2_IRQHandler  usart.o
+    0x0800575c   0x0000001c   Code   RO          360    i.USART3_IRQHandler  usart.o
+    0x08005778   0x0000002c   Code   RO          361    i.USART3_Process    usart.o
+    0x080057a4   0x00000018   Code   RO         2714    i.USART_Cmd         stm32f10x_usart.o
+    0x080057bc   0x0000001a   Code   RO         2717    i.USART_GetFlagStatus  stm32f10x_usart.o
+    0x080057d6   0x0000004a   Code   RO         2720    i.USART_ITConfig    stm32f10x_usart.o
+    0x08005820   0x000000d8   Code   RO         2721    i.USART_Init        stm32f10x_usart.o
+    0x080058f8   0x00000034   Code   RO          362    i.USART_IsProtocolFrameValid  usart.o
+    0x0800592c   0x0000008c   Code   RO          363    i.USART_ProcessProtocolByte  usart.o
+    0x080059b8   0x0000000c   Code   RO          364    i.USART_ResetRxStats  usart.o
+    0x080059c4   0x00000040   Code   RO          365    i.USART_RxIrqHandler  usart.o
+    0x08005a04   0x00000260   Code   RO          366    i.USART_SendBuffer  usart.o
+    0x08005c64   0x00000008   Code   RO         2731    i.USART_SendData    stm32f10x_usart.o
+    0x08005c6c   0x00000004   Code   RO          286    i.UsageFault_Handler  stm32f10x_it.o
+    0x08005c70   0x00000006   Code   RO          369    i.__get_PRIMASK     usart.o
+    0x08005c76   0x0000001e   Code   RO          109    i.delay_us          delay.o
+    0x08005c94   0x00000058   Code   RO         1688    i.dma10_start_edges  step_dma.o
+    0x08005cec   0x00000058   Code   RO         1689    i.dma_start_edges   step_dma.o
+    0x08005d44   0x0000002c   Code   RO         1690    i.fill_dma_buf      step_dma.o
+    0x08005d70   0x0000002c   Code   RO         1691    i.fill_dma_buf10    step_dma.o
+    0x08005d9c   0x00000534   Code   RO          676    i.handle_command    protocol.o
+    0x080062d0   0x0000008a   Code   RO         1692    i.isqrt_u64         step_dma.o
+    0x0800635a   0x00000002   PAD
+    0x0800635c   0x00000148   Code   RO          153    i.main              main.o
+    0x080064a4   0x0000000c   Code   RO         1514    i.millis            time.o
+    0x080064b0   0x000000ac   Code   RO          678    i.parse_frame       protocol.o
+    0x0800655c   0x0000000a   Code   RO          680    i.send_165Data      protocol.o
+    0x08006566   0x00000002   PAD
+    0x08006568   0x0000002c   Code   RO          681    i.send_165DataSource  protocol.o
+    0x08006594   0x00000012   Code   RO          682    i.send_frame        protocol.o
+    0x080065a6   0x00000002   PAD
+    0x080065a8   0x00000158   Code   RO          685    i.send_frame_internal  protocol.o
+    0x08006700   0x00000144   Code   RO         1693    i.stepdma_pb10_init  step_dma.o
+    0x08006844   0x0000000c   Code   RO         1694    i.stepdma_pb10_is_running  step_dma.o
+    0x08006850   0x00000160   Code   RO         1696    i.stepdma_pb10_move_trap  step_dma.o
+    0x080069b0   0x00000060   Code   RO         1697    i.stepdma_pb10_request_trap  step_dma.o
+    0x08006a10   0x00000054   Code   RO         1698    i.stepdma_pb10_stop  step_dma.o
+    0x08006a64   0x0000000c   Code   RO         1699    i.stepdma_pb11_get_completed_steps  step_dma.o
+    0x08006a70   0x00000020   Code   RO         1700    i.stepdma_pb11_get_remaining_steps  step_dma.o
+    0x08006a90   0x00000120   Code   RO         1701    i.stepdma_pb11_init  step_dma.o
+    0x08006bb0   0x0000000c   Code   RO         1702    i.stepdma_pb11_is_running  step_dma.o
+    0x08006bbc   0x0000013c   Code   RO         1704    i.stepdma_pb11_move_trap  step_dma.o
+    0x08006cf8   0x00000040   Code   RO         1705    i.stepdma_pb11_request_trap  step_dma.o
+    0x08006d38   0x00000044   Code   RO         1706    i.stepdma_pb11_stop  step_dma.o
+    0x08006d7c   0x00000010   Code   RO          154    i.task_165_input_scan  main.o
+    0x08006d8c   0x00000068   Code   RO          155    i.task_input_change_report  main.o
+    0x08006df4   0x00000026   Code   RO          156    i.task_protocol_commands  main.o
+    0x08006e1a   0x00000002   PAD
+    0x08006e1c   0x00000030   Code   RO          157    i.task_protocol_v2_send  main.o
+    0x08006e4c   0x0000002c   Code   RO          158    i.task_single_motor  main.o
+    0x08006e78   0x00000064   Code   RO          160    i.task_uart_frames  main.o
+    0x08006edc   0x00000098   Code   RO         1707    i.tim5_set_edge_freq  step_dma.o
+    0x08006f74   0x00000094   Code   RO         1708    i.tim6_set_edge_freq  step_dma.o
+    0x08007008   0x000000c8   Code   RO         1709    i.trap10_get_f      step_dma.o
+    0x080070d0   0x000000c8   Code   RO         1710    i.trap_get_f        step_dma.o
+    0x08007198   0x00000026   Data   RO         1322    .constdata          single_motor.o
+    0x080071be   0x00000002   PAD
+    0x080071c0   0x0000008c   Data   RO         1411    .constdata          reversible_motor.o
+    0x0800724c   0x00000054   Data   RO         1977    .constdata          robot_arm.o
+    0x080072a0   0x0000000c   Data   RO         2291    .constdata          robot_arm_sensor.o
+    0x080072ac   0x00000020   Data   RO         3869    Region$$Table       anon$$obj.o
 
 
     Execution Region RW_IRAM1 (Base: 0x20000000, Size: 0x000039f0, Max: 0x00010000, ABSOLUTE, COMPRESSED[0x0000005c])
@@ -3125,36 +3113,36 @@ Memory Map of the image
     0x200000ac   0x0000009d   Data   RW          690    .data               protocol.o
     0x20000149   0x00000006   Data   RW          892    .data               protocol_v2.o
     0x2000014f   0x00000001   PAD
-    0x20000150   0x00000019   Data   RW         1024    .data               robot_arm_protocol.o
-    0x20000169   0x00000003   PAD
-    0x2000016c   0x00000061   Data   RW         1287    .data               motor_ctrl.o
+    0x20000150   0x0000001b   Data   RW         1022    .data               robot_arm_protocol.o
+    0x2000016b   0x00000001   PAD
+    0x2000016c   0x00000061   Data   RW         1277    .data               motor_ctrl.o
     0x200001cd   0x00000003   PAD
-    0x200001d0   0x00000005   Data   RW         1333    .data               single_motor.o
+    0x200001d0   0x00000005   Data   RW         1323    .data               single_motor.o
     0x200001d5   0x00000003   PAD
-    0x200001d8   0x00000005   Data   RW         1422    .data               reversible_motor.o
+    0x200001d8   0x00000005   Data   RW         1412    .data               reversible_motor.o
     0x200001dd   0x00000003   PAD
-    0x200001e0   0x00000024   Data   RW         1526    .data               time.o
-    0x20000204   0x0000002c   Data   RW         1722    .data               step_dma.o
-    0x20000230   0x00000003   Data   RW         2302    .data               robot_arm_sensor.o
+    0x200001e0   0x00000024   Data   RW         1516    .data               time.o
+    0x20000204   0x0000002c   Data   RW         1712    .data               step_dma.o
+    0x20000230   0x00000003   Data   RW         2292    .data               robot_arm_sensor.o
     0x20000233   0x00000001   PAD
-    0x20000234   0x00000014   Data   RW         2340    .data               system_stm32f10x.o
-    0x20000248   0x00000014   Data   RW         2552    .data               stm32f10x_rcc.o
+    0x20000234   0x00000014   Data   RW         2330    .data               system_stm32f10x.o
+    0x20000248   0x00000014   Data   RW         2542    .data               stm32f10x_rcc.o
     0x2000025c   0x00000482   Zero   RW          370    .bss                usart.o
     0x200006de   0x00000002   PAD
     0x200006e0   0x00001c18   Zero   RW          689    .bss                protocol.o
     0x200022f8   0x000000ac   Zero   RW          891    .bss                protocol_v2.o
-    0x200023a4   0x000000a8   Zero   RW         1023    .bss                robot_arm_protocol.o
-    0x2000244c   0x00000018   Zero   RW         1286    .bss                motor_ctrl.o
-    0x20002464   0x000000e4   Zero   RW         1331    .bss                single_motor.o
-    0x20002548   0x000000a0   Zero   RW         1420    .bss                reversible_motor.o
-    0x200025e8   0x0000000a   Zero   RW         1525    .bss                time.o
+    0x200023a4   0x000000a8   Zero   RW         1021    .bss                robot_arm_protocol.o
+    0x2000244c   0x00000018   Zero   RW         1276    .bss                motor_ctrl.o
+    0x20002464   0x000000e4   Zero   RW         1321    .bss                single_motor.o
+    0x20002548   0x000000a0   Zero   RW         1410    .bss                reversible_motor.o
+    0x200025e8   0x0000000a   Zero   RW         1515    .bss                time.o
     0x200025f2   0x00000002   PAD
-    0x200025f4   0x00000c90   Zero   RW         1721    .bss                step_dma.o
+    0x200025f4   0x00000c90   Zero   RW         1711    .bss                step_dma.o
     0x20003284   0x00000004   PAD
-    0x20003288   0x00000108   Zero   RW         1986    .bss                robot_arm.o
-    0x20003390   0x00000060   Zero   RW         3753    .bss                c_w.l(libspace.o)
-    0x200033f0   0x00000200   Zero   RW         3665    HEAP                startup_stm32f10x_hd.o
-    0x200035f0   0x00000400   Zero   RW         3664    STACK               startup_stm32f10x_hd.o
+    0x20003288   0x00000108   Zero   RW         1976    .bss                robot_arm.o
+    0x20003390   0x00000060   Zero   RW         3743    .bss                c_w.l(libspace.o)
+    0x200033f0   0x00000200   Zero   RW         3655    HEAP                startup_stm32f10x_hd.o
+    0x200035f0   0x00000400   Zero   RW         3654    STACK               startup_stm32f10x_hd.o
 
 
 ==============================================================================
@@ -3178,7 +3166,7 @@ Image component sizes
        116          0          0          0          0       2227   ringbuffer.o
       5980        236         84          0        264      37167   robot_arm.o
        374         10          0          0          0       3839   robot_arm_driver.o
-      2260        196          0         25        168      14083   robot_arm_protocol.o
+      2104        154          0         27        168      12831   robot_arm_protocol.o
        132         36         12          3          0       2506   robot_arm_sensor.o
        140         14          0          4          0       2328   shift_register.o
        164         12          0          2          0       2515   shift_register_input.o
@@ -3198,9 +3186,9 @@ Image component sizes
       2122        274          0         75       1154      30700   usart.o
 
     ----------------------------------------------------------------------
-     28114       2374        612        604      14132     530188   Object Totals
+     27958       2332        612        604      14132     528936   Object Totals
          0          0         32          0          0          0   (incl. Generated)
-        42          0          2         16          8          0   (incl. Padding)
+        42          0          2         14          8          0   (incl. Padding)
 
     ----------------------------------------------------------------------
 
@@ -3250,15 +3238,15 @@ Image component sizes
 
       Code (inc. data)   RO Data    RW Data    ZI Data      Debug   
 
-     28932       2390        612        604      14228     514480   Grand Totals
-     28932       2390        612         92      14228     514480   ELF Image Totals (compressed)
-     28932       2390        612         92          0          0   ROM Totals
+     28776       2348        612        604      14228     513332   Grand Totals
+     28776       2348        612         92      14228     513332   ELF Image Totals (compressed)
+     28776       2348        612         92          0          0   ROM Totals
 
 ==============================================================================
 
-    Total RO  Size (Code + RO Data)                29544 (  28.85kB)
+    Total RO  Size (Code + RO Data)                29388 (  28.70kB)
     Total RW  Size (RW Data + ZI Data)             14832 (  14.48kB)
-    Total ROM Size (Code + RO Data + RW Data)      29636 (  28.94kB)
+    Total ROM Size (Code + RO Data + RW Data)      29480 (  28.79kB)
 
 ==============================================================================
 
