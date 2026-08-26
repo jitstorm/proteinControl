@@ -299,9 +299,17 @@ int main(void)
         TEST_CHECK(s_start_count[ROBOT_AXIS_Z] == z_starts);
         TEST_CHECK(RobotArm_IsHomed(ROBOT_AXIS_X) == 1u);
         TEST_CHECK(RobotArm_IsPositionValid(ROBOT_AXIS_X) == 0u);
+        /* STOP 后保留的 X 旧坐标不可用于 V2 绝对或相对目标计算。 */
+        TEST_CHECK(RobotArm_MoveTo(12, 22, 32) == ROBOT_ARM_ERR_POSITION_UNKNOWN);
+        TEST_CHECK(RobotArm_MoveXRelative(1, 100u) == ROBOT_ARM_ERR_POSITION_UNKNOWN);
     }
 
     TestHomeAxis(ROBOT_AXIS_X, 0u);
+    /* 回零重新建立可信坐标后，相对移动仍应按原语义正常执行。 */
+    TEST_CHECK(RobotArm_MoveXRelative(1, 100u) == ROBOT_ARM_OK);
+    TestDriverComplete(ROBOT_AXIS_X);
+    RobotArm_Task();
+    TEST_CHECK(RobotArm_GetX() == 1);
     TestSensorSnapshot(0u, 0u, 0u, 0u);
 
     /* S4 必须中止 Z+，且不得把 current 提交为 target。 */

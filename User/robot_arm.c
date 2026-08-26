@@ -388,7 +388,11 @@ static RobotArmResult_t RobotArm_StartSingleAbsolute(RobotAxisId_t axis,
     {
         return ROBOT_ARM_ERR_BUSY;
     }
-    if ((robot_axis == 0) || !robot_axis->position_valid)
+    if (robot_axis == 0)
+    {
+        return ROBOT_ARM_ERR_DRIVER;
+    }
+    if (!robot_axis->position_valid)
     {
         return ROBOT_ARM_ERR_POSITION_UNKNOWN;
     }
@@ -402,6 +406,19 @@ static RobotArmResult_t RobotArm_StartSingleAbsolute(RobotAxisId_t axis,
     return result;
 }
 
+/**
+ * 基于指定轴已确认的逻辑坐标启动相对步进运动。
+ *
+ * 相对目标必须由可信的 current_position 推导。STOP、限位、超时或驱动异常后，
+ * 已输出的部分脉冲无法安全结算，因此 position_valid 为 0 时必须拒绝，不能使用
+ * 保留下来的旧坐标继续运动。
+ *
+ * @param axis 要相对移动的 X、Y 或 Z 逻辑轴。
+ * @param delta 相对当前可信坐标的目标增量，单位为步数。
+ * @param speed 目标速度，单位为 steps/s；0 表示使用该轴默认速度。
+ * @return 已接受时返回 ROBOT_ARM_OK；坐标失效返回 ROBOT_ARM_ERR_POSITION_UNKNOWN，
+ * 忙碌、错误、超范围或驱动无法启动时返回对应错误。
+ */
 static RobotArmResult_t RobotArm_StartSingleRelative(RobotAxisId_t axis,
                                                       int32_t delta,
                                                       uint32_t speed)
@@ -417,9 +434,9 @@ static RobotArmResult_t RobotArm_StartSingleRelative(RobotAxisId_t axis,
     {
         return ROBOT_ARM_ERR_BUSY;
     }
-    if (robot_axis == 0)
+    if ((robot_axis == 0) || !robot_axis->position_valid)
     {
-        return ROBOT_ARM_ERR_DRIVER;
+        return ROBOT_ARM_ERR_POSITION_UNKNOWN;
     }
     if (delta == 0)
     {
