@@ -1,1 +1,16 @@
 *.history
+
+# Keil MDK 编译产物
+Project/Objects/
+Project/Listings/
+*.o
+*.d
+*.crf
+*.lst
+*.axf
+*.hex
+*.bin
+*.map
+*.dep
+*.build_log.htm
+Project/*.htm
