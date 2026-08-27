@@ -75,6 +75,12 @@
 #define ROBOT_ARM_Y_DEFAULT_SPEED 1000u
 #define ROBOT_ARM_Z_DEFAULT_SPEED 1000u
 
+/* Android 的 0x34 速度字段是 uint16；PU1/PB10、PU2/PB11、PU3/PB13 的最终上限
+ * 统一限制为协议可表达的 65535 steps/s，仍由各底层 DMA 驱动执行既有加减速控制。 */
+#define ROBOT_ARM_X_MAX_SPEED 65535u
+#define ROBOT_ARM_Y_MAX_SPEED 65535u
+#define ROBOT_ARM_Z_MAX_SPEED 65535u
+
 /* 单轴超时按请求速度估算并保留四倍裕量，避免正常加减速被误判。 */
 #define ROBOT_ARM_MOVE_TIMEOUT_MIN_MS 30000u
 #define ROBOT_ARM_MOVE_TIMEOUT_MARGIN 4u

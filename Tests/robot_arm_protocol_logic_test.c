@@ -107,10 +107,17 @@ RobotArmResult_t RobotArm_MoveZRelative(int32_t delta, uint32_t speed)
 {
     s_last_axis = 2u; s_last_x = delta; s_last_speed = speed; return TestAccept(4u);
 }
-/** 模拟普通 MoveTo 接口。 */
+/** 模拟带临时速度的普通 MoveTo 接口。 */
+RobotArmResult_t RobotArm_MoveToWithSpeed(int32_t x, int32_t y, int32_t z,
+                                          uint32_t speed)
+{
+    s_last_x = x; s_last_y = y; s_last_z = z; s_last_speed = speed;
+    return TestAccept(5u);
+}
+/** 保留旧 MoveTo 测试替身，确保历史调用仍走默认速度。 */
 RobotArmResult_t RobotArm_MoveTo(int32_t x, int32_t y, int32_t z)
 {
-    s_last_x = x; s_last_y = y; s_last_z = z; return TestAccept(5u);
+    return RobotArm_MoveToWithSpeed(x, y, z, 0u);
 }
 /** 模拟安全 MoveTo 接口。 */
 RobotArmResult_t RobotArm_MoveToSafe(int32_t x, int32_t y, int32_t z)
@@ -207,8 +214,21 @@ int main(void)
     ProtocolV2_WriteI32LE(&request.data[0], 10);
     ProtocolV2_WriteI32LE(&request.data[4], 20);
     ProtocolV2_WriteI32LE(&request.data[8], 30);
+    /* 未设置速度的旧帧仍以 D12-D13=00 00 进入既有默认速度路径。 */
     RobotArmProtocol_HandleFrame(&request);
-    TEST_CHECK(s_last_call == 5u && s_last_x == 10 && s_last_y == 20 && s_last_z == 30);
+    TEST_CHECK(s_last_call == 5u && s_last_x == 10 && s_last_y == 20 &&
+               s_last_z == 30 && s_last_speed == 0u);
+    TestSetAsyncResult(ROBOT_MOVE_END_COMPLETED, ROBOT_ARM_OK);
+    RobotArmProtocol_Task();
+
+    TestClearFrame(&request, ROBOT_ARM_CMD_MOVE_TO, 51u);
+    ProtocolV2_WriteI32LE(&request.data[0], 11);
+    ProtocolV2_WriteI32LE(&request.data[4], 22);
+    ProtocolV2_WriteI32LE(&request.data[8], 33);
+    ProtocolV2_WriteU16LE(&request.data[12], 5000u);
+    RobotArmProtocol_HandleFrame(&request);
+    TEST_CHECK(s_last_call == 5u && s_last_x == 11 && s_last_y == 22 &&
+               s_last_z == 33 && s_last_speed == 5000u);
     TestSetAsyncResult(ROBOT_MOVE_END_COMPLETED, ROBOT_ARM_OK);
     RobotArmProtocol_Task();
 

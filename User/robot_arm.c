@@ -37,6 +37,7 @@ typedef struct
     uint8_t home_all_active;
     uint32_t home_start_ms;
     int32_t move_to_target[ROBOT_AXIS_COUNT];
+    uint32_t move_to_speed;
     RobotMoveAxisProgress_t move_axis_progress[ROBOT_AXIS_COUNT];
     int32_t safe_move_target[ROBOT_AXIS_COUNT];
     RobotMoveEndReason_t last_move_end_reason;
@@ -144,6 +145,35 @@ static uint32_t RobotArm_CalculateMoveTimeout(uint32_t steps, uint32_t speed)
     timeout_ms = estimated_ms * ROBOT_ARM_MOVE_TIMEOUT_MARGIN +
                  ROBOT_ARM_MOVE_TIMEOUT_MIN_MS;
     return (timeout_ms > UINT32_MAX) ? UINT32_MAX : (uint32_t)timeout_ms;
+}
+
+/**
+ * 将本次运动速度限制在对应实际步进轴的最终安全范围内。
+ *
+ * 0 仅用于调用方请求该轴既有默认速度；非零请求不会写回 default_speed。
+ * X(PB10)、Y(PB11)、Z(PB13) 的最高速度由 robot_arm_config.h 保守配置，
+ * 以免 Android 的临时调试参数绕过驱动层的加减速保护。
+ *
+ * @param axis 正在启动的实际机械轴。
+ * @param speed 本次请求速度，单位为 steps/s；0 表示使用既有默认速度。
+ * @return 传给底层 DMA 步进驱动的安全速度，单位为 steps/s。
+ */
+static uint32_t RobotArm_ResolveMoveSpeed(RobotAxisId_t axis, uint32_t speed)
+{
+    static const uint32_t maximum_speed[ROBOT_AXIS_COUNT] = {
+        ROBOT_ARM_X_MAX_SPEED,
+        ROBOT_ARM_Y_MAX_SPEED,
+        ROBOT_ARM_Z_MAX_SPEED};
+    RobotAxis_t *robot_axis = RobotArm_GetAxis(axis);
+    if (robot_axis == 0)
+    {
+        return 0u;
+    }
+    if (speed == 0u)
+    {
+        return robot_axis->default_speed;
+    }
+    return (speed > maximum_speed[axis]) ? maximum_speed[axis] : speed;
 }
 
 static RobotArmResult_t RobotArm_ResultFromEndReason(RobotMoveEndReason_t reason)
@@ -296,10 +326,7 @@ static RobotArmResult_t RobotArm_StartAxisMoveInternal(RobotAxisId_t axis,
         return ROBOT_ARM_ERR_LIMIT;
     }
     steps = (delta > 0) ? (uint32_t)delta : (uint32_t)(-delta);
-    if (speed == 0u)
-    {
-        speed = robot_axis->default_speed;
-    }
+    speed = RobotArm_ResolveMoveSpeed(axis, speed);
     busy_before = RobotArmDriver_IsBusy(axis);
     if (s_robot_arm.operation == ROBOT_OP_MOVE_TO)
     {
@@ -820,7 +847,8 @@ static void RobotArm_TaskMoveTo(void)
             break;
         }
         result = RobotArm_StartAxisMoveInternal(
-            ROBOT_AXIS_X, s_robot_arm.move_to_target[ROBOT_AXIS_X], 0u);
+            ROBOT_AXIS_X, s_robot_arm.move_to_target[ROBOT_AXIS_X],
+            s_robot_arm.move_to_speed);
         if (result != ROBOT_ARM_OK)
         {
             RobotArm_FailCombinedMoveStart(ROBOT_AXIS_X, result, 0u);
@@ -858,7 +886,8 @@ static void RobotArm_TaskMoveTo(void)
             break;
         }
         result = RobotArm_StartAxisMoveInternal(
-            ROBOT_AXIS_Y, s_robot_arm.move_to_target[ROBOT_AXIS_Y], 0u);
+            ROBOT_AXIS_Y, s_robot_arm.move_to_target[ROBOT_AXIS_Y],
+            s_robot_arm.move_to_speed);
         if (result != ROBOT_ARM_OK)
         {
             RobotArm_FailCombinedMoveStart(ROBOT_AXIS_Y, result, 0u);
@@ -897,7 +926,8 @@ static void RobotArm_TaskMoveTo(void)
             break;
         }
         result = RobotArm_StartAxisMoveInternal(
-            ROBOT_AXIS_Z, s_robot_arm.move_to_target[ROBOT_AXIS_Z], 0u);
+            ROBOT_AXIS_Z, s_robot_arm.move_to_target[ROBOT_AXIS_Z],
+            s_robot_arm.move_to_speed);
         if (result != ROBOT_ARM_OK)
         {
             RobotArm_FailCombinedMoveStart(ROBOT_AXIS_Z, result, 0u);
@@ -1229,8 +1259,20 @@ RobotArmResult_t RobotArm_MoveZ(int32_t target, uint32_t speed)
     return RobotArm_StartSingleAbsolute(ROBOT_AXIS_Z, target, speed);
 }
 
-/** 按 X、Y、Z 顺序启动非阻塞目标位置任务。 */
-RobotArmResult_t RobotArm_MoveTo(int32_t x, int32_t y, int32_t z)
+/**
+ * 按 X、Y、Z 顺序启动一次非阻塞普通目标位置任务。
+ *
+ * speed 只保留在本次 MOVE_TO 运行态，绝不修改三轴 default_speed；每轴真正启动前
+ * 都会再次应用各自最大安全速度和既有 DMA 加减速控制。
+ *
+ * @param x X 轴目标绝对逻辑坐标，单位为步数。
+ * @param y Y 轴目标绝对逻辑坐标，单位为步数。
+ * @param z Z 轴目标绝对逻辑坐标，单位为步数。
+ * @param speed 本次三轴速度，单位为 steps/s；0 表示完全使用既有默认速度。
+ * @return 命令被接受时返回 ROBOT_ARM_OK；坐标、传感器、安全检查或驱动前置条件失败时返回对应错误。
+ */
+RobotArmResult_t RobotArm_MoveToWithSpeed(int32_t x, int32_t y, int32_t z,
+                                          uint32_t speed)
 {
     RobotArmResult_t result;
     uint8_t index;
@@ -1269,6 +1311,8 @@ RobotArmResult_t RobotArm_MoveTo(int32_t x, int32_t y, int32_t z)
     targets[ROBOT_AXIS_X] = x;
     targets[ROBOT_AXIS_Y] = y;
     targets[ROBOT_AXIS_Z] = z;
+    /* 本字段仅属于本次状态机；下一条 MOVE_TO 必须由其自己的 DATA[12..13] 决定。 */
+    s_robot_arm.move_to_speed = speed;
     RobotArm_ResetMoveDebug();
     for (index = 0u; index < ROBOT_AXIS_COUNT; index++)
     {
@@ -1303,6 +1347,19 @@ RobotArmResult_t RobotArm_MoveTo(int32_t x, int32_t y, int32_t z)
     s_robot_arm.error_code = 0;
     s_robot_arm.last_move_end_reason = ROBOT_MOVE_END_NONE;
     return ROBOT_ARM_OK;
+}
+
+/**
+ * 按既有默认速度启动普通 MOVE_TO，保持旧调用和生产流程行为不变。
+ *
+ * @param x X 轴目标绝对逻辑坐标，单位为步数。
+ * @param y Y 轴目标绝对逻辑坐标，单位为步数。
+ * @param z Z 轴目标绝对逻辑坐标，单位为步数。
+ * @return 命令被接受时返回 ROBOT_ARM_OK；失败时返回既有错误码。
+ */
+RobotArmResult_t RobotArm_MoveTo(int32_t x, int32_t y, int32_t z)
+{
+    return RobotArm_MoveToWithSpeed(x, y, z, 0u);
 }
 
 /** 按“必要时抬高 Z、移动 X/Y、最后移动 Z”的安全路径接受绝对位置任务。 */

@@ -183,8 +183,29 @@ RobotArmResult_t RobotArm_MoveX(int32_t target, uint32_t speed);
 RobotArmResult_t RobotArm_MoveY(int32_t target, uint32_t speed);
 /** 启动 Z 轴绝对 STEP 运动，要求当前坐标可信。 */
 RobotArmResult_t RobotArm_MoveZ(int32_t target, uint32_t speed);
-/** 按 X、Y、Z 顺序启动非阻塞目标位置任务。 */
+/**
+ * 按既有默认速度启动非阻塞普通目标位置任务，保持历史调用的生产行为。
+ *
+ * @param x X 轴目标绝对逻辑坐标，单位为步数。
+ * @param y Y 轴目标绝对逻辑坐标，单位为步数。
+ * @param z Z 轴目标绝对逻辑坐标，单位为步数。
+ * @return 已受理时返回 ROBOT_ARM_OK；安全、传感器或驱动失败时返回对应错误码。
+ */
 RobotArmResult_t RobotArm_MoveTo(int32_t x, int32_t y, int32_t z);
+/**
+ * 按 X、Y、Z 顺序启动带临时速度的非阻塞普通目标位置任务。
+ *
+ * 速度只影响当前任务；每轴启动时仍会应用其最终安全上限和既有 DMA 加减速，
+ * 不会持久化或覆盖默认速度。
+ *
+ * @param x X 轴目标绝对逻辑坐标，单位为步数。
+ * @param y Y 轴目标绝对逻辑坐标，单位为步数。
+ * @param z Z 轴目标绝对逻辑坐标，单位为步数。
+ * @param speed 本次请求速度，单位为 steps/s；0 表示使用既有默认速度。
+ * @return 已受理时返回 ROBOT_ARM_OK；安全、传感器或驱动失败时返回对应错误码。
+ */
+RobotArmResult_t RobotArm_MoveToWithSpeed(int32_t x, int32_t y, int32_t z,
+                                          uint32_t speed);
 /** 按“必要时抬高 Z、移动 X/Y、最后移动 Z”的安全路径接受绝对位置任务。 */
 RobotArmResult_t RobotArm_MoveToSafe(int32_t x, int32_t y, int32_t z);
 /** 启动指定轴的非阻塞双阶段 Home。 */

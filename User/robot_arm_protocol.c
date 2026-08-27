@@ -533,9 +533,12 @@ void RobotArmProtocol_HandleFrame(const ProtocolV2Frame_t *request)
         result = RobotArmProtocol_MoveAxisRelative(axis, value, speed);
         break;
     case ROBOT_ARM_CMD_MOVE_TO:
-        result = RobotArm_MoveTo(ProtocolV2_ReadI32LE(&request->data[0]),
-                                 ProtocolV2_ReadI32LE(&request->data[4]),
-                                 ProtocolV2_ReadI32LE(&request->data[8]));
+        /* DATA[12..13] 只作用于本次 0x34；DATA[14..15] 必须保持保留值 0。 */
+        result = RobotArm_MoveToWithSpeed(
+            ProtocolV2_ReadI32LE(&request->data[0]),
+            ProtocolV2_ReadI32LE(&request->data[4]),
+            ProtocolV2_ReadI32LE(&request->data[8]),
+            ProtocolV2_ReadU16LE(&request->data[12]));
         break;
     case ROBOT_ARM_CMD_MOVE_TO_SAFE:
         result = RobotArm_MoveToSafe(ProtocolV2_ReadI32LE(&request->data[0]),

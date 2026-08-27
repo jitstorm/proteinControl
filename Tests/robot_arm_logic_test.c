@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include "robot_arm.h"
+#include "robot_arm_config.h"
 #include "robot_arm_sensor.h"
 
 #define TEST_CHECK(condition) do { if (!(condition) && (s_test_failure == 0)) s_test_failure = __LINE__; } while (0)
@@ -10,6 +11,7 @@ static uint32_t s_completed[ROBOT_AXIS_COUNT];
 static uint32_t s_remaining[ROBOT_AXIS_COUNT];
 static int8_t s_direction[ROBOT_AXIS_COUNT];
 static uint32_t s_start_count[ROBOT_AXIS_COUNT];
+static uint32_t s_last_start_speed[ROBOT_AXIS_COUNT];
 static uint8_t s_start_enters_busy[ROBOT_AXIS_COUNT] = {1u, 1u, 1u};
 static int s_test_failure;
 uint8_t g_robot_arm_logic_test_pose_safety_blocked;
@@ -33,9 +35,9 @@ uint32_t millis(void) { return s_now_ms; }
 uint8_t RobotArmDriver_Start(RobotAxisId_t axis, int8_t direction,
                              uint32_t steps, uint32_t speed)
 {
-    (void)speed;
     if (s_busy[axis] || (steps == 0u)) return 0u;
     s_direction[axis] = direction;
+    s_last_start_speed[axis] = speed;
     s_start_count[axis]++;
     if (!s_start_enters_busy[axis])
     {
@@ -237,6 +239,51 @@ int main(void)
     TEST_CHECK(status.operation == ROBOT_OP_NONE);
     TEST_CHECK(status.move_to_state == ROBOT_MOVE_TO_IDLE);
     TEST_CHECK(RobotArm_IsBusy() == 0u);
+
+    /* speed=0 必须继续使用每轴既有默认速度，不改变旧 MOVE_TO 行为。 */
+    TEST_CHECK(s_last_start_speed[ROBOT_AXIS_X] == ROBOT_ARM_X_DEFAULT_SPEED);
+    TEST_CHECK(s_last_start_speed[ROBOT_AXIS_Y] == ROBOT_ARM_Y_DEFAULT_SPEED);
+    TEST_CHECK(s_last_start_speed[ROBOT_AXIS_Z] == ROBOT_ARM_Z_DEFAULT_SPEED);
+
+    /* 临时速度只作用于当前 MOVE_TO；协议最大值仍必须按三轴上限传递给实际驱动。 */
+    TEST_CHECK(RobotArm_MoveToWithSpeed(20, 30, 40, 500u) == ROBOT_ARM_OK);
+    RobotArm_Task();
+    TEST_CHECK(s_last_start_speed[ROBOT_AXIS_X] == 500u);
+    TestDriverComplete(ROBOT_AXIS_X);
+    RobotArm_Task();
+    RobotArm_Task();
+    TEST_CHECK(s_last_start_speed[ROBOT_AXIS_Y] == 500u);
+    TestDriverComplete(ROBOT_AXIS_Y);
+    RobotArm_Task();
+    RobotArm_Task();
+    TEST_CHECK(s_last_start_speed[ROBOT_AXIS_Z] == 500u);
+    TestDriverComplete(ROBOT_AXIS_Z);
+    RobotArm_Task();
+    TEST_CHECK(RobotArm_MoveToWithSpeed(30, 40, 50, 65535u) == ROBOT_ARM_OK);
+    RobotArm_Task();
+    TEST_CHECK(s_last_start_speed[ROBOT_AXIS_X] == ROBOT_ARM_X_MAX_SPEED);
+    TestDriverComplete(ROBOT_AXIS_X);
+    RobotArm_Task();
+    RobotArm_Task();
+    TEST_CHECK(s_last_start_speed[ROBOT_AXIS_Y] == ROBOT_ARM_Y_MAX_SPEED);
+    TestDriverComplete(ROBOT_AXIS_Y);
+    RobotArm_Task();
+    RobotArm_Task();
+    TEST_CHECK(s_last_start_speed[ROBOT_AXIS_Z] == ROBOT_ARM_Z_MAX_SPEED);
+    TestDriverComplete(ROBOT_AXIS_Z);
+    RobotArm_Task();
+
+    /* 后续既有回归仍从原来的已完成坐标开始，避免扩展用例改变历史场景前置条件。 */
+    TEST_CHECK(RobotArm_MoveTo(10, 20, 30) == ROBOT_ARM_OK);
+    RobotArm_Task();
+    TestDriverComplete(ROBOT_AXIS_X);
+    RobotArm_Task();
+    RobotArm_Task();
+    TestDriverComplete(ROBOT_AXIS_Y);
+    RobotArm_Task();
+    RobotArm_Task();
+    TestDriverComplete(ROBOT_AXIS_Z);
+    RobotArm_Task();
 
     /* 三轴目标均等于当前位置时必须直接完成，不能向底层发送新命令。 */
     x_starts = s_start_count[ROBOT_AXIS_X];
