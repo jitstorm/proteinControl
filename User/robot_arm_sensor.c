@@ -9,15 +9,14 @@
 static uint8_t s_robot_arm_sensor_snapshot[SHIFT_REGISTER_INPUT_COUNT];
 static uint8_t s_robot_arm_sensor_ready;
 
-/* S1～S4 按现有编号换算，均位于反序后的 inputData[1] bit0～bit3。 */
-static const uint8_t s_sensor_byte_index[ROBOT_ARM_SENSOR_COUNT] = {1u, 1u, 1u, 1u};
+/* S1～S3 按现有编号换算，均位于反序后的 inputData[1] bit0～bit2。 */
+static const uint8_t s_sensor_byte_index[ROBOT_ARM_SENSOR_COUNT] = {1u, 1u, 1u};
 static const uint8_t s_sensor_bit_mask[ROBOT_ARM_SENSOR_COUNT] = {
-    1u << 0, 1u << 1, 1u << 2, 1u << 3};
+    1u << 0, 1u << 1, 1u << 2};
 static const uint8_t s_sensor_triggered_level[ROBOT_ARM_SENSOR_COUNT] = {
     ROBOT_ARM_S1_TRIGGERED_LEVEL,
     ROBOT_ARM_S2_TRIGGERED_LEVEL,
-    ROBOT_ARM_S3_TRIGGERED_LEVEL,
-    ROBOT_ARM_S4_TRIGGERED_LEVEL};
+    ROBOT_ARM_S3_TRIGGERED_LEVEL};
 
 /** 用一轮完整 HC165 数据刷新机械臂传感器快照。 */
 void RobotArmSensor_UpdateSnapshot(const uint8_t *sensor_data)

@@ -149,6 +149,27 @@ static void TestHomeAxis(RobotAxisId_t axis, uint8_t home_bit)
     TEST_CHECK(RobotArm_IsPositionValid(axis) == 1u);
 }
 
+/**
+ * 验证单轴 Home 只驱动被请求的实际轴，并在该轴完成后立即结束。
+ *
+ * @param axis 本次需要验证的 X、Y 或 Z 机械轴。
+ */
+static void TestSingleAxisHomeDoesNotChain(RobotAxisId_t axis)
+{
+    uint32_t x_starts = s_start_count[ROBOT_AXIS_X];
+    uint32_t y_starts = s_start_count[ROBOT_AXIS_Y];
+    uint32_t z_starts = s_start_count[ROBOT_AXIS_Z];
+
+    TestHomeAxis(axis, 0u);
+    TEST_CHECK(RobotArm_GetState() == ROBOT_ARM_IDLE);
+    TEST_CHECK((s_start_count[ROBOT_AXIS_X] > x_starts) ==
+               (axis == ROBOT_AXIS_X));
+    TEST_CHECK((s_start_count[ROBOT_AXIS_Y] > y_starts) ==
+               (axis == ROBOT_AXIS_Y));
+    TEST_CHECK((s_start_count[ROBOT_AXIS_Z] > z_starts) ==
+               (axis == ROBOT_AXIS_Z));
+}
+
 #ifndef ROBOT_ARM_SAFE_DISABLED_TEST
 static void TestFinishHomeAllAxis(RobotAxisId_t axis)
 {
@@ -176,7 +197,38 @@ static void TestFinishHomeAllAxis(RobotAxisId_t axis)
 #endif
 
 /** 运行 RobotArm 的纯逻辑回归场景。 */
-#ifdef ROBOT_ARM_SAFE_DISABLED_TEST
+#ifdef ROBOT_ARM_SINGLE_AXIS_HOME_TEST
+/** 验证 X/Y/Z 单轴置零、完成收尾和 Busy 拒绝的独立回归入口。 */
+int main(void)
+{
+    RobotArm_Init();
+    TestSensorSnapshot(0u, 0u, 0u, 0u);
+    TestSingleAxisHomeDoesNotChain(ROBOT_AXIS_X);
+    TestSingleAxisHomeDoesNotChain(ROBOT_AXIS_Y);
+    TestSingleAxisHomeDoesNotChain(ROBOT_AXIS_Z);
+    TEST_CHECK(RobotArm_HomeAxis(ROBOT_AXIS_X) == ROBOT_ARM_OK);
+    TEST_CHECK(RobotArm_HomeAxis(ROBOT_AXIS_Y) == ROBOT_ARM_ERR_BUSY);
+    RobotArm_Stop();
+    TEST_CHECK(RobotArm_GetState() == ROBOT_ARM_IDLE);
+    return s_test_failure;
+}
+#elif defined(ROBOT_ARM_HOME_CONFIG_REJECT_TEST)
+/** 验证生产默认 Home 参数未标定时会拒绝单轴置零，且不产生 STEP 启动。 */
+int main(void)
+{
+    uint32_t starts;
+    RobotArm_Init();
+    TestSensorSnapshot(0u, 0u, 0u, 0u);
+    starts = s_start_count[ROBOT_AXIS_X] +
+             s_start_count[ROBOT_AXIS_Y] +
+             s_start_count[ROBOT_AXIS_Z];
+    TEST_CHECK(RobotArm_HomeAxis(ROBOT_AXIS_X) == ROBOT_ARM_ERR_CONFIG);
+    TEST_CHECK((s_start_count[ROBOT_AXIS_X] +
+                s_start_count[ROBOT_AXIS_Y] +
+                s_start_count[ROBOT_AXIS_Z]) == starts);
+    return s_test_failure;
+}
+#elif defined(ROBOT_ARM_SAFE_DISABLED_TEST)
 int main(void)
 {
     uint32_t starts;
@@ -202,9 +254,14 @@ int main(void)
     TestSensorSnapshot(0u, 0u, 0u, 0u);
     TEST_CHECK(RobotArm_MoveTo(10, 20, 30) == ROBOT_ARM_ERR_POSITION_UNKNOWN);
 
-    TestHomeAxis(ROBOT_AXIS_X, 1u);
-    TestHomeAxis(ROBOT_AXIS_Y, 0u);
-    TestHomeAxis(ROBOT_AXIS_Z, 0u);
+    /* X/Y/Z 单轴 Home 分别只能启动自身，完成后不得串行进入其他轴。 */
+    TestSingleAxisHomeDoesNotChain(ROBOT_AXIS_X);
+    TestSingleAxisHomeDoesNotChain(ROBOT_AXIS_Y);
+    TestSingleAxisHomeDoesNotChain(ROBOT_AXIS_Z);
+    TEST_CHECK(RobotArm_HomeAxis(ROBOT_AXIS_X) == ROBOT_ARM_OK);
+    TEST_CHECK(RobotArm_HomeAxis(ROBOT_AXIS_Y) == ROBOT_ARM_ERR_BUSY);
+    RobotArm_Stop();
+    TEST_CHECK(RobotArm_GetState() == ROBOT_ARM_IDLE);
     TestSensorSnapshot(0u, 0u, 0u, 0u);
     TEST_CHECK(RobotArm_Home() == ROBOT_ARM_OK);
     TestFinishHomeAllAxis(ROBOT_AXIS_Z);

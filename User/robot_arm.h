@@ -140,7 +140,6 @@ typedef struct
     uint8_t s1_x_home;
     uint8_t s2_y_home;
     uint8_t s3_z_home;
-    uint8_t s4_z_lower_limit;
     RobotAxisState_t x_state;
     RobotAxisState_t y_state;
     RobotAxisState_t z_state;
@@ -208,7 +207,17 @@ RobotArmResult_t RobotArm_MoveToWithSpeed(int32_t x, int32_t y, int32_t z,
                                           uint32_t speed);
 /** 按“必要时抬高 Z、移动 X/Y、最后移动 Z”的安全路径接受绝对位置任务。 */
 RobotArmResult_t RobotArm_MoveToSafe(int32_t x, int32_t y, int32_t z);
-/** 启动指定轴的非阻塞双阶段 Home。 */
+/**
+ * 启动 X、Y 或 Z 轴的非阻塞单轴置零流程。
+ *
+ * 此接口复用机械臂既有 Home 状态机；成功受理后仅当前轴会执行传感器找零、
+ * 退让和慢速复找，完成后更新该轴逻辑坐标和可信状态，不会继续 Home 其他轴。
+ *
+ * @param axis 需要置零的实际机械轴，只允许 ROBOT_AXIS_X、ROBOT_AXIS_Y 或
+ *             ROBOT_AXIS_Z。
+ * @return ROBOT_ARM_OK 表示已受理；ERROR、忙碌、Home 参数未配置或传感器
+ *         不可用时返回对应错误码。返回 OK 不代表机械动作已经完成。
+ */
 RobotArmResult_t RobotArm_HomeAxis(RobotAxisId_t axis);
 /** 按 Z、Y、X 顺序启动非阻塞 HomeAll。 */
 RobotArmResult_t RobotArm_Home(void);

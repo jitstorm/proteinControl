@@ -267,11 +267,6 @@ static uint8_t RobotArm_IsDirectionBlocked(RobotAxisId_t axis,
     {
         return 1u;
     }
-    if ((axis == ROBOT_AXIS_Z) && (direction > 0) &&
-        RobotArmSensor_IsTriggered(ROBOT_ARM_SENSOR_Z_LOWER_LIMIT))
-    {
-        return 1u;
-    }
     return 0u;
 }
 
@@ -621,15 +616,6 @@ static void RobotArm_TaskHome(void)
         RobotArm_FailHome(ROBOT_ARM_ERR_HOME_TIMEOUT, ROBOT_MOVE_END_TIMEOUT);
         return;
     }
-    /* Z 退出上限期间仍持续保护下限，避免错误参数驱动至 S4。 */
-    if ((s_robot_arm.home_axis == ROBOT_AXIS_Z) && robot_axis->active &&
-        (robot_axis->moving_direction > 0) &&
-        RobotArmSensor_IsTriggered(ROBOT_ARM_SENSOR_Z_LOWER_LIMIT))
-    {
-        RobotArm_FailHome(ROBOT_ARM_ERR_LIMIT, ROBOT_MOVE_END_LIMIT);
-        return;
-    }
-
     switch (s_robot_arm.home_state)
     {
     case ROBOT_HOME_CHECK_SENSOR:
@@ -1414,7 +1400,17 @@ RobotArmResult_t RobotArm_MoveToSafe(int32_t x, int32_t y, int32_t z)
     return ROBOT_ARM_OK;
 }
 
-/** 启动指定轴的非阻塞双阶段 Home。 */
+/**
+ * 启动指定轴的非阻塞双阶段 Home。
+ *
+ * 单轴 Home 复用既有 Home 状态机，并显式关闭 HomeAll 串行标志，避免当前轴
+ * 完成后自动切换到其他机械轴。ACK/调用成功只表示状态机已受理；实际零点建立
+ * 仍需由传感器触发、退让和慢速复找全部完成后确认。
+ *
+ * @param axis 需要置零的实际机械轴，只允许 X、Y 或 Z。
+ * @return 已受理时返回 ROBOT_ARM_OK；ERROR、忙碌、Home 配置或传感器不可用时
+ *         返回对应错误码，且不会启动任何轴。
+ */
 RobotArmResult_t RobotArm_HomeAxis(RobotAxisId_t axis)
 {
     RobotArmResult_t result;
@@ -1430,6 +1426,8 @@ RobotArmResult_t RobotArm_HomeAxis(RobotAxisId_t axis)
     {
         return ROBOT_ARM_ERR_BUSY;
     }
+    /* 单轴请求绝不能继承旧 HomeAll 的串行状态，完成当前轴后必须直接收尾。 */
+    s_robot_arm.home_all_active = 0u;
     result = RobotArm_BeginHomeAxis(axis);
     if (result == ROBOT_ARM_OK)
     {
@@ -1640,7 +1638,6 @@ void RobotArm_GetStatus(RobotArmStatus_t *status)
     status->s1_x_home = RobotArmSensor_IsTriggered(ROBOT_ARM_SENSOR_X_HOME);
     status->s2_y_home = RobotArmSensor_IsTriggered(ROBOT_ARM_SENSOR_Y_HOME);
     status->s3_z_home = RobotArmSensor_IsTriggered(ROBOT_ARM_SENSOR_Z_HOME);
-    status->s4_z_lower_limit = RobotArmSensor_IsTriggered(ROBOT_ARM_SENSOR_Z_LOWER_LIMIT);
     status->x_state = RobotArm_GetAxisState(ROBOT_AXIS_X);
     status->y_state = RobotArm_GetAxisState(ROBOT_AXIS_Y);
     status->z_state = RobotArm_GetAxisState(ROBOT_AXIS_Z);

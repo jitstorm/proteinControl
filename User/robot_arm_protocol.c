@@ -329,8 +329,7 @@ static void RobotArmProtocol_SendStatus(const ProtocolV2Frame_t *request)
                             (status.z_valid ? 4u : 0u));
         data[9] = (uint8_t)((status.s1_x_home ? 1u : 0u) |
                             (status.s2_y_home ? 2u : 0u) |
-                            (status.s3_z_home ? 4u : 0u) |
-                            (status.s4_z_lower_limit ? 8u : 0u));
+                            (status.s3_z_home ? 4u : 0u));
         data[10] = (uint8_t)status.last_move_end_reason;
         data[11] = (uint8_t)status.home_state;
         data[12] = (uint8_t)status.move_to_state;

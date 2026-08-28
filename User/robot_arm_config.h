@@ -12,7 +12,6 @@
 #define ROBOT_ARM_S1_TRIGGERED_LEVEL 1u
 #define ROBOT_ARM_S2_TRIGGERED_LEVEL 1u
 #define ROBOT_ARM_S3_TRIGGERED_LEVEL 1u
-#define ROBOT_ARM_S4_TRIGGERED_LEVEL 1u
 
 /* 未取得实际最大行程前禁用软件限位；机械标定后再填写生产值。 */
 #define ROBOT_ARM_X_LIMIT_ENABLED 0u
@@ -31,7 +30,7 @@
 #define ROBOT_ARM_Z_HOME_DIRECTION (-1)
 
 /* 逻辑测试使用短行程；固件默认仍保持禁用，防止未知距离的自动运动。 */
-#ifdef ROBOT_ARM_LOGIC_TEST
+#if defined(ROBOT_ARM_LOGIC_TEST) && !defined(ROBOT_ARM_HOME_CONFIG_REJECT_TEST)
 #define ROBOT_ARM_X_HOME_ENABLED 1u
 #define ROBOT_ARM_Y_HOME_ENABLED 1u
 #define ROBOT_ARM_Z_HOME_ENABLED 1u
