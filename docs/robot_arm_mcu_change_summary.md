@@ -60,16 +60,15 @@ RobotArm 的目的不是重写 DMA，而是在已经工作的三路步进驱动�
 
 RobotArm 改造没有更换 DMA 算法、Timer/DMA 分配或 STEP 引脚。方向的机械一致性仍需 Phase 10.6 实机确认；若不一致，应只在 Driver Adapter 的集中映射处修正，不改变坐标系定义。
 
-## 5. 传感器 S1～S4
+## 5. 传感器 S1～S3
 
 | 编号 | 机械定义 | 逻辑作用 |
 |---|---|---|
 | S1 | X_HOME | X- 硬限位、X Home |
 | S2 | Y_HOME | Y- 硬限位、Y Home |
 | S3 | Z_HOME / Z upper limit | Z- 硬限位、Z Home |
-| S4 | Z lower limit | Z+ 硬限位 |
 
-四路传感器通过集中 Sensor Adapter 转换成统一逻辑值：released=0、triggered=1。当前有效电平配置均为 1，但 HC165 采集层已经取反，最终电平仍必须通过实机逐路确认。若实测相反，只修改集中式有效电平配置，不在状态机内增加散落取反。
+三路传感器通过集中 Sensor Adapter 转换成统一逻辑值：released=0、triggered=1。当前有效电平配置均为 1，但 HC165 采集层已经取反，最终电平仍必须通过实机逐路确认。若实测相反，只修改集中式有效电平配置，不在状态机内增加散落取反。
 
 ## 6. XYZ 坐标系
 
@@ -79,7 +78,7 @@ RobotArm 改造没有更换 DMA 算法、Timer/DMA 分配或 STEP 引脚。方�
 | X- | 回 S1 |
 | Y+ | 离开 S2 |
 | Y- | 回 S2 |
-| Z+ | 向下，朝 S4；坐标数值增大 |
+| Z+ | 向下，离开 S3；坐标数值增大 |
 | Z- | 向上回 S3；坐标数值减小 |
 
 Z=0 定义为最高 Home 侧逻辑位置；Z 数值越大，机械位置越低。当前 Home Offset 均为 0，尚未做机械偏移标定。
@@ -120,7 +119,7 @@ Z=0 定义为最高 Home 侧逻辑位置；Z 数值越大，机械位置越低�
 6. SEEK_SLOW：低速再次靠近并寻找最终触发边沿。
 7. 触发后停止，将 current/target 设为该轴 Home Offset，并置 homed=1、position_valid=1。
 
-Home 具备每轴 MAX_STEPS 和 TIMEOUT 约束。初始触发后无法释放、退让后仍触发、寻边步数耗尽或总时间超时都会失败。Z Home 向正方向退让期间仍持续保护 S4。
+Home 具备每轴 MAX_STEPS 和 TIMEOUT 约束。初始触发后无法释放、退让后仍触发、寻边步数耗尽或总时间超时都会失败。
 
 HomeAll 不是并行回零，固定顺序为 Z → Y → X。任何一轴失败都会终止 HomeAll，不继续启动后续轴。
 
@@ -131,7 +130,6 @@ Hard Limit 使用集中式传感器逻辑并按运动方向判断：
 - X- 遇到 S1：禁止启动或立即停止。
 - Y- 遇到 S2：禁止启动或立即停止。
 - Z- 遇到 S3：禁止启动或立即停止。
-- Z+ 遇到 S4：禁止启动或立即停止。
 - 从已触发限位向安全反方向离开是允许的；Home 状态机拥有专门的寻边/退让语义。
 
 普通动作运行中触发 Hard Limit 后，活动轴停止、position_valid 失效、arm_state 进入 ERROR，组合动作不再启动后续轴。
@@ -143,7 +141,7 @@ Soft Limit 是每轴可配置的目标范围检查：
 - 只有对应 `ROBOT_ARM_*_LIMIT_ENABLED=1` 时生效。
 - 启动运动前检查目标是否位于 `[MIN_POSITION, MAX_POSITION]`。
 - 超界返回 `ROBOT_ARM_ERR_LIMIT`，不产生 STEP。
-- 它不替代 S1～S4 Hard Limit；运行期间仍持续检查硬限位方向。
+- 它不替代 S1～S3 Home 侧硬限位；运行期间仍持续检查硬限位方向。
 
 当前生产配置三轴 Soft Limit 均禁用，MIN 为 0，MAX 为 INT32_MAX。这些不是已标定机械范围。
 
@@ -246,7 +244,7 @@ V1 协议格式、8 位累加和校验语义和旧业务没有被 V2 重写。
 - `User/robot_arm.c`、`User/robot_arm.h`：XYZ 状态、坐标、Home、Limit、MoveTo、SafeMove、Stop 和完成判断。
 - `User/robot_arm_config.h`：集中式传感器电平、Home、Soft Limit、Safe Z、默认速度和超时配置。
 - `User/robot_arm_driver.c`、`User/robot_arm_driver.h`：XYZ Driver Adapter。
-- `User/robot_arm_sensor.c`、`User/robot_arm_sensor.h`：S1～S4 快照和统一触发语义。
+- `User/robot_arm_sensor.c`、`User/robot_arm_sensor.h`：S1～S3 快照和统一触发语义。
 
 ### V2 协议
 
@@ -287,7 +285,7 @@ V1 协议格式、8 位累加和校验语义和旧业务没有被 V2 重写。
 截至 Phase 10.6 清单建立时，以下内容只有静态检查或宿主机逻辑测试证据，没有完成目标板确认：
 
 - USART1 RS485 上 V1/V2 24B 实际收发、连续帧、SEQ、CRC、ACK/STATUS/EVENT。
-- S1～S4 实际 released/triggered 电平与集中取反配置。
+- S1～S3 实际 released/triggered 电平与集中取反配置。
 - X+/X-/Y+/Y-/Z+/Z- 的真实机械方向。
 - 每轴 Home fast/slow/backoff/max steps/timeout 和重复精度。
 - 每轴机械安全行程、Soft Limit MIN/MAX 与安全余量。

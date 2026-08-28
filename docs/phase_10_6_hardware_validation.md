@@ -73,7 +73,7 @@ AA FE 37 04 10 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 55 2F F2
 | D4/D5/D6 | X/Y/Z axis_state |
 | D7 bit0/1/2 | X/Y/Z homed |
 | D8 bit0/1/2 | X/Y/Z position_valid |
-| D9 bit0/1/2/3 | S1/S2/S3/S4 sensor_flags |
+| D9 bit0/1/2 | S1/S2/S3 sensor_flags；bit3～bit7 保留 |
 | D10 | last_move_end_reason |
 | D11 | home_state |
 | D12 | move_to_state |
@@ -99,23 +99,21 @@ AA FE 37 04 10 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 55 2F F2
 
 协议阶段通过门槛：以上项目全部通过，逻辑分析仪确认 STEP 引脚无脉冲，才能进入传感器测试。
 
-## 3. S1～S4 传感器实测
+## 3. S1～S3 传感器实测
 
 固定机械定义：
 
 - S1 = X_HOME
 - S2 = Y_HOME
 - S3 = Z_HOME / Z upper limit
-- S4 = Z lower limit
 
-当前集中配置均为 `ROBOT_ARM_S*_TRIGGERED_LEVEL = 1`。HC165 采集层已经按位取反，最终必须以 STATUS page 0 的 D9 实测为准。
+当前集中配置均为 `ROBOT_ARM_S1/S2/S3_TRIGGERED_LEVEL = 1`。HC165 采集层已经按位取反，最终必须以 STATUS page 0 的 D9 实测为准。
 
 | 传感器 | D9 掩码 | released 实测电平 | released flag | triggered 实测电平 | triggered flag | 抖动/稳定性 | 结论 |
 |---|---:|---:|---:|---:|---:|---|---|
 | S1 X_HOME | 0x01 | 待测 | 必须 0 | 待测 | 必须 1 | 待测 | 待测 |
 | S2 Y_HOME | 0x02 | 待测 | 必须 0 | 待测 | 必须 1 | 待测 | 待测 |
 | S3 Z_HOME | 0x04 | 待测 | 必须 0 | 待测 | 必须 1 | 待测 | 待测 |
-| S4 Z lower | 0x08 | 待测 | 必须 0 | 待测 | 必须 1 | 待测 | 待测 |
 
 若结果相反，只允许调整 `robot_arm_config.h` 中对应的集中式 `ROBOT_ARM_S*_TRIGGERED_LEVEL`；禁止在 RobotArm 状态机中增加局部取反。
 
@@ -129,7 +127,7 @@ AA FE 37 04 10 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 55 2F F2
 | X- | 向内 | 回 S1 | 待测 |
 | Y+ | 离开 S2 | 离开 S2 | 待测 |
 | Y- | 回 S2 | 回 S2 | 待测 |
-| Z+ | 向下 | 朝 S4 | 待测 |
+| Z+ | 向下 | 离开 S3 | 待测 |
 | Z- | 向上 | 回 S3 | 待测 |
 
 重要限制：当前 V2 单轴运动在 `position_valid=0` 时会返回 `ROBOT_ARM_ERR_POSITION_UNKNOWN`。因此 Home 前不得通过伪造 position_valid 来点动。方向验证只能在以下条件之一满足后执行：
@@ -204,10 +202,9 @@ SAFE_Z 未取得实测值前，`ROBOT_ARM_SAFE_MOVE_ENABLED` 必须保持 0。
 | 5 | Z 较低且 X 变化 | RaiseZ → X → FinalZ | 待测 |
 | 6 | Z 较低且 XY 变化 | RaiseZ → X → Y → FinalZ | 待测 |
 | 7 | 运动途中 STOP | 停止且不启动后续轴 | 待测 |
-| 8 | Z+ 中触发 S4 | LIMIT，停止且不启动后续轴 | 待测 |
-| 9 | Z- 中触发 S3 | LIMIT，停止且不启动后续轴 | 待测 |
-| 10 | X- 中触发 S1 | LIMIT，停止且不启动后续轴 | 待测 |
-| 11 | Y- 中触发 S2 | LIMIT，停止且不启动后续轴 | 待测 |
+| 8 | Z- 中触发 S3 | LIMIT，停止且不启动后续轴 | 待测 |
+| 9 | X- 中触发 S1 | LIMIT，停止且不启动后续轴 | 待测 |
+| 10 | Y- 中触发 S2 | LIMIT，停止且不启动后续轴 | 待测 |
 
 ## 9. 最终机械参数表
 
@@ -249,4 +246,3 @@ SAFE_Z 未取得实测值前，`ROBOT_ARM_SAFE_MOVE_ENABLED` 必须保持 0。
 - `stepMotorA` 为静态全局对象，省略初始化后默认值为 0。
 - 当前未发现任何读写路径。
 - 本阶段暂不修改。
-

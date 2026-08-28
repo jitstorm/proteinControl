@@ -69,10 +69,10 @@ frame[23] = (crc >> 8) & 0xFF
 ## 4. SEQ 语义
 
 - SEQ 是 Android 分配的 16 位请求标识，范围 `0..65535`，允许从 `65535` 自然回绕到 `0`。
-- MCU 不生成新的业务 SEQ；ACK、STATUS_RSP、EVENT 都使用所关联请求的 SEQ。
-- Android 应以 `CMD + SEQ` 匹配响应，并至少以 SEQ 匹配同一请求的 ACK/EVENT。
+- MCU 不生成新的业务 SEQ；ACK 使用原请求 SEQ，STATUS_RSP 使用 STATUS 查询 SEQ；page3 中另行携带原异步请求的 CMD/SEQ。
+- Android 应以 `CMD + SEQ` 匹配 ACK；读取 page3 时必须使用 DATA 中的原 CMD/SEQ 匹配异步请求。
 - MCU 当前没有“按 SEQ 去重并重放旧响应”的机制。Android 不得把超时重发视为幂等操作；重复发送运动请求可能被当作新的请求或返回 BUSY。
-- 同一时刻建议只保留一个未完成的异步运动/Home 请求。该请求收到最终 EVENT 后才算完整结束。
+- 同一时刻建议只保留一个未完成的异步运动/Home 请求。ACK 后必须轮询 `0x38 page3`，读到原 CMD/SEQ 对应终态后才算完整结束。
 - STATUS 可以在任务执行期间查询；STOP 可以在任务执行期间发送。
 
 ## 5. CMD 总表
@@ -81,13 +81,13 @@ frame[23] = (crc >> 8) & 0xFF
 
 | CMD | 数值 | 名称 | 响应方式 |
 |---|---:|---|---|
-| ARM_HOME | `0x30` | 三轴 HomeAll | ACK，接受后最终 EVENT |
-| ARM_HOME_AXIS | `0x31` | 单轴 Home | ACK，接受后最终 EVENT |
-| ARM_MOVE_AXIS_ABS | `0x32` | 单轴绝对位置运动 | ACK，接受后最终 EVENT |
-| ARM_MOVE_AXIS_REL | `0x33` | 单轴相对步数运动 | ACK，接受后最终 EVENT |
-| ARM_MOVE_TO | `0x34` | XYZ 顺序运动 | ACK，接受后最终 EVENT |
-| ARM_MOVE_TO_SAFE | `0x35` | 带 Safe Z 的 XYZ 顺序运动 | ACK，接受后最终 EVENT |
-| ARM_STOP | `0x36` | 停止当前 RobotArm 任务 | STOP 自身 ACK；原任务可能产生 STOPPED EVENT |
+| ARM_HOME | `0x30` | 三轴 HomeAll | ACK，终态通过 page3 查询 |
+| ARM_HOME_AXIS | `0x31` | 单轴 Home | ACK，终态通过 page3 查询 |
+| ARM_MOVE_AXIS_ABS | `0x32` | 单轴绝对位置运动 | ACK，终态通过 page3 查询 |
+| ARM_MOVE_AXIS_REL | `0x33` | 单轴相对步数运动 | ACK，终态通过 page3 查询 |
+| ARM_MOVE_TO | `0x34` | XYZ 顺序运动 | ACK，终态通过 page3 查询 |
+| ARM_MOVE_TO_SAFE | `0x35` | 带 Safe Z 的 XYZ 顺序运动 | ACK，终态通过 page3 查询 |
+| ARM_STOP | `0x36` | 停止当前 RobotArm 任务 | STOP 自身 ACK；原任务终态通过 page3 查询 |
 | ARM_CLEAR_ERROR | `0x37` | 清除管理层 ERROR | 仅 ACK |
 | ARM_STATUS | `0x38` | 查询状态页 | 仅 STATUS_RSP，不额外发送 ACK |
 
@@ -96,7 +96,7 @@ frame[23] = (crc >> 8) & 0xFF
 | CMD | 数值 | 名称 |
 |---|---:|---|
 | ARM_ACK | `0x70` | 请求接受/拒绝响应 |
-| ARM_EVENT | `0x71` | 异步任务最终事件 |
+| ARM_EVENT | `0x71` | page3 复用的异步终态语义标识；MCU 不主动发送 |
 | ARM_STATUS_RSP | `0x72` | STATUS 分页响应 |
 
 ## 6. axis 枚举
@@ -193,7 +193,7 @@ STOP 总是针对 MCU 当前 RobotArm 管理任务，不携带要停止任务的
 
 | DATA 字节 | 定义 |
 |---|---|
-| D0 | page：0、1 或 2 |
+| D0 | page：0、1、2 或 3 |
 | D1～D15 | 保留，必须为 0 |
 
 合法查询直接返回一帧 `ARM_STATUS_RSP(0x72)`，不发送 ACK。
@@ -211,13 +211,13 @@ ACK 帧的 SEQ 与被确认请求一致。
 
 语义：
 
-- `D1=ACCEPTED, D2=ROBOT_ARM_OK`：请求已被 MCU 接受。对异步命令，这不代表动作完成，Android 必须继续等待 EVENT。
-- `D1=REJECTED`：请求未启动，不会为该请求产生最终 EVENT。
-- 零位移命令也可能先返回 ACCEPTED ACK，随后立即返回 COMPLETED EVENT，二者 SEQ 相同。
+- `D1=ACCEPTED, D2=ROBOT_ARM_OK`：请求已被 MCU 接受。对异步命令，这不代表动作完成，Android 必须继续轮询 page3。
+- `D1=REJECTED`：请求未启动，不会为该请求产生终态。
+- 零位移命令也会先返回 ACCEPTED ACK，随后将 COMPLETED 终态保存到 page3。
 
 ## 9. EVENT 格式 (`0x71`)
 
-EVENT 是异步任务唯一的最终通知。同一已接受任务只产生一个最终 EVENT。
+`0x71` 的 DATA 语义用于 page3 中的终态字段。同一已接受任务只保存一个最终终态，MCU 不主动发送 EVENT。
 
 | DATA 字节 | 定义 |
 |---|---|
@@ -294,8 +294,7 @@ STATUS_RSP 的 SEQ 与 STATUS 请求一致。
 | 0 | `0x01` | S1 = X_HOME |
 | 1 | `0x02` | S2 = Y_HOME |
 | 2 | `0x04` | S3 = Z_HOME / Z upper limit |
-| 3 | `0x08` | S4 = Z lower limit |
-| 4～7 | - | 保留 |
+| 3～7 | - | 保留 |
 
 ### 10.2 page 1：当前坐标
 
@@ -320,6 +319,21 @@ STATUS_RSP 的 SEQ 与 STATUS 请求一致。
 | D13～D15 | - | 保留，固定为 0 |
 
 对 MoveToSafe，page 2 返回最终 XYZ 目标，而不是当前正在执行的中间 Safe Z 目标。
+
+### 10.4 page 3：最近一次异步终态
+
+page3 的 `STATUS_RSP` SEQ 属于本次 `ARM_STATUS` 查询；Android 必须使用 D2～D4 的原请求 CMD/SEQ 匹配已 ACK 的异步动作。读取不会清除终态，MCU 也不会主动发送 `0x71`。
+
+| DATA 字节 | 定义 |
+|---|---|
+| D0 | page 标识，固定 3 |
+| D1 | terminal_valid：0=尚无终态，1=存在终态 |
+| D2 | 原异步请求 CMD，例如单轴 Home 为 `0x31` |
+| D3～D4 | 原异步请求 SEQ，uint16 LE |
+| D5 | 固定 `0x71`，表示 D6～D7 使用 EVENT 终态语义 |
+| D6 | Event Type |
+| D7 | RobotArmResult，表示最终结果或失败原因 |
+| D8～D15 | 保留，固定为 0 |
 
 ## 11. 状态枚举
 
@@ -421,7 +435,7 @@ STATUS_RSP 的 SEQ 与 STATUS 请求一致。
 | 1 | BUSY | MCU 有未结束任务或清错时仍在运动；等待当前 EVENT/状态结束后再由用户决定是否重试 |
 | 2 | POSITION_UNKNOWN | 至少一个所需坐标不可信；禁止运动并引导用户完成 Home，不得在 Android 侧伪造有效坐标 |
 | 3 | NOT_HOMED | 需要 Home 条件但尚未建立原点；当前协议保留该结果值 |
-| 4 | LIMIT | 目标越过启用的 Soft Limit，或当前方向被 S1～S4 硬限位阻挡；拒绝时无 STEP，运行中触发则停止并使活动轴坐标失效 |
+| 4 | LIMIT | 目标越过启用的 Soft Limit，或当前方向被 S1～S3 Home 侧传感器阻挡；拒绝时无 STEP，运行中触发则停止并使活动轴坐标失效 |
 | 5 | INTERLOCK | SafeMove 转换不满足安全高度或安全策略；不得绕过后继续下一轴 |
 | 6 | DRIVER | 底层驱动拒绝启动，或 Busy 结束但完成步数证据不完整 |
 | 7 | SENSOR | 传感器快照未就绪，或 Home 退让后传感器未可靠释放 |
