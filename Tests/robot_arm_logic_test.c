@@ -11,6 +11,7 @@ static uint32_t s_completed[ROBOT_AXIS_COUNT];
 static uint32_t s_remaining[ROBOT_AXIS_COUNT];
 static int8_t s_direction[ROBOT_AXIS_COUNT];
 static uint32_t s_start_count[ROBOT_AXIS_COUNT];
+static uint32_t s_stop_count[ROBOT_AXIS_COUNT];
 static uint32_t s_last_start_speed[ROBOT_AXIS_COUNT];
 static uint8_t s_start_enters_busy[ROBOT_AXIS_COUNT] = {1u, 1u, 1u};
 static int s_test_failure;
@@ -51,18 +52,29 @@ uint8_t RobotArmDriver_Start(RobotAxisId_t axis, int8_t direction,
 }
 
 /** 模拟统一驱动停止。 */
-void RobotArmDriver_Stop(RobotAxisId_t axis) { s_busy[axis] = 0u; }
+void RobotArmDriver_Stop(RobotAxisId_t axis)
+{
+    s_stop_count[axis]++;
+    s_busy[axis] = 0u;
+}
 /** 查询模拟轴是否忙碌。 */
 uint8_t RobotArmDriver_IsBusy(RobotAxisId_t axis) { return s_busy[axis]; }
 /** 查询模拟轴剩余步数。 */
 uint32_t RobotArmDriver_GetRemainingSteps(RobotAxisId_t axis) { return s_remaining[axis]; }
 /** 查询模拟轴完成步数。 */
 uint32_t RobotArmDriver_GetCompletedSteps(RobotAxisId_t axis) { return s_completed[axis]; }
+/** 模拟 DMA 续段前的负向限位检查，确保 Home 命中传感器立即停轴。 */
+uint8_t RobotArmDriver_ShouldStopForNegativeLimit(RobotAxisId_t axis)
+{
+    return (s_direction[axis] < 0 && RobotArmSensor_IsTriggered(
+        (RobotArmSensorId_t)(ROBOT_ARM_SENSOR_X_HOME + axis))) ? 1u : 0u;
+}
 
-static void TestSensorSnapshot(uint8_t s1, uint8_t s2, uint8_t s3, uint8_t s4)
+static void TestSensorSnapshot(uint8_t s1, uint8_t s2, uint8_t s3)
 {
     uint8_t data[2] = {0u, 0u};
-    data[1] = (uint8_t)((s1 << 0) | (s2 << 1) | (s3 << 2) | (s4 << 3));
+    /* 与生产 ShiftRegisterInput_ReadAll() 交给 RobotArm 的 inputData[0] bit0..2 一致。 */
+    data[0] = (uint8_t)((s1 << 0) | (s2 << 1) | (s3 << 2));
     RobotArmSensor_UpdateSnapshot(data);
 }
 
@@ -79,11 +91,11 @@ static void TestResetAndHomeAll(void)
 {
     RobotArm_Init();
     g_robot_arm_logic_test_pose_safety_blocked = 0u;
-    TestSensorSnapshot(0u, 0u, 0u, 0u);
+    TestSensorSnapshot(0u, 0u, 0u);
     TestHomeAxis(ROBOT_AXIS_X, 0u);
     TestHomeAxis(ROBOT_AXIS_Y, 0u);
     TestHomeAxis(ROBOT_AXIS_Z, 0u);
-    TestSensorSnapshot(0u, 0u, 0u, 0u);
+    TestSensorSnapshot(0u, 0u, 0u);
 }
 
 #ifndef ROBOT_ARM_SAFE_DISABLED_TEST
@@ -116,34 +128,21 @@ static void TestHomeAxis(RobotAxisId_t axis, uint8_t home_bit)
     if (axis == ROBOT_AXIS_X) s1 = home_bit;
     if (axis == ROBOT_AXIS_Y) s2 = home_bit;
     if (axis == ROBOT_AXIS_Z) s3 = home_bit;
-    TestSensorSnapshot(s1, s2, s3, 0u);
+    TestSensorSnapshot(s1, s2, s3);
     TEST_CHECK(RobotArm_HomeAxis(axis) == ROBOT_ARM_OK);
     RobotArm_Task();
-    TEST_CHECK(s_direction[axis] == (home_bit ? 1 : -1));
-
-    /* 初始已触发时先退出；未触发时直接快速找边。 */
     if (home_bit)
     {
-        TestSensorSnapshot(0u, 0u, 0u, 0u);
-        RobotArm_Task();
-        TEST_CHECK(s_direction[axis] == -1);
+        /* 初始 Active 直接置零，当前单阶段流程绝不反向脱离或二次寻零。 */
+        TEST_CHECK(RobotArm_IsHomed(axis) == 1u);
+        TEST_CHECK(RobotArm_IsPositionValid(axis) == 1u);
+        return;
     }
-    if (axis == ROBOT_AXIS_X) s1 = 1u;
-    if (axis == ROBOT_AXIS_Y) s2 = 1u;
-    if (axis == ROBOT_AXIS_Z) s3 = 1u;
-    TestSensorSnapshot(s1, s2, s3, 0u);
-    RobotArm_Task();
-    TEST_CHECK(s_direction[axis] == 1);
-
-    TestSensorSnapshot(0u, 0u, 0u, 0u);
-    TestDriverComplete(axis);
-    RobotArm_Task();
     TEST_CHECK(s_direction[axis] == -1);
-
     if (axis == ROBOT_AXIS_X) s1 = 1u;
     if (axis == ROBOT_AXIS_Y) s2 = 1u;
     if (axis == ROBOT_AXIS_Z) s3 = 1u;
-    TestSensorSnapshot(s1, s2, s3, 0u);
+    TestSensorSnapshot(s1, s2, s3);
     RobotArm_Task();
     TEST_CHECK(RobotArm_IsHomed(axis) == 1u);
     TEST_CHECK(RobotArm_IsPositionValid(axis) == 1u);
@@ -174,23 +173,18 @@ static void TestSingleAxisHomeDoesNotChain(RobotAxisId_t axis)
 static void TestFinishHomeAllAxis(RobotAxisId_t axis)
 {
     uint8_t s1 = 0u, s2 = 0u, s3 = 0u;
-    TestSensorSnapshot(0u, 0u, 0u, 0u);
+    static const uint32_t expected_fast_speed[ROBOT_AXIS_COUNT] = {
+        ROBOT_ARM_HOME_FAST_SPEED_X,
+        ROBOT_ARM_HOME_FAST_SPEED_Y,
+        ROBOT_ARM_HOME_FAST_SPEED_Z};
+    TestSensorSnapshot(0u, 0u, 0u);
     RobotArm_Task();
     TEST_CHECK(s_direction[axis] == -1);
+    TEST_CHECK(s_last_start_speed[axis] == expected_fast_speed[axis]);
     if (axis == ROBOT_AXIS_X) s1 = 1u;
     if (axis == ROBOT_AXIS_Y) s2 = 1u;
     if (axis == ROBOT_AXIS_Z) s3 = 1u;
-    TestSensorSnapshot(s1, s2, s3, 0u);
-    RobotArm_Task();
-    TEST_CHECK(s_direction[axis] == 1);
-    TestSensorSnapshot(0u, 0u, 0u, 0u);
-    TestDriverComplete(axis);
-    RobotArm_Task();
-    TEST_CHECK(s_direction[axis] == -1);
-    if (axis == ROBOT_AXIS_X) s1 = 1u;
-    if (axis == ROBOT_AXIS_Y) s2 = 1u;
-    if (axis == ROBOT_AXIS_Z) s3 = 1u;
-    TestSensorSnapshot(s1, s2, s3, 0u);
+    TestSensorSnapshot(s1, s2, s3);
     RobotArm_Task();
     TEST_CHECK(RobotArm_IsHomed(axis) == 1u);
 }
@@ -202,7 +196,7 @@ static void TestFinishHomeAllAxis(RobotAxisId_t axis)
 int main(void)
 {
     RobotArm_Init();
-    TestSensorSnapshot(0u, 0u, 0u, 0u);
+    TestSensorSnapshot(0u, 0u, 0u);
     TestSingleAxisHomeDoesNotChain(ROBOT_AXIS_X);
     TestSingleAxisHomeDoesNotChain(ROBOT_AXIS_Y);
     TestSingleAxisHomeDoesNotChain(ROBOT_AXIS_Z);
@@ -212,13 +206,78 @@ int main(void)
     TEST_CHECK(RobotArm_GetState() == ROBOT_ARM_IDLE);
     return s_test_failure;
 }
+#elif defined(ROBOT_ARM_HOME_LIMIT_CHAIN_TEST)
+/** 验证 S1/S2/S3 的完整快照映射及三轴 Home、运行中限位安全停止。 */
+int main(void)
+{
+    RobotAxisId_t axis;
+    RobotArmStatus_t status;
+    uint8_t bitmap;
+
+    RobotArm_Init();
+    /* 0x00、0x01、0x02、0x04 及所有 S1/S2/S3 组合必须和 STATUS D9 一致。 */
+    for (bitmap = 0u; bitmap < 8u; bitmap++)
+    {
+        TestSensorSnapshot((uint8_t)(bitmap & 1u),
+                           (uint8_t)((bitmap >> 1) & 1u),
+                           (uint8_t)((bitmap >> 2) & 1u));
+        RobotArm_GetStatus(&status);
+        TEST_CHECK(status.s1_x_home == (uint8_t)(bitmap & 1u));
+        TEST_CHECK(status.s2_y_home == (uint8_t)((bitmap >> 1) & 1u));
+        TEST_CHECK(status.s3_z_home == (uint8_t)((bitmap >> 2) & 1u));
+    }
+
+    for (axis = ROBOT_AXIS_X; axis < ROBOT_AXIS_COUNT; axis++)
+    {
+        uint32_t starts = s_start_count[axis];
+        uint32_t stops;
+
+        /* 对应 S1/S2/S3 已 Active 时，Home 绝不能产生负方向 STEP。 */
+        TestHomeAxis(axis, 1u);
+        TEST_CHECK(s_start_count[axis] == starts);
+        TEST_CHECK(RobotArm_IsHomed(axis) == 1u);
+        TEST_CHECK(RobotArm_IsPositionValid(axis) == 1u);
+
+        /* Active 只阻止轴继续压向负限位，正方向必须能脱离传感器。 */
+        if (axis == ROBOT_AXIS_X)
+        {
+            TEST_CHECK(RobotArm_MoveXRelative(1, 100u) == ROBOT_ARM_OK);
+            TestDriverComplete(axis); RobotArm_Task();
+        }
+        if (axis == ROBOT_AXIS_Y) {
+            TEST_CHECK(RobotArm_MoveYRelative(1, 100u) == ROBOT_ARM_OK);
+            TestDriverComplete(axis); RobotArm_Task();
+        }
+        if (axis == ROBOT_AXIS_Z) {
+            TEST_CHECK(RobotArm_MoveZRelative(1, 100u) == ROBOT_ARM_OK);
+            TestDriverComplete(axis); RobotArm_Task();
+        }
+
+        TestSensorSnapshot(0u, 0u, 0u);
+        if (axis == ROBOT_AXIS_X) TEST_CHECK(RobotArm_MoveXRelative(-1, 100u) == ROBOT_ARM_OK);
+        if (axis == ROBOT_AXIS_Y) TEST_CHECK(RobotArm_MoveYRelative(-1, 100u) == ROBOT_ARM_OK);
+        if (axis == ROBOT_AXIS_Z) TEST_CHECK(RobotArm_MoveZRelative(-1, 100u) == ROBOT_ARM_OK);
+        TEST_CHECK(s_busy[axis] == 1u);
+        stops = s_stop_count[axis];
+        TestSensorSnapshot(axis == ROBOT_AXIS_X, axis == ROBOT_AXIS_Y,
+                           axis == ROBOT_AXIS_Z);
+        /* 新 HC165 完整快照到达的同一调用栈必须停止当前 DMA，不能等 RobotArm_Task。 */
+        TEST_CHECK(s_busy[axis] == 0u);
+        TEST_CHECK(s_stop_count[axis] == stops + 1u);
+        RobotArm_GetStatus(&status);
+        TEST_CHECK(status.last_move_end_reason == ROBOT_MOVE_END_LIMIT);
+        TEST_CHECK(RobotArm_IsPositionValid(axis) == 0u);
+        TEST_CHECK(RobotArm_ClearError() == ROBOT_ARM_OK);
+    }
+    return s_test_failure;
+}
 #elif defined(ROBOT_ARM_HOME_CONFIG_REJECT_TEST)
 /** 验证生产默认 Home 参数未标定时会拒绝单轴置零，且不产生 STEP 启动。 */
 int main(void)
 {
     uint32_t starts;
     RobotArm_Init();
-    TestSensorSnapshot(0u, 0u, 0u, 0u);
+    TestSensorSnapshot(0u, 0u, 0u);
     starts = s_start_count[ROBOT_AXIS_X] +
              s_start_count[ROBOT_AXIS_Y] +
              s_start_count[ROBOT_AXIS_Z];
@@ -226,6 +285,28 @@ int main(void)
     TEST_CHECK((s_start_count[ROBOT_AXIS_X] +
                 s_start_count[ROBOT_AXIS_Y] +
                 s_start_count[ROBOT_AXIS_Z]) == starts);
+    return s_test_failure;
+}
+#elif defined(ROBOT_ARM_HOME_REQUEST_SPEED_TEST)
+/**
+ * 验证 0x31 单轴 Home 仅依赖请求中的快速速度。
+ *
+ * 测试配置故意将 HomeAll 的三轴默认快速速度置为 0；三轴仍应使用传入的 500 steps/s
+ * 启动实际驱动，证明默认速度不是单轴 Home 的隐藏配置前置条件。
+ */
+int main(void)
+{
+    RobotAxisId_t axis;
+    for (axis = ROBOT_AXIS_X; axis < ROBOT_AXIS_COUNT; axis++)
+    {
+        TestSensorSnapshot(0u, 0u, 0u);
+        TEST_CHECK(RobotArm_HomeAxisWithSpeed(axis, 500u) == ROBOT_ARM_OK);
+        RobotArm_Task();
+        TEST_CHECK(s_start_count[axis] == 1u);
+        TEST_CHECK(s_last_start_speed[axis] == 500u);
+        TEST_CHECK(s_direction[axis] == -1);
+        RobotArm_Stop();
+    }
     return s_test_failure;
 }
 #elif defined(ROBOT_ARM_SAFE_DISABLED_TEST)
@@ -251,7 +332,7 @@ int main(void)
     uint32_t y_starts;
     uint32_t z_starts;
     RobotArm_Init();
-    TestSensorSnapshot(0u, 0u, 0u, 0u);
+    TestSensorSnapshot(0u, 0u, 0u);
     TEST_CHECK(RobotArm_MoveTo(10, 20, 30) == ROBOT_ARM_ERR_POSITION_UNKNOWN);
 
     /* X/Y/Z 单轴 Home 分别只能启动自身，完成后不得串行进入其他轴。 */
@@ -262,13 +343,13 @@ int main(void)
     TEST_CHECK(RobotArm_HomeAxis(ROBOT_AXIS_Y) == ROBOT_ARM_ERR_BUSY);
     RobotArm_Stop();
     TEST_CHECK(RobotArm_GetState() == ROBOT_ARM_IDLE);
-    TestSensorSnapshot(0u, 0u, 0u, 0u);
+    TestSensorSnapshot(0u, 0u, 0u);
     TEST_CHECK(RobotArm_Home() == ROBOT_ARM_OK);
     TestFinishHomeAllAxis(ROBOT_AXIS_Z);
     TestFinishHomeAllAxis(ROBOT_AXIS_Y);
     TestFinishHomeAllAxis(ROBOT_AXIS_X);
     TEST_CHECK(RobotArm_GetState() == ROBOT_ARM_IDLE);
-    TestSensorSnapshot(0u, 0u, 0u, 0u);
+    TestSensorSnapshot(0u, 0u, 0u);
 
     TEST_CHECK(RobotArm_MoveTo(10, 20, 30) == ROBOT_ARM_OK);
     RobotArm_Task();
@@ -303,7 +384,7 @@ int main(void)
     TEST_CHECK(s_last_start_speed[ROBOT_AXIS_Z] == ROBOT_ARM_Z_DEFAULT_SPEED);
 
     /* 临时速度只作用于当前 MOVE_TO；协议最大值仍必须按三轴上限传递给实际驱动。 */
-    TEST_CHECK(RobotArm_MoveToWithSpeed(20, 30, 40, 500u) == ROBOT_ARM_OK);
+    TEST_CHECK(RobotArm_MoveToWithSpeed(20, 30, 40, 500u, 500u, 500u) == ROBOT_ARM_OK);
     RobotArm_Task();
     TEST_CHECK(s_last_start_speed[ROBOT_AXIS_X] == 500u);
     TestDriverComplete(ROBOT_AXIS_X);
@@ -316,7 +397,7 @@ int main(void)
     TEST_CHECK(s_last_start_speed[ROBOT_AXIS_Z] == 500u);
     TestDriverComplete(ROBOT_AXIS_Z);
     RobotArm_Task();
-    TEST_CHECK(RobotArm_MoveToWithSpeed(30, 40, 50, 65535u) == ROBOT_ARM_OK);
+    TEST_CHECK(RobotArm_MoveToWithSpeed(30, 40, 50, 65535u, 65535u, 65535u) == ROBOT_ARM_OK);
     RobotArm_Task();
     TEST_CHECK(s_last_start_speed[ROBOT_AXIS_X] == ROBOT_ARM_X_MAX_SPEED);
     TestDriverComplete(ROBOT_AXIS_X);
@@ -414,21 +495,11 @@ int main(void)
     TestDriverComplete(ROBOT_AXIS_X);
     RobotArm_Task();
     TEST_CHECK(RobotArm_GetX() == 1);
-    TestSensorSnapshot(0u, 0u, 0u, 0u);
-
-    /* S4 必须中止 Z+，且不得把 current 提交为 target。 */
-    TEST_CHECK(RobotArm_MoveZ(40, 100u) == ROBOT_ARM_OK);
-    TestSensorSnapshot(0u, 0u, 0u, 1u);
-    RobotArm_Task();
-    RobotArm_GetStatus(&status);
-    TEST_CHECK(status.last_move_end_reason == ROBOT_MOVE_END_LIMIT);
-    TEST_CHECK(status.z == 30);
-    TEST_CHECK(status.z_valid == 0u);
-    TEST_CHECK(status.z_homed == 1u);
+    TestSensorSnapshot(0u, 0u, 0u);
 
     /* Home 超时必须同时清除 homed 和 position_valid，且不能伪造零点。 */
     TEST_CHECK(RobotArm_ClearError() == ROBOT_ARM_OK);
-    TestSensorSnapshot(0u, 0u, 0u, 0u);
+    TestSensorSnapshot(0u, 0u, 0u);
     TEST_CHECK(RobotArm_HomeAxis(ROBOT_AXIS_X) == ROBOT_ARM_OK);
     RobotArm_Task();
     s_now_ms += 1000u;
@@ -439,9 +510,9 @@ int main(void)
     TEST_CHECK(status.x_homed == 0u);
     TEST_CHECK(status.x_valid == 0u);
 
-    /* Z Home 朝上运动时，即使 S4 已触发也必须允许离开下限位。 */
+    /* Z Home 从 S3 已触发开始时，必须先向正方向脱离，不能继续压负限位。 */
     TEST_CHECK(RobotArm_ClearError() == ROBOT_ARM_OK);
-    TestSensorSnapshot(0u, 0u, 0u, 1u);
+    TestSensorSnapshot(0u, 0u, 1u);
     TEST_CHECK(RobotArm_HomeAxis(ROBOT_AXIS_Z) == ROBOT_ARM_OK);
     RobotArm_Task();
     TEST_CHECK(s_direction[ROBOT_AXIS_Z] == -1);
@@ -449,7 +520,7 @@ int main(void)
     RobotArm_Stop();
 
     /* 为组合运动异常场景重新建立三轴可信坐标。 */
-    TestSensorSnapshot(0u, 0u, 0u, 0u);
+    TestSensorSnapshot(0u, 0u, 0u);
     TestHomeAxis(ROBOT_AXIS_X, 0u);
     TestHomeAxis(ROBOT_AXIS_Y, 0u);
     TestHomeAxis(ROBOT_AXIS_Z, 0u);
@@ -468,15 +539,15 @@ int main(void)
     TEST_CHECK(status.z_valid == 1u);
     TEST_CHECK(s_start_count[ROBOT_AXIS_Z] == z_starts);
 
-    /* MoveTo 的 Z+ 阶段遇到 S4 时停止且不提交 target。 */
+    /* MoveTo 的 Z- 阶段遇到 S3 时必须立即停止且不提交 target。 */
     TEST_CHECK(RobotArm_ClearError() == ROBOT_ARM_OK);
     TestHomeAxis(ROBOT_AXIS_Y, 0u);
-    TestSensorSnapshot(0u, 0u, 0u, 0u);
+    TestSensorSnapshot(0u, 0u, 0u);
     TEST_CHECK(RobotArm_MoveTo(0, 0, 1) == ROBOT_ARM_OK);
     RobotArm_Task();
     RobotArm_Task();
     RobotArm_Task();
-    TestSensorSnapshot(0u, 0u, 0u, 1u);
+    TestSensorSnapshot(0u, 0u, 1u);
     RobotArm_Task();
     RobotArm_GetStatus(&status);
     TEST_CHECK(status.last_move_end_reason == ROBOT_MOVE_END_LIMIT);
@@ -486,7 +557,7 @@ int main(void)
     /* MoveTo 的 Z- 阶段遇到 S3 时采用同样的硬限位中断语义。 */
     TEST_CHECK(RobotArm_ClearError() == ROBOT_ARM_OK);
     TestHomeAxis(ROBOT_AXIS_Z, 0u);
-    TestSensorSnapshot(0u, 0u, 0u, 0u);
+    TestSensorSnapshot(0u, 0u, 0u);
     TEST_CHECK(RobotArm_MoveZ(1, 100u) == ROBOT_ARM_OK);
     TestDriverComplete(ROBOT_AXIS_Z);
     RobotArm_Task();
@@ -494,7 +565,7 @@ int main(void)
     RobotArm_Task();
     RobotArm_Task();
     RobotArm_Task();
-    TestSensorSnapshot(0u, 0u, 1u, 0u);
+    TestSensorSnapshot(0u, 0u, 1u);
     RobotArm_Task();
     RobotArm_GetStatus(&status);
     TEST_CHECK(status.last_move_end_reason == ROBOT_MOVE_END_LIMIT);
@@ -503,7 +574,7 @@ int main(void)
 
     /* SafeMove 启用时，位置未知必须在产生任何 STEP 之前拒绝任务。 */
     RobotArm_Init();
-    TestSensorSnapshot(0u, 0u, 0u, 0u);
+    TestSensorSnapshot(0u, 0u, 0u);
     TEST_CHECK(RobotArm_MoveToSafe(1, 1, 1) == ROBOT_ARM_ERR_POSITION_UNKNOWN);
 
     /* 仅 Z 改变时直接执行 Final Z，不额外执行 Raise Z。 */
@@ -611,7 +682,7 @@ int main(void)
     RobotArm_Task();
     TestDriverComplete(ROBOT_AXIS_X);
     RobotArm_Task();
-    TestSensorSnapshot(0u, 1u, 0u, 0u);
+    TestSensorSnapshot(0u, 1u, 0u);
     RobotArm_Task();
     RobotArm_GetStatus(&status);
     TEST_CHECK(status.last_move_end_reason == ROBOT_MOVE_END_LIMIT);
@@ -636,7 +707,7 @@ int main(void)
     TEST_CHECK(status.last_move_end_reason == ROBOT_MOVE_END_INTERLOCK);
     TEST_CHECK(s_start_count[ROBOT_AXIS_Z] == z_starts);
 
-    /* Final Z 向下期间触发 S4，不能提交最终 Z target。 */
+    /* Final Z 向负方向期间触发 S3，不能提交最终 Z target。 */
     TestResetAndHomeAll();
     TestSetPose(0, 0, 5);
     TEST_CHECK(RobotArm_MoveToSafe(1, 1, 20) == ROBOT_ARM_OK);
@@ -648,7 +719,7 @@ int main(void)
     TestDriverComplete(ROBOT_AXIS_Y);
     RobotArm_Task();
     RobotArm_Task();
-    TestSensorSnapshot(0u, 0u, 0u, 1u);
+    TestSensorSnapshot(0u, 0u, 1u);
     RobotArm_Task();
     RobotArm_GetStatus(&status);
     TEST_CHECK(status.last_move_end_reason == ROBOT_MOVE_END_LIMIT);

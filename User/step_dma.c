@@ -1,4 +1,5 @@
 #include "step_dma.h"
+#include "robot_arm_driver.h"
 #include "shift_register.h"
 #include "DELAY.h"
 
@@ -322,6 +323,13 @@ static void dma_start_edges(uint16_t edges)
 
     /* 旧 TC 只能在重装后、重新使能 DMA 前清除。 */
     DMA_ClearITPendingBit(DMA2_IT_TC2);
+
+    /* S1 已触发时绝不续装 X(PB11) 的下一 DMA chunk；正方向脱离不受影响。 */
+    if (RobotArmDriver_ShouldStopForNegativeLimit(ROBOT_AXIS_X))
+    {
+        stepdma_pb11_stop();
+        return;
+    }
     if (!timer_running)
     {
         TIM_ClearFlag(TIM5, TIM_FLAG_Update);
@@ -975,6 +983,13 @@ static void dma10_start_edges(uint16_t edges)
 
     /* 旧 TC 只能在重装后、重新使能 DMA 前清除。 */
     DMA_ClearITPendingBit(DMA2_IT_TC3);
+
+    /* S2 已触发时绝不续装 Y(PB10) 的下一 DMA chunk；只拦截逻辑负方向。 */
+    if (RobotArmDriver_ShouldStopForNegativeLimit(ROBOT_AXIS_Y))
+    {
+        stepdma_pb10_stop();
+        return;
+    }
     if (!timer_running)
     {
         TIM_ClearFlag(TIM6, TIM_FLAG_Update);
@@ -1467,6 +1482,12 @@ static void PU3_LoadChunk(uint32_t steps)
     timer_running = ((PU3_TIMER->CR1 & TIM_CR1_CEN) != 0u) ? 1u : 0u;
     DMA_Cmd(PU3_DMA_CHANNEL, DISABLE);
     DMA_ClearITPendingBit(DMA2_IT_TC4);
+    /* S3 已触发时绝不续装 PU3(PB13) 的下一 DMA chunk；允许 Z+ 脱离 S3。 */
+    if (RobotArmDriver_ShouldStopForNegativeLimit(ROBOT_AXIS_Z))
+    {
+        PU3_Stepper_Stop();
+        return;
+    }
     s_pu3.current_chunk_steps = steps;
     PU3_DMA_CHANNEL->CMAR = (uint32_t)s_pu3_edges;
     PU3_DMA_CHANNEL->CNDTR = (uint16_t)(steps * 2u);

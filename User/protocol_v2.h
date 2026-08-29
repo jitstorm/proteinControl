@@ -43,6 +43,16 @@ uint8_t ProtocolV2_Decode(const uint8_t *raw_frame, ProtocolV2Frame_t *frame);
 uint16_t ProtocolV2_CalculateCrc(const uint8_t *data, uint16_t length);
 /** 从小端字节流读取 uint16。 */
 uint16_t ProtocolV2_ReadU16LE(const uint8_t *data);
+/**
+ * 从小端字节流读取有符号 int24。
+ *
+ * int24 仅用于压缩 24B V2 帧中的运动请求；机械臂内部位置、目标和步数运算仍
+ * 使用 int32_t，避免三字节算术造成溢出或符号错误。
+ *
+ * @param data 指向低字节在前的三个协议字节。
+ * @return 经 bit23 符号扩展后的 int32_t 值，范围为 -8388608～8388607。
+ */
+int32_t ProtocolV2_ReadI24LE(const uint8_t *data);
 /** 从小端字节流读取 uint32。 */
 uint32_t ProtocolV2_ReadU32LE(const uint8_t *data);
 /** 从小端字节流读取 int32。 */

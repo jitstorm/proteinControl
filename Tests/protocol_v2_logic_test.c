@@ -216,5 +216,11 @@ int main(void)
 
     TEST_CHECK(ProtocolV2_ReadI32LE((uint8_t[]){0x78u,0x56u,0x34u,0x12u}) ==
                (int32_t)0x12345678);
+    /* int24 只压缩运动请求线格式，必须正确扩展 bit23 的符号。 */
+    TEST_CHECK(ProtocolV2_ReadI24LE((uint8_t[]){0x00u,0x00u,0x00u}) == 0);
+    TEST_CHECK(ProtocolV2_ReadI24LE((uint8_t[]){0x01u,0x00u,0x00u}) == 1);
+    TEST_CHECK(ProtocolV2_ReadI24LE((uint8_t[]){0xFFu,0xFFu,0xFFu}) == -1);
+    TEST_CHECK(ProtocolV2_ReadI24LE((uint8_t[]){0xFFu,0xFFu,0x7Fu}) == 8388607);
+    TEST_CHECK(ProtocolV2_ReadI24LE((uint8_t[]){0x00u,0x00u,0x80u}) == -8388608);
     return s_failure;
 }

@@ -204,14 +204,30 @@ RobotArmResult_t RobotArm_MoveTo(int32_t x, int32_t y, int32_t z);
  * @return 已受理时返回 ROBOT_ARM_OK；安全、传感器或驱动失败时返回对应错误码。
  */
 RobotArmResult_t RobotArm_MoveToWithSpeed(int32_t x, int32_t y, int32_t z,
-                                          uint32_t speed);
+                                          uint16_t x_speed, uint16_t y_speed,
+                                          uint16_t z_speed);
 /** 按“必要时抬高 Z、移动 X/Y、最后移动 Z”的安全路径接受绝对位置任务。 */
 RobotArmResult_t RobotArm_MoveToSafe(int32_t x, int32_t y, int32_t z);
 /**
+ * 按既有 Safe Move 阶段顺序启动三轴独立速度的安全移动。
+ *
+ * @param x X 轴目标绝对坐标，单位为步数。
+ * @param y Y 轴目标绝对坐标，单位为步数。
+ * @param z Z 轴目标绝对坐标，单位为步数。
+ * @param x_speed X 轴目标速度，单位为 steps/s。
+ * @param y_speed Y 轴目标速度，单位为 steps/s。
+ * @param z_speed Z 轴目标速度，单位为 steps/s。
+ * @return 已受理返回 ROBOT_ARM_OK；配置、坐标或安全检查失败时返回对应错误。
+ */
+RobotArmResult_t RobotArm_MoveToSafeWithSpeed(int32_t x, int32_t y, int32_t z,
+                                              uint16_t x_speed,
+                                              uint16_t y_speed,
+                                              uint16_t z_speed);
+/**
  * 启动 X、Y 或 Z 轴的非阻塞单轴置零流程。
  *
- * 此接口复用机械臂既有 Home 状态机；成功受理后仅当前轴会执行传感器找零、
- * 退让和慢速复找，完成后更新该轴逻辑坐标和可信状态，不会继续 Home 其他轴。
+ * 此接口复用机械臂既有 Home 状态机；成功受理后仅当前轴执行一次快速传感器
+ * 找零，传感器初始 Active 时直接置零。反向脱离和慢速复找暂时禁用。
  *
  * @param axis 需要置零的实际机械轴，只允许 ROBOT_AXIS_X、ROBOT_AXIS_Y 或
  *             ROBOT_AXIS_Z。
@@ -219,6 +235,24 @@ RobotArmResult_t RobotArm_MoveToSafe(int32_t x, int32_t y, int32_t z);
  *         不可用时返回对应错误码。返回 OK 不代表机械动作已经完成。
  */
 RobotArmResult_t RobotArm_HomeAxis(RobotAxisId_t axis);
+/**
+ * 用 Android 指定的速度启动单轴 Home。
+ *
+ * 速度仅用于第一次快速寻找 Home 传感器；传感器初始 Active 时不启动电机。
+ * 当前版本不执行反向脱离或二次慢速寻零。
+ *
+ * @param axis 需要置零的实际机械轴。
+ * @param home_speed 第一次快速寻零速度，单位为 steps/s，必须为 1～65535。
+ * @return 已受理返回 ROBOT_ARM_OK；速度非法、配置缺失或传感器异常返回对应错误。
+ */
+RobotArmResult_t RobotArm_HomeAxisWithSpeed(RobotAxisId_t axis,
+                                            uint16_t home_speed);
+/**
+ * 在 HC165 新快照到达时立即执行负向限位安全停机。
+ *
+ * @return 无返回值；触发时停止对应 DMA 轴并将动作以限位错误结束。
+ */
+void RobotArm_OnSensorSnapshotUpdated(void);
 /** 按 Z、Y、X 顺序启动非阻塞 HomeAll。 */
 RobotArmResult_t RobotArm_Home(void);
 /** 停止全部三轴并彻底结束当前组合操作。 */

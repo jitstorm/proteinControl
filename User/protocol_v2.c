@@ -290,6 +290,16 @@ uint16_t ProtocolV2_ReadU16LE(const uint8_t *data)
     return (uint16_t)data[0] | ((uint16_t)data[1] << 8);
 }
 
+/** 从三个小端协议字节读取并对 bit23 做符号扩展。 */
+int32_t ProtocolV2_ReadI24LE(const uint8_t *data)
+{
+    uint32_t value = (uint32_t)data[0] |
+                     ((uint32_t)data[1] << 8) |
+                     ((uint32_t)data[2] << 16);
+    return (value & 0x00800000u) ? (int32_t)(value | 0xFF000000u) :
+                                   (int32_t)value;
+}
+
 /** 从小端字节流读取 uint32。 */
 uint32_t ProtocolV2_ReadU32LE(const uint8_t *data)
 {

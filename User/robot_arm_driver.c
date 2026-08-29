@@ -1,4 +1,5 @@
 #include "robot_arm_driver.h"
+#include "robot_arm_sensor.h"
 #ifdef ROBOT_ARM_DRIVER_LOGIC_TEST
 extern uint8_t HC595Data[4];
 void ShiftRegister_WriteAll(uint8_t *data);
@@ -27,8 +28,8 @@ uint32_t PU3_Stepper_GetCompletedSteps(void);
 #include "shift_register.h"
 #endif
 
-#define ROBOT_ARM_Y_DIR_595_INDEX 1u
-#define ROBOT_ARM_Y_DIR_595_MASK (1u << 5)
+#define ROBOT_ARM_X_DIR_595_INDEX 1u
+#define ROBOT_ARM_X_DIR_595_MASK (1u << 5)
 #define ROBOT_ARM_DRIVER_START_FREQUENCY 500u
 #define ROBOT_ARM_DRIVER_ACCELERATION 100000u
 
@@ -39,6 +40,9 @@ uint32_t PU3_Stepper_GetCompletedSteps(void);
 #define ROBOT_ARM_X_POSITIVE_DIR_LEVEL 1u
 #define ROBOT_ARM_Y_POSITIVE_DIR_LEVEL 1u
 #define ROBOT_ARM_Z_POSITIVE_DIR_LEVEL 1u
+
+/* 保存逻辑方向供 DMA 分段续传和传感器快照更新使用。 */
+static int8_t s_robot_arm_driver_direction[ROBOT_AXIS_COUNT];
 
 /**
  * 将 RobotArm 的逻辑正负方向转换为驱动器实际 DIR 电平。
@@ -58,7 +62,7 @@ static uint8_t RobotArmDriver_GetDirectionLevel(int8_t direction,
 }
 
 /**
- * 设置实际 PU2（PB11）的 DIR2 电平。
+ * 设置实际 X 轴（PB11/TIM5/DMA2 通道2）的 DIR2 电平。
  *
  * 仅修改第二片 74HC595 的 Q5，避免覆盖同片移位寄存器的其他硬件输出。
  *
@@ -68,11 +72,11 @@ static void RobotArmDriver_SetPb11Direction(uint8_t direction_level)
 {
     if (direction_level)
     {
-        HC595Data[ROBOT_ARM_Y_DIR_595_INDEX] |= (uint8_t)ROBOT_ARM_Y_DIR_595_MASK;
+        HC595Data[ROBOT_ARM_X_DIR_595_INDEX] |= (uint8_t)ROBOT_ARM_X_DIR_595_MASK;
     }
     else
     {
-        HC595Data[ROBOT_ARM_Y_DIR_595_INDEX] &= (uint8_t)~ROBOT_ARM_Y_DIR_595_MASK;
+        HC595Data[ROBOT_ARM_X_DIR_595_INDEX] &= (uint8_t)~ROBOT_ARM_X_DIR_595_MASK;
     }
     ShiftRegister_WriteAll(HC595Data);
 }
@@ -103,21 +107,23 @@ uint8_t RobotArmDriver_Start(RobotAxisId_t axis, int8_t direction,
         speed = 1u;
     }
 
+    s_robot_arm_driver_direction[axis] = direction;
+
     switch (axis)
     {
     case ROBOT_AXIS_X:
-        /* X 轴使用实际 PU1：PB10/TIM6/DMA2 通道3，Stepper2 内部负责 DIR1。 */
-        start_result = Stepper2_Start(
-            RobotArmDriver_GetDirectionLevel(
-                direction, ROBOT_ARM_X_POSITIVE_DIR_LEVEL), steps, speed);
-        return (start_result && Stepper2_IsBusy()) ? 1u : 0u;
-    case ROBOT_AXIS_Y:
-        /* Y 轴使用实际 PU2：PB11/TIM5/DMA2 通道2，仅在此处翻译 DIR2。 */
+        /* X 轴使用实际 PB11/TIM5/DMA2 通道2，仅在此处翻译 DIR2。 */
         RobotArmDriver_SetPb11Direction(RobotArmDriver_GetDirectionLevel(
-            direction, ROBOT_ARM_Y_POSITIVE_DIR_LEVEL));
+            direction, ROBOT_ARM_X_POSITIVE_DIR_LEVEL));
         stepdma_pb11_request_trap(steps, ROBOT_ARM_DRIVER_START_FREQUENCY,
                                   speed, ROBOT_ARM_DRIVER_ACCELERATION);
         return stepdma_pb11_is_running();
+    case ROBOT_AXIS_Y:
+        /* Y 轴使用实际 PB10/TIM6/DMA2 通道3，Stepper2 内部负责 DIR1。 */
+        start_result = Stepper2_Start(
+            RobotArmDriver_GetDirectionLevel(
+                direction, ROBOT_ARM_Y_POSITIVE_DIR_LEVEL), steps, speed);
+        return (start_result && Stepper2_IsBusy()) ? 1u : 0u;
     case ROBOT_AXIS_Z:
         /* Z 轴沿用 PB13/TIM7/DMA2 通道4，PU3 内部负责 DIR3。 */
         start_result = PU3_Stepper_Start(
@@ -137,16 +143,20 @@ void RobotArmDriver_Stop(RobotAxisId_t axis)
     switch (axis)
     {
     case ROBOT_AXIS_X:
-        Stepper2_Stop();
+        stepdma_pb11_stop();
         break;
     case ROBOT_AXIS_Y:
-        stepdma_pb11_stop();
+        Stepper2_Stop();
         break;
     case ROBOT_AXIS_Z:
         PU3_Stepper_Stop();
         break;
     default:
         break;
+    }
+    if (axis < ROBOT_AXIS_COUNT)
+    {
+        s_robot_arm_driver_direction[axis] = 0;
     }
 }
 
@@ -156,9 +166,9 @@ uint8_t RobotArmDriver_IsBusy(RobotAxisId_t axis)
     switch (axis)
     {
     case ROBOT_AXIS_X:
-        return Stepper2_IsBusy();
-    case ROBOT_AXIS_Y:
         return stepdma_pb11_is_running();
+    case ROBOT_AXIS_Y:
+        return Stepper2_IsBusy();
     case ROBOT_AXIS_Z:
         return PU3_Stepper_IsRunning();
     default:
@@ -173,9 +183,9 @@ uint32_t RobotArmDriver_GetRemainingSteps(RobotAxisId_t axis)
     switch (axis)
     {
     case ROBOT_AXIS_X:
-        return Stepper2_GetRemainingSteps();
-    case ROBOT_AXIS_Y:
         return stepdma_pb11_get_remaining_steps();
+    case ROBOT_AXIS_Y:
+        return Stepper2_GetRemainingSteps();
     case ROBOT_AXIS_Z:
         return PU3_Stepper_GetRemainingSteps();
     default:
@@ -189,12 +199,23 @@ uint32_t RobotArmDriver_GetCompletedSteps(RobotAxisId_t axis)
     switch (axis)
     {
     case ROBOT_AXIS_X:
-        return Stepper2_GetCompletedSteps();
-    case ROBOT_AXIS_Y:
         return stepdma_pb11_get_completed_steps();
+    case ROBOT_AXIS_Y:
+        return Stepper2_GetCompletedSteps();
     case ROBOT_AXIS_Z:
         return PU3_Stepper_GetCompletedSteps();
     default:
         return 0u;
     }
+}
+
+/** 检查已启动轴是否正向负方向 Home 传感器继续施压。 */
+uint8_t RobotArmDriver_ShouldStopForNegativeLimit(RobotAxisId_t axis)
+{
+    if ((axis >= ROBOT_AXIS_COUNT) || (s_robot_arm_driver_direction[axis] >= 0))
+    {
+        return 0u;
+    }
+    return RobotArmSensor_IsTriggered((RobotArmSensorId_t)(
+        ROBOT_ARM_SENSOR_X_HOME + axis));
 }

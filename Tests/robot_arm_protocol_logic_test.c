@@ -17,7 +17,10 @@ static uint8_t s_last_axis;
 static int32_t s_last_x;
 static int32_t s_last_y;
 static int32_t s_last_z;
-static uint32_t s_last_speed;
+static uint16_t s_last_speed;
+static uint16_t s_last_x_speed;
+static uint16_t s_last_y_speed;
+static uint16_t s_last_z_speed;
 
 /** 为无 C 运行库的测试可执行文件提供最小内存复制实现。 */
 void *memcpy(void *destination, const void *source, __SIZE_TYPE__ count)
@@ -77,6 +80,10 @@ RobotArmResult_t RobotArm_HomeAxis(RobotAxisId_t axis)
     s_last_axis = (uint8_t)axis;
     return TestAccept(2u);
 }
+RobotArmResult_t RobotArm_HomeAxisWithSpeed(RobotAxisId_t axis, uint16_t speed)
+{
+    s_last_axis = (uint8_t)axis; s_last_speed = speed; return TestAccept(2u);
+}
 /** 模拟 X 轴绝对运动接口。 */
 RobotArmResult_t RobotArm_MoveX(int32_t target, uint32_t speed)
 {
@@ -109,20 +116,31 @@ RobotArmResult_t RobotArm_MoveZRelative(int32_t delta, uint32_t speed)
 }
 /** 模拟带临时速度的普通 MoveTo 接口。 */
 RobotArmResult_t RobotArm_MoveToWithSpeed(int32_t x, int32_t y, int32_t z,
-                                          uint32_t speed)
+                                          uint16_t x_speed, uint16_t y_speed,
+                                          uint16_t z_speed)
 {
-    s_last_x = x; s_last_y = y; s_last_z = z; s_last_speed = speed;
+    s_last_x = x; s_last_y = y; s_last_z = z;
+    s_last_x_speed = x_speed; s_last_y_speed = y_speed; s_last_z_speed = z_speed;
     return TestAccept(5u);
 }
 /** 保留旧 MoveTo 测试替身，确保历史调用仍走默认速度。 */
 RobotArmResult_t RobotArm_MoveTo(int32_t x, int32_t y, int32_t z)
 {
-    return RobotArm_MoveToWithSpeed(x, y, z, 0u);
+    return RobotArm_MoveToWithSpeed(x, y, z, 0u, 0u, 0u);
 }
 /** 模拟安全 MoveTo 接口。 */
 RobotArmResult_t RobotArm_MoveToSafe(int32_t x, int32_t y, int32_t z)
 {
     s_last_x = x; s_last_y = y; s_last_z = z; return TestAccept(6u);
+}
+RobotArmResult_t RobotArm_MoveToSafeWithSpeed(int32_t x, int32_t y, int32_t z,
+                                              uint16_t x_speed,
+                                              uint16_t y_speed,
+                                              uint16_t z_speed)
+{
+    s_last_x = x; s_last_y = y; s_last_z = z;
+    s_last_x_speed = x_speed; s_last_y_speed = y_speed; s_last_z_speed = z_speed;
+    return TestAccept(6u);
 }
 /** 模拟 Stop，并结束当前异步任务。 */
 void RobotArm_Stop(void)
@@ -166,14 +184,24 @@ int main(void)
     TEST_CHECK(s_tx[0].data[1] == ROBOT_ARM_ACK_REJECTED);
     TEST_CHECK(s_tx[0].data[2] == ROBOT_PROTOCOL_ERR_BAD_AXIS);
 
+    /* homeSpeed=0 不得回退 MCU 默认值，必须在启动 Home 前以 CONFIG 拒绝。 */
+    TestClearFrame(&request, ROBOT_ARM_CMD_HOME_AXIS, 3u);
+    request.data[0] = ROBOT_AXIS_X;
+    RobotArmProtocol_HandleFrame(&request);
+    TEST_CHECK(s_tx[1].cmd == ROBOT_ARM_CMD_ACK);
+    TEST_CHECK(s_tx[1].data[1] == ROBOT_ARM_ACK_REJECTED);
+    TEST_CHECK(s_tx[1].data[2] == ROBOT_ARM_ERR_CONFIG);
+
     for (axis = ROBOT_AXIS_X; axis < ROBOT_AXIS_COUNT; axis++)
     {
         TestClearFrame(&request, ROBOT_ARM_CMD_HOME_AXIS,
                        (uint16_t)(0x120u + axis));
         request.data[0] = axis;
+        ProtocolV2_WriteU16LE(&request.data[1], (uint16_t)(100u + axis));
         before = s_tx_count;
         RobotArmProtocol_HandleFrame(&request);
         TEST_CHECK(s_last_call == 2u && s_last_axis == axis);
+        TEST_CHECK(s_last_speed == (uint16_t)(100u + axis));
         TEST_CHECK(s_tx_count == (uint8_t)(before + 1u));
         TEST_CHECK(s_tx[before].cmd == ROBOT_ARM_CMD_ACK);
         TEST_CHECK(s_tx[before].seq == request.seq);
@@ -200,6 +228,29 @@ int main(void)
         TEST_CHECK(s_tx[s_tx_count - 1u].data[6] == ROBOT_ARM_EVENT_HOME_COMPLETED);
         TEST_CHECK(s_tx[s_tx_count - 1u].data[7] == ROBOT_ARM_OK);
     }
+
+    /* 单轴和三轴运动均使用 int24 + uint16，协议层不得保留旧 int32/uint32 偏移。 */
+    s_next_result = ROBOT_ARM_OK;
+    TestClearFrame(&request, ROBOT_ARM_CMD_MOVE_AXIS_REL, 0x310u);
+    request.data[0] = ROBOT_AXIS_Y;
+    request.data[1] = 0xFFu; request.data[2] = 0xFFu; request.data[3] = 0xFFu;
+    ProtocolV2_WriteU16LE(&request.data[4], 65535u);
+    RobotArmProtocol_HandleFrame(&request);
+    TEST_CHECK(s_last_call == 4u && s_last_axis == ROBOT_AXIS_Y);
+    TEST_CHECK(s_last_x == -1 && s_last_speed == 65535u);
+    TestSetAsyncResult(ROBOT_MOVE_END_COMPLETED, ROBOT_ARM_OK);
+    RobotArmProtocol_Task();
+
+    TestClearFrame(&request, ROBOT_ARM_CMD_MOVE_TO, 0x311u);
+    request.data[0] = 1u; request.data[3] = 2u; request.data[6] = 3u;
+    ProtocolV2_WriteU16LE(&request.data[9], 101u);
+    ProtocolV2_WriteU16LE(&request.data[11], 202u);
+    ProtocolV2_WriteU16LE(&request.data[13], 303u);
+    RobotArmProtocol_HandleFrame(&request);
+    TEST_CHECK(s_last_call == 5u && s_last_x == 1 && s_last_y == 2 && s_last_z == 3);
+    TEST_CHECK(s_last_x_speed == 101u && s_last_y_speed == 202u && s_last_z_speed == 303u);
+    TestSetAsyncResult(ROBOT_MOVE_END_COMPLETED, ROBOT_ARM_OK);
+    RobotArmProtocol_Task();
 
     /* 活动单轴 Home 未完成时，下一条动作必须得到 BUSY ACK，不能覆盖原 SEQ。 */
     TestClearFrame(&request, ROBOT_ARM_CMD_HOME_AXIS, 0x330u);

@@ -270,7 +270,7 @@ static void RobotArmProtocol_RetryActiveAck(void)
 
 static RobotArmResult_t RobotArmProtocol_MoveAxisAbsolute(uint8_t axis,
                                                           int32_t target,
-                                                          uint32_t speed)
+                                                          uint16_t speed)
 {
     switch (axis)
     {
@@ -283,7 +283,7 @@ static RobotArmResult_t RobotArmProtocol_MoveAxisAbsolute(uint8_t axis,
 
 static RobotArmResult_t RobotArmProtocol_MoveAxisRelative(uint8_t axis,
                                                           int32_t delta,
-                                                          uint32_t speed)
+                                                          uint16_t speed)
 {
     switch (axis)
     {
@@ -439,7 +439,7 @@ void RobotArmProtocol_HandleFrame(const ProtocolV2Frame_t *request)
     uint8_t axis = 0xFFu;
     uint8_t ack_queued;
     int32_t value;
-    uint32_t speed;
+    uint16_t speed;
 
     if (request == 0)
     {
@@ -503,7 +503,16 @@ void RobotArmProtocol_HandleFrame(const ProtocolV2Frame_t *request)
                                      ROBOT_PROTOCOL_ERR_BAD_AXIS);
             return;
         }
-        result = RobotArm_HomeAxis((RobotAxisId_t)axis);
+        speed = ProtocolV2_ReadU16LE(&request->data[1]);
+        /* homeSpeed=0 不得静默回退默认值，避免 Android 的空字段变成实际找零。 */
+        if (speed == 0u)
+        {
+            RobotArmProtocol_SendAck(request->cmd, request->seq,
+                                     ROBOT_ARM_ACK_REJECTED,
+                                     ROBOT_ARM_ERR_CONFIG);
+            return;
+        }
+        result = RobotArm_HomeAxisWithSpeed((RobotAxisId_t)axis, speed);
         break;
     case ROBOT_ARM_CMD_MOVE_AXIS_ABS:
         axis = request->data[0];
@@ -514,8 +523,15 @@ void RobotArmProtocol_HandleFrame(const ProtocolV2Frame_t *request)
                                      ROBOT_PROTOCOL_ERR_BAD_AXIS);
             return;
         }
-        value = ProtocolV2_ReadI32LE(&request->data[1]);
-        speed = ProtocolV2_ReadU32LE(&request->data[5]);
+        value = ProtocolV2_ReadI24LE(&request->data[1]);
+        speed = ProtocolV2_ReadU16LE(&request->data[4]);
+        if (speed == 0u)
+        {
+            RobotArmProtocol_SendAck(request->cmd, request->seq,
+                                     ROBOT_ARM_ACK_REJECTED,
+                                     ROBOT_ARM_ERR_CONFIG);
+            return;
+        }
         result = RobotArmProtocol_MoveAxisAbsolute(axis, value, speed);
         break;
     case ROBOT_ARM_CMD_MOVE_AXIS_REL:
@@ -527,22 +543,54 @@ void RobotArmProtocol_HandleFrame(const ProtocolV2Frame_t *request)
                                      ROBOT_PROTOCOL_ERR_BAD_AXIS);
             return;
         }
-        value = ProtocolV2_ReadI32LE(&request->data[1]);
-        speed = ProtocolV2_ReadU32LE(&request->data[5]);
+        value = ProtocolV2_ReadI24LE(&request->data[1]);
+        speed = ProtocolV2_ReadU16LE(&request->data[4]);
+        if (speed == 0u)
+        {
+            RobotArmProtocol_SendAck(request->cmd, request->seq,
+                                     ROBOT_ARM_ACK_REJECTED,
+                                     ROBOT_ARM_ERR_CONFIG);
+            return;
+        }
         result = RobotArmProtocol_MoveAxisRelative(axis, value, speed);
         break;
     case ROBOT_ARM_CMD_MOVE_TO:
-        /* DATA[12..13] 只作用于本次 0x34；DATA[14..15] 必须保持保留值 0。 */
+        /* int24 仅压缩线格式，执行层仍用 int32_t；三个 uint16 速度逐轴传到 DMA。 */
+        if ((ProtocolV2_ReadU16LE(&request->data[9]) == 0u) ||
+            (ProtocolV2_ReadU16LE(&request->data[11]) == 0u) ||
+            (ProtocolV2_ReadU16LE(&request->data[13]) == 0u))
+        {
+            RobotArmProtocol_SendAck(request->cmd, request->seq,
+                                     ROBOT_ARM_ACK_REJECTED,
+                                     ROBOT_ARM_ERR_CONFIG);
+            return;
+        }
         result = RobotArm_MoveToWithSpeed(
-            ProtocolV2_ReadI32LE(&request->data[0]),
-            ProtocolV2_ReadI32LE(&request->data[4]),
-            ProtocolV2_ReadI32LE(&request->data[8]),
-            ProtocolV2_ReadU16LE(&request->data[12]));
+            ProtocolV2_ReadI24LE(&request->data[0]),
+            ProtocolV2_ReadI24LE(&request->data[3]),
+            ProtocolV2_ReadI24LE(&request->data[6]),
+            ProtocolV2_ReadU16LE(&request->data[9]),
+            ProtocolV2_ReadU16LE(&request->data[11]),
+            ProtocolV2_ReadU16LE(&request->data[13]));
         break;
     case ROBOT_ARM_CMD_MOVE_TO_SAFE:
-        result = RobotArm_MoveToSafe(ProtocolV2_ReadI32LE(&request->data[0]),
-                                     ProtocolV2_ReadI32LE(&request->data[4]),
-                                     ProtocolV2_ReadI32LE(&request->data[8]));
+        /* 0x35 已有安全路径时使用与 0x34 相同的压缩布局和三轴速度。 */
+        if ((ProtocolV2_ReadU16LE(&request->data[9]) == 0u) ||
+            (ProtocolV2_ReadU16LE(&request->data[11]) == 0u) ||
+            (ProtocolV2_ReadU16LE(&request->data[13]) == 0u))
+        {
+            RobotArmProtocol_SendAck(request->cmd, request->seq,
+                                     ROBOT_ARM_ACK_REJECTED,
+                                     ROBOT_ARM_ERR_CONFIG);
+            return;
+        }
+        result = RobotArm_MoveToSafeWithSpeed(
+            ProtocolV2_ReadI24LE(&request->data[0]),
+            ProtocolV2_ReadI24LE(&request->data[3]),
+            ProtocolV2_ReadI24LE(&request->data[6]),
+            ProtocolV2_ReadU16LE(&request->data[9]),
+            ProtocolV2_ReadU16LE(&request->data[11]),
+            ProtocolV2_ReadU16LE(&request->data[13]));
         break;
     default:
         RobotArmProtocol_SendAck(request->cmd, request->seq,

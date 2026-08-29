@@ -22,5 +22,15 @@ uint8_t RobotArmDriver_IsBusy(RobotAxisId_t axis);
 uint32_t RobotArmDriver_GetRemainingSteps(RobotAxisId_t axis);
 /** 获取指定轴已经完成的整段步数。 */
 uint32_t RobotArmDriver_GetCompletedSteps(RobotAxisId_t axis);
+/**
+ * 查询指定轴是否正在朝已触发的负方向 Home 限位运动。
+ *
+ * S1/S2/S3 触发后只禁止继续压向对应负限位，正方向必须继续允许脱离传感器。
+ * DMA 分段续传中调用此函数可阻止触发后装载下一段脉冲。
+ *
+ * @param axis 要检查的实际机械轴。
+ * @return 1 表示必须立即停止该轴，0 表示可继续当前方向。
+ */
+uint8_t RobotArmDriver_ShouldStopForNegativeLimit(RobotAxisId_t axis);
 
 #endif

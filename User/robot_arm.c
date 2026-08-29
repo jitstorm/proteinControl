@@ -37,15 +37,67 @@ typedef struct
     uint8_t home_all_active;
     uint32_t home_start_ms;
     int32_t move_to_target[ROBOT_AXIS_COUNT];
-    uint32_t move_to_speed;
+    uint16_t move_to_speed[ROBOT_AXIS_COUNT];
+    /* 0 表示 HomeAll 使用 MCU 已标定快速速度；非零仅由 0x31 单轴 Home 设置。 */
+    uint16_t home_fast_speed;
     RobotMoveAxisProgress_t move_axis_progress[ROBOT_AXIS_COUNT];
     int32_t safe_move_target[ROBOT_AXIS_COUNT];
+    uint16_t safe_move_speed[ROBOT_AXIS_COUNT];
     RobotMoveEndReason_t last_move_end_reason;
     int32_t error_code;
 } RobotArm_t;
 
 static RobotArm_t s_robot_arm;
 static RobotArmMoveDebug_t s_move_debug;
+
+/* RAM Watch：以下变量仅用于现场观察，不参与串口协议和运动决策。 */
+volatile uint8_t dbg_robotarm_sensor_flags;
+volatile uint8_t dbg_x_home_sensor_active;
+volatile uint8_t dbg_y_home_sensor_active;
+volatile uint8_t dbg_z_home_sensor_active;
+volatile int8_t dbg_x_direction;
+volatile int8_t dbg_y_direction;
+volatile int8_t dbg_z_direction;
+volatile RobotHomeState_t dbg_x_home_stage;
+volatile RobotHomeState_t dbg_y_home_stage;
+volatile RobotHomeState_t dbg_z_home_stage;
+volatile uint32_t dbg_x_limit_stop_count;
+volatile uint32_t dbg_y_limit_stop_count;
+volatile uint32_t dbg_z_limit_stop_count;
+volatile RobotMoveEndReason_t dbg_x_last_stop_reason;
+volatile RobotMoveEndReason_t dbg_y_last_stop_reason;
+volatile RobotMoveEndReason_t dbg_z_last_stop_reason;
+
+/**
+ * 刷新现场 RAM Watch，便于在不增加高频串口输出的前提下核对三轴限位链路。
+ *
+ * 变量只镜像当前完整 HC165 快照和 RobotArm 状态；不能作为控制输入，避免调试
+ * 变量与正式安全决策形成第二套传感器路径。
+ */
+static void RobotArm_UpdateDebugWatch(void)
+{
+    uint8_t sensor_flags;
+
+    dbg_x_home_sensor_active = RobotArmSensor_IsTriggered(ROBOT_ARM_SENSOR_X_HOME);
+    dbg_y_home_sensor_active = RobotArmSensor_IsTriggered(ROBOT_ARM_SENSOR_Y_HOME);
+    dbg_z_home_sensor_active = RobotArmSensor_IsTriggered(ROBOT_ARM_SENSOR_Z_HOME);
+    sensor_flags = (uint8_t)(dbg_x_home_sensor_active |
+                             (dbg_y_home_sensor_active << 1) |
+                             (dbg_z_home_sensor_active << 2));
+    dbg_robotarm_sensor_flags = sensor_flags;
+    dbg_x_direction = s_robot_arm.axis[ROBOT_AXIS_X].moving_direction;
+    dbg_y_direction = s_robot_arm.axis[ROBOT_AXIS_Y].moving_direction;
+    dbg_z_direction = s_robot_arm.axis[ROBOT_AXIS_Z].moving_direction;
+    dbg_x_home_stage = (s_robot_arm.home_axis == ROBOT_AXIS_X &&
+                        s_robot_arm.state == ROBOT_ARM_HOMING) ?
+                           s_robot_arm.home_state : ROBOT_HOME_IDLE;
+    dbg_y_home_stage = (s_robot_arm.home_axis == ROBOT_AXIS_Y &&
+                        s_robot_arm.state == ROBOT_ARM_HOMING) ?
+                           s_robot_arm.home_state : ROBOT_HOME_IDLE;
+    dbg_z_home_stage = (s_robot_arm.home_axis == ROBOT_AXIS_Z &&
+                        s_robot_arm.state == ROBOT_ARM_HOMING) ?
+                           s_robot_arm.home_state : ROBOT_HOME_IDLE;
+}
 
 static void RobotArm_ResetMoveDebug(void)
 {
@@ -77,15 +129,6 @@ static RobotAxis_t *RobotArm_GetAxis(RobotAxisId_t axis)
 static RobotArmSensorId_t RobotArm_GetHomeSensor(RobotAxisId_t axis)
 {
     return (RobotArmSensorId_t)(ROBOT_ARM_SENSOR_X_HOME + axis);
-}
-
-static uint8_t RobotArm_IsAxisLimitEnabled(RobotAxisId_t axis)
-{
-    static const uint8_t enabled[ROBOT_AXIS_COUNT] = {
-        ROBOT_ARM_X_LIMIT_ENABLED,
-        ROBOT_ARM_Y_LIMIT_ENABLED,
-        ROBOT_ARM_Z_LIMIT_ENABLED};
-    return enabled[axis];
 }
 
 static uint8_t RobotArm_IsHomeEnabled(RobotAxisId_t axis)
@@ -122,6 +165,21 @@ static uint32_t RobotArm_GetHomeTimeout(RobotAxisId_t axis)
         ROBOT_ARM_Y_HOME_TIMEOUT_MS,
         ROBOT_ARM_Z_HOME_TIMEOUT_MS};
     return timeout[axis];
+}
+
+/**
+ * 返回 HomeAll 对应轴的 MCU 标定快速寻零速度。
+ *
+ * @param axis 当前正在置零的 X、Y 或 Z 机械轴。
+ * @return 对应轴的快速寻零速度，单位为 steps/s；未配置时返回 0。
+ */
+static uint32_t RobotArm_GetConfiguredHomeFastSpeed(RobotAxisId_t axis)
+{
+    static const uint32_t speed[ROBOT_AXIS_COUNT] = {
+        ROBOT_ARM_HOME_FAST_SPEED_X,
+        ROBOT_ARM_HOME_FAST_SPEED_Y,
+        ROBOT_ARM_HOME_FAST_SPEED_Z};
+    return (axis < ROBOT_AXIS_COUNT) ? speed[axis] : 0u;
 }
 
 static int32_t RobotArm_GetHomeOffset(RobotAxisId_t axis)
@@ -250,9 +308,8 @@ static RobotArmResult_t RobotArm_CheckAxisTarget(RobotAxisId_t axis,
     {
         return ROBOT_ARM_ERR_DRIVER;
     }
-    if (RobotArm_IsAxisLimitEnabled(axis) &&
-        ((target < robot_axis->min_position) ||
-         (target > robot_axis->max_position)))
+    if ((target < robot_axis->min_position) ||
+        (target > robot_axis->max_position))
     {
         return ROBOT_ARM_ERR_LIMIT;
     }
@@ -292,7 +349,7 @@ static RobotArmResult_t RobotArm_StartAxisMoveInternal(RobotAxisId_t axis,
     int64_t delta;
     uint32_t steps;
     int8_t direction;
-    RobotArmResult_t result;
+    RobotArmResult_t result = ROBOT_ARM_OK;
     uint8_t driver_result;
     uint8_t busy_before;
     uint8_t busy_after;
@@ -479,14 +536,25 @@ static RobotArmResult_t RobotArm_StartSingleRelative(RobotAxisId_t axis,
     return result;
 }
 
-static RobotArmResult_t RobotArm_ValidateHomeConfig(RobotAxisId_t axis)
+/**
+ * 校验单阶段 Home 实际会使用的轴配置和快速寻零速度。
+ *
+ * 当前 Home 只会在对应传感器未触发时，以本次生效的快速速度向 Home 方向寻找零点。
+ * 因此必须保留轴启用、最大寻零步数和超时保护；已禁用的反向脱离、慢速复找及其
+ * 配置不得作为受理条件。0x31 传入的速度优先于 HomeAll 的轴默认快速速度。
+ *
+ * @param axis 需要执行 Home 的实际机械轴。
+ * @param fast_speed 本次快速寻零实际会传给底层驱动的速度，单位为 steps/s。
+ * @return 实际配置完整且速度在协议可表示范围内时返回 ROBOT_ARM_OK，否则返回
+ *         ROBOT_ARM_ERR_CONFIG。
+ */
+static RobotArmResult_t RobotArm_ValidateHomeConfig(RobotAxisId_t axis,
+                                                     uint32_t fast_speed)
 {
     if (!RobotArm_IsHomeEnabled(axis) ||
         (RobotArm_GetHomeMaxSteps(axis) == 0u) ||
         (RobotArm_GetHomeTimeout(axis) == 0u) ||
-        (ROBOT_ARM_HOME_FAST_SPEED == 0u) ||
-        (ROBOT_ARM_HOME_SLOW_SPEED == 0u) ||
-        (ROBOT_ARM_HOME_BACKOFF_STEPS == 0u))
+        (fast_speed == 0u) || (fast_speed > UINT16_MAX))
     {
         return ROBOT_ARM_ERR_CONFIG;
     }
@@ -508,6 +576,13 @@ static RobotArmResult_t RobotArm_StartHomeDriver(RobotAxisId_t axis,
     robot_axis->command_steps = steps;
     robot_axis->end_reason = ROBOT_MOVE_END_NONE;
     return ROBOT_ARM_OK;
+}
+
+/** 返回当前 Home 唯一快速寻零阶段实际使用的速度。 */
+static uint32_t RobotArm_GetActiveHomeFastSpeed(RobotAxisId_t axis)
+{
+    return (s_robot_arm.home_fast_speed != 0u) ?
+               s_robot_arm.home_fast_speed : RobotArm_GetConfiguredHomeFastSpeed(axis);
 }
 
 static void RobotArm_FailHome(RobotArmResult_t error,
@@ -534,10 +609,21 @@ static void RobotArm_FailHome(RobotArmResult_t error,
     s_robot_arm.home_all_active = 0u;
 }
 
+/**
+ * 将指定轴切换到 Home 状态机的传感器检查阶段。
+ *
+ * 此处只受理任务，不输出 STEP 脉冲；下一次 RobotArm_Task() 根据 S1/S2/S3 的真实
+ * 状态决定直接置零或启动快速寻零。开始前主动清除旧坐标有效性，避免重新 Home 期间
+ * 的旧坐标被后续普通运动错误使用。
+ *
+ * @param axis 需要重新建立零点的实际机械轴。
+ * @return 配置和传感器就绪时返回 ROBOT_ARM_OK；否则返回对应错误且不改变为运行态。
+ */
 static RobotArmResult_t RobotArm_BeginHomeAxis(RobotAxisId_t axis)
 {
     RobotAxis_t *robot_axis = RobotArm_GetAxis(axis);
-    RobotArmResult_t result = RobotArm_ValidateHomeConfig(axis);
+    RobotArmResult_t result = RobotArm_ValidateHomeConfig(
+        axis, RobotArm_GetActiveHomeFastSpeed(axis));
     if (result != ROBOT_ARM_OK)
     {
         return result;
@@ -608,7 +694,7 @@ static void RobotArm_TaskHome(void)
     RobotAxis_t *robot_axis = RobotArm_GetAxis(s_robot_arm.home_axis);
     RobotArmSensorId_t sensor = RobotArm_GetHomeSensor(s_robot_arm.home_axis);
     int8_t home_direction = RobotArm_GetHomeDirection(s_robot_arm.home_axis);
-    RobotArmResult_t result;
+    RobotArmResult_t result = ROBOT_ARM_OK;
 
     if ((uint32_t)(millis() - s_robot_arm.home_start_ms) >=
         RobotArm_GetHomeTimeout(s_robot_arm.home_axis))
@@ -619,98 +705,31 @@ static void RobotArm_TaskHome(void)
     switch (s_robot_arm.home_state)
     {
     case ROBOT_HOME_CHECK_SENSOR:
+        /*
+         * 当前版本 Home 仅执行一次快速寻零。当对应 Home 传感器检测为 Active 时
+         * 立即停止并置零；反向脱离和二次慢速寻零暂时禁用。传感器 Active 只禁止
+         * 继续向负方向运动，不禁止后续正常正方向离开检测区域。
+         */
         if (RobotArmSensor_IsTriggered(sensor))
         {
-            result = RobotArm_StartHomeDriver(s_robot_arm.home_axis,
-                                              (int8_t)-home_direction,
-                                              ROBOT_ARM_HOME_BACKOFF_STEPS,
-                                              ROBOT_ARM_HOME_FAST_SPEED);
-            s_robot_arm.home_state = ROBOT_HOME_BACKOFF_IF_ACTIVE;
+            RobotArm_CompleteHomeAxis();
         }
         else
         {
             result = RobotArm_StartHomeDriver(s_robot_arm.home_axis,
                                               home_direction,
                                               RobotArm_GetHomeMaxSteps(s_robot_arm.home_axis),
-                                              ROBOT_ARM_HOME_FAST_SPEED);
+                                              RobotArm_GetActiveHomeFastSpeed(
+                                                  s_robot_arm.home_axis));
             s_robot_arm.home_state = ROBOT_HOME_SEEK_FAST;
         }
-        if (result != ROBOT_ARM_OK)
+        if (!RobotArmSensor_IsTriggered(sensor) && (result != ROBOT_ARM_OK))
         {
             RobotArm_FailHome(result, ROBOT_MOVE_END_DRIVER_ERROR);
         }
         break;
 
-    case ROBOT_HOME_BACKOFF_IF_ACTIVE:
-        if (!RobotArmSensor_IsTriggered(sensor))
-        {
-            RobotArmDriver_Stop(s_robot_arm.home_axis);
-            robot_axis->active = 0u;
-            result = RobotArm_StartHomeDriver(s_robot_arm.home_axis,
-                                              home_direction,
-                                              RobotArm_GetHomeMaxSteps(s_robot_arm.home_axis),
-                                              ROBOT_ARM_HOME_FAST_SPEED);
-            s_robot_arm.home_state = ROBOT_HOME_SEEK_FAST;
-            if (result != ROBOT_ARM_OK)
-            {
-                RobotArm_FailHome(result, ROBOT_MOVE_END_DRIVER_ERROR);
-            }
-        }
-        else if (!RobotArmDriver_IsBusy(s_robot_arm.home_axis))
-        {
-            RobotArm_FailHome(ROBOT_ARM_ERR_SENSOR, ROBOT_MOVE_END_SENSOR);
-        }
-        break;
-
     case ROBOT_HOME_SEEK_FAST:
-        if (RobotArmSensor_IsTriggered(sensor))
-        {
-            RobotArmDriver_Stop(s_robot_arm.home_axis);
-            robot_axis->active = 0u;
-            result = RobotArm_StartHomeDriver(s_robot_arm.home_axis,
-                                              (int8_t)-home_direction,
-                                              ROBOT_ARM_HOME_BACKOFF_STEPS,
-                                              ROBOT_ARM_HOME_FAST_SPEED);
-            s_robot_arm.home_state = ROBOT_HOME_BACKOFF_AFTER_TRIGGER;
-            if (result != ROBOT_ARM_OK)
-            {
-                RobotArm_FailHome(result, ROBOT_MOVE_END_DRIVER_ERROR);
-            }
-        }
-        else if (!RobotArmDriver_IsBusy(s_robot_arm.home_axis))
-        {
-            RobotArm_FailHome(ROBOT_ARM_ERR_HOME_TIMEOUT, ROBOT_MOVE_END_TIMEOUT);
-        }
-        break;
-
-    case ROBOT_HOME_BACKOFF_AFTER_TRIGGER:
-        if (!RobotArmDriver_IsBusy(s_robot_arm.home_axis))
-        {
-            robot_axis->active = 0u;
-            if (RobotArmDriver_GetRemainingSteps(s_robot_arm.home_axis) != 0u)
-            {
-                RobotArm_FailHome(ROBOT_ARM_ERR_DRIVER,
-                                  ROBOT_MOVE_END_DRIVER_ERROR);
-                return;
-            }
-            if (RobotArmSensor_IsTriggered(sensor))
-            {
-                RobotArm_FailHome(ROBOT_ARM_ERR_SENSOR, ROBOT_MOVE_END_SENSOR);
-                return;
-            }
-            result = RobotArm_StartHomeDriver(s_robot_arm.home_axis,
-                                              home_direction,
-                                              RobotArm_GetHomeMaxSteps(s_robot_arm.home_axis),
-                                              ROBOT_ARM_HOME_SLOW_SPEED);
-            s_robot_arm.home_state = ROBOT_HOME_SEEK_SLOW;
-            if (result != ROBOT_ARM_OK)
-            {
-                RobotArm_FailHome(result, ROBOT_MOVE_END_DRIVER_ERROR);
-            }
-        }
-        break;
-
-    case ROBOT_HOME_SEEK_SLOW:
         if (RobotArmSensor_IsTriggered(sensor))
         {
             RobotArmDriver_Stop(s_robot_arm.home_axis);
@@ -834,7 +853,7 @@ static void RobotArm_TaskMoveTo(void)
         }
         result = RobotArm_StartAxisMoveInternal(
             ROBOT_AXIS_X, s_robot_arm.move_to_target[ROBOT_AXIS_X],
-            s_robot_arm.move_to_speed);
+            s_robot_arm.move_to_speed[ROBOT_AXIS_X]);
         if (result != ROBOT_ARM_OK)
         {
             RobotArm_FailCombinedMoveStart(ROBOT_AXIS_X, result, 0u);
@@ -873,7 +892,7 @@ static void RobotArm_TaskMoveTo(void)
         }
         result = RobotArm_StartAxisMoveInternal(
             ROBOT_AXIS_Y, s_robot_arm.move_to_target[ROBOT_AXIS_Y],
-            s_robot_arm.move_to_speed);
+            s_robot_arm.move_to_speed[ROBOT_AXIS_Y]);
         if (result != ROBOT_ARM_OK)
         {
             RobotArm_FailCombinedMoveStart(ROBOT_AXIS_Y, result, 0u);
@@ -913,7 +932,7 @@ static void RobotArm_TaskMoveTo(void)
         }
         result = RobotArm_StartAxisMoveInternal(
             ROBOT_AXIS_Z, s_robot_arm.move_to_target[ROBOT_AXIS_Z],
-            s_robot_arm.move_to_speed);
+            s_robot_arm.move_to_speed[ROBOT_AXIS_Z]);
         if (result != ROBOT_ARM_OK)
         {
             RobotArm_FailCombinedMoveStart(ROBOT_AXIS_Z, result, 0u);
@@ -1003,7 +1022,8 @@ static void RobotArm_TaskSafeMove(void)
             break;
         }
         result = RobotArm_StartAxisMoveInternal(
-            ROBOT_AXIS_Z, ROBOT_ARM_SAFE_Z_POSITION, 0u);
+            ROBOT_AXIS_Z, ROBOT_ARM_SAFE_Z_POSITION,
+            s_robot_arm.safe_move_speed[ROBOT_AXIS_Z]);
         if (result != ROBOT_ARM_OK)
         {
             RobotArm_FailCombinedMoveStart(ROBOT_AXIS_Z, result, 1u);
@@ -1033,7 +1053,8 @@ static void RobotArm_TaskSafeMove(void)
         if (result == ROBOT_ARM_OK)
         {
             result = RobotArm_StartAxisMoveInternal(
-                ROBOT_AXIS_X, s_robot_arm.safe_move_target[ROBOT_AXIS_X], 0u);
+                ROBOT_AXIS_X, s_robot_arm.safe_move_target[ROBOT_AXIS_X],
+                s_robot_arm.safe_move_speed[ROBOT_AXIS_X]);
         }
         if (result != ROBOT_ARM_OK)
         {
@@ -1064,7 +1085,8 @@ static void RobotArm_TaskSafeMove(void)
         if (result == ROBOT_ARM_OK)
         {
             result = RobotArm_StartAxisMoveInternal(
-                ROBOT_AXIS_Y, s_robot_arm.safe_move_target[ROBOT_AXIS_Y], 0u);
+                ROBOT_AXIS_Y, s_robot_arm.safe_move_target[ROBOT_AXIS_Y],
+                s_robot_arm.safe_move_speed[ROBOT_AXIS_Y]);
         }
         if (result != ROBOT_ARM_OK)
         {
@@ -1095,7 +1117,8 @@ static void RobotArm_TaskSafeMove(void)
         if (result == ROBOT_ARM_OK)
         {
             result = RobotArm_StartAxisMoveInternal(
-                ROBOT_AXIS_Z, s_robot_arm.safe_move_target[ROBOT_AXIS_Z], 0u);
+                ROBOT_AXIS_Z, s_robot_arm.safe_move_target[ROBOT_AXIS_Z],
+                s_robot_arm.safe_move_speed[ROBOT_AXIS_Z]);
         }
         if (result != ROBOT_ARM_OK)
         {
@@ -1258,7 +1281,8 @@ RobotArmResult_t RobotArm_MoveZ(int32_t target, uint32_t speed)
  * @return 命令被接受时返回 ROBOT_ARM_OK；坐标、传感器、安全检查或驱动前置条件失败时返回对应错误。
  */
 RobotArmResult_t RobotArm_MoveToWithSpeed(int32_t x, int32_t y, int32_t z,
-                                          uint32_t speed)
+                                          uint16_t x_speed, uint16_t y_speed,
+                                          uint16_t z_speed)
 {
     RobotArmResult_t result;
     uint8_t index;
@@ -1297,8 +1321,10 @@ RobotArmResult_t RobotArm_MoveToWithSpeed(int32_t x, int32_t y, int32_t z,
     targets[ROBOT_AXIS_X] = x;
     targets[ROBOT_AXIS_Y] = y;
     targets[ROBOT_AXIS_Z] = z;
-    /* 本字段仅属于本次状态机；下一条 MOVE_TO 必须由其自己的 DATA[12..13] 决定。 */
-    s_robot_arm.move_to_speed = speed;
+    /* 三轴速度必须逐轴保留到实际启动 DMA 的时刻，不能重新合并为公共速度。 */
+    s_robot_arm.move_to_speed[ROBOT_AXIS_X] = x_speed;
+    s_robot_arm.move_to_speed[ROBOT_AXIS_Y] = y_speed;
+    s_robot_arm.move_to_speed[ROBOT_AXIS_Z] = z_speed;
     RobotArm_ResetMoveDebug();
     for (index = 0u; index < ROBOT_AXIS_COUNT; index++)
     {
@@ -1345,11 +1371,25 @@ RobotArmResult_t RobotArm_MoveToWithSpeed(int32_t x, int32_t y, int32_t z,
  */
 RobotArmResult_t RobotArm_MoveTo(int32_t x, int32_t y, int32_t z)
 {
-    return RobotArm_MoveToWithSpeed(x, y, z, 0u);
+    return RobotArm_MoveToWithSpeed(x, y, z, 0u, 0u, 0u);
 }
 
 /** 按“必要时抬高 Z、移动 X/Y、最后移动 Z”的安全路径接受绝对位置任务。 */
-RobotArmResult_t RobotArm_MoveToSafe(int32_t x, int32_t y, int32_t z)
+/**
+ * 以逐轴速度受理既有 Safe Move 状态机，不改变其抬 Z、X/Y、最终 Z 的动作顺序。
+ *
+ * @param x X 轴目标绝对坐标，单位为步数。
+ * @param y Y 轴目标绝对坐标，单位为步数。
+ * @param z Z 轴目标绝对坐标，单位为步数。
+ * @param x_speed X 轴实际 DMA 目标速度，单位为 steps/s。
+ * @param y_speed Y 轴实际 DMA 目标速度，单位为 steps/s。
+ * @param z_speed Z 轴实际 DMA 目标速度，单位为 steps/s。
+ * @return 命令受理时返回 ROBOT_ARM_OK；安全配置、行程或传感器检查失败时返回错误。
+ */
+RobotArmResult_t RobotArm_MoveToSafeWithSpeed(int32_t x, int32_t y, int32_t z,
+                                              uint16_t x_speed,
+                                              uint16_t y_speed,
+                                              uint16_t z_speed)
 {
     RobotArmResult_t result;
     if (s_robot_arm.state == ROBOT_ARM_ERROR)
@@ -1389,6 +1429,9 @@ RobotArmResult_t RobotArm_MoveToSafe(int32_t x, int32_t y, int32_t z)
     s_robot_arm.safe_move_target[ROBOT_AXIS_X] = x;
     s_robot_arm.safe_move_target[ROBOT_AXIS_Y] = y;
     s_robot_arm.safe_move_target[ROBOT_AXIS_Z] = z;
+    s_robot_arm.safe_move_speed[ROBOT_AXIS_X] = x_speed;
+    s_robot_arm.safe_move_speed[ROBOT_AXIS_Y] = y_speed;
+    s_robot_arm.safe_move_speed[ROBOT_AXIS_Z] = z_speed;
     s_robot_arm.axis[ROBOT_AXIS_X].target_position = x;
     s_robot_arm.axis[ROBOT_AXIS_Y].target_position = y;
     s_robot_arm.axis[ROBOT_AXIS_Z].target_position = z;
@@ -1400,12 +1443,18 @@ RobotArmResult_t RobotArm_MoveToSafe(int32_t x, int32_t y, int32_t z)
     return ROBOT_ARM_OK;
 }
 
+/** 按各轴既有默认速度启动 Safe Move，保留非协议调用的兼容行为。 */
+RobotArmResult_t RobotArm_MoveToSafe(int32_t x, int32_t y, int32_t z)
+{
+    return RobotArm_MoveToSafeWithSpeed(x, y, z, 0u, 0u, 0u);
+}
+
 /**
  * 启动指定轴的非阻塞双阶段 Home。
  *
  * 单轴 Home 复用既有 Home 状态机，并显式关闭 HomeAll 串行标志，避免当前轴
- * 完成后自动切换到其他机械轴。ACK/调用成功只表示状态机已受理；实际零点建立
- * 仍需由传感器触发、退让和慢速复找全部完成后确认。
+ * 完成后自动切换到其他机械轴。ACK/调用成功只表示状态机已受理；当前版本只在
+ * 传感器初始 Active 或快速寻零命中 Active 后确认零点，不执行退让和慢速复找。
  *
  * @param axis 需要置零的实际机械轴，只允许 X、Y 或 Z。
  * @return 已受理时返回 ROBOT_ARM_OK；ERROR、忙碌、Home 配置或传感器不可用时
@@ -1428,11 +1477,54 @@ RobotArmResult_t RobotArm_HomeAxis(RobotAxisId_t axis)
     }
     /* 单轴请求绝不能继承旧 HomeAll 的串行状态，完成当前轴后必须直接收尾。 */
     s_robot_arm.home_all_active = 0u;
+    s_robot_arm.home_fast_speed = 0u;
     result = RobotArm_BeginHomeAxis(axis);
     if (result == ROBOT_ARM_OK)
     {
         s_robot_arm.operation = (RobotArmOperation_t)(ROBOT_OP_HOME_X + axis);
         s_robot_arm.error_code = 0;
+    }
+    return result;
+}
+
+/**
+ * 以协议指定的快速速度启动单轴 Home，仅执行一次快速寻零。
+ *
+ * @param axis 需要置零的实际机械轴。
+ * @param home_speed 第一次快速寻找 Home 传感器的速度，单位为 steps/s。
+ * @return 已受理返回 ROBOT_ARM_OK；失败时返回当前配置、传感器或状态错误。
+ */
+RobotArmResult_t RobotArm_HomeAxisWithSpeed(RobotAxisId_t axis,
+                                            uint16_t home_speed)
+{
+    RobotArmResult_t result;
+    if (home_speed == 0u)
+    {
+        return ROBOT_ARM_ERR_CONFIG;
+    }
+    if (axis >= ROBOT_AXIS_COUNT)
+    {
+        return ROBOT_ARM_ERR_DRIVER;
+    }
+    if (s_robot_arm.state == ROBOT_ARM_ERROR)
+    {
+        return (RobotArmResult_t)s_robot_arm.error_code;
+    }
+    if (RobotArm_IsBusy())
+    {
+        return ROBOT_ARM_ERR_BUSY;
+    }
+    s_robot_arm.home_all_active = 0u;
+    s_robot_arm.home_fast_speed = home_speed;
+    result = RobotArm_BeginHomeAxis(axis);
+    if (result == ROBOT_ARM_OK)
+    {
+        s_robot_arm.operation = (RobotArmOperation_t)(ROBOT_OP_HOME_X + axis);
+        s_robot_arm.error_code = 0;
+    }
+    else
+    {
+        s_robot_arm.home_fast_speed = 0u;
     }
     return result;
 }
@@ -1449,9 +1541,19 @@ RobotArmResult_t RobotArm_Home(void)
     {
         return ROBOT_ARM_ERR_BUSY;
     }
-    result = RobotArm_ValidateHomeConfig(ROBOT_AXIS_Z);
-    if (result == ROBOT_ARM_OK) result = RobotArm_ValidateHomeConfig(ROBOT_AXIS_Y);
-    if (result == ROBOT_ARM_OK) result = RobotArm_ValidateHomeConfig(ROBOT_AXIS_X);
+    /* HomeAll 不带临时速度字段，三轴各自使用已标定的默认快速寻零速度。 */
+    result = RobotArm_ValidateHomeConfig(
+        ROBOT_AXIS_Z, RobotArm_GetConfiguredHomeFastSpeed(ROBOT_AXIS_Z));
+    if (result == ROBOT_ARM_OK)
+    {
+        result = RobotArm_ValidateHomeConfig(
+            ROBOT_AXIS_Y, RobotArm_GetConfiguredHomeFastSpeed(ROBOT_AXIS_Y));
+    }
+    if (result == ROBOT_ARM_OK)
+    {
+        result = RobotArm_ValidateHomeConfig(
+            ROBOT_AXIS_X, RobotArm_GetConfiguredHomeFastSpeed(ROBOT_AXIS_X));
+    }
     if (result != ROBOT_ARM_OK)
     {
         return result;
@@ -1461,6 +1563,8 @@ RobotArmResult_t RobotArm_Home(void)
         return ROBOT_ARM_ERR_SENSOR;
     }
     s_robot_arm.home_all_active = 1u;
+    /* HomeAll 的快速/脱离速度保持各轴 MCU 配置，不能继承 0x31 的临时字段。 */
+    s_robot_arm.home_fast_speed = 0u;
     result = RobotArm_BeginHomeAxis(ROBOT_AXIS_Z);
     if (result == ROBOT_ARM_OK)
     {
@@ -1517,6 +1621,47 @@ void RobotArm_Stop(void)
     s_robot_arm.state = ROBOT_ARM_IDLE;
     RobotArm_ResetCombinedStates();
     s_move_debug.finalize_reason = ROBOT_MOVE_FINALIZE_STOPPED;
+}
+
+/**
+ * 在完整 HC165 快照更新后立即拦截正在压 S1/S2/S3 的负向运动。
+ *
+ * 传感器触发后允许正方向继续脱离；仅当当前逻辑方向为负时停止对应 DMA。普通
+ * 运动会将当前坐标标记为未知；Home 快速寻零命中则由 Home 状态机确认零点。
+ */
+void RobotArm_OnSensorSnapshotUpdated(void)
+{
+    uint8_t index;
+    RobotArm_UpdateDebugWatch();
+    for (index = 0u; index < ROBOT_AXIS_COUNT; index++)
+    {
+        if (RobotArmDriver_ShouldStopForNegativeLimit((RobotAxisId_t)index))
+        {
+            /* Home 快速寻零命中 S1/S2/S3 是成功条件，不得按普通越限置 ERROR；
+             * 这里只做最快 DMA 停机，随后 Home 状态机在同一 Active 快照中置零。 */
+            if (((s_robot_arm.operation == ROBOT_OP_HOME_X) ||
+                 (s_robot_arm.operation == ROBOT_OP_HOME_Y) ||
+                 (s_robot_arm.operation == ROBOT_OP_HOME_Z) ||
+                 (s_robot_arm.operation == ROBOT_OP_HOME_ALL)) &&
+                (s_robot_arm.home_axis == (RobotAxisId_t)index) &&
+                (s_robot_arm.home_state == ROBOT_HOME_SEEK_FAST))
+            {
+                RobotArmDriver_Stop((RobotAxisId_t)index);
+                s_robot_arm.axis[index].active = 0u;
+                if (index == ROBOT_AXIS_X) dbg_x_last_stop_reason = ROBOT_MOVE_END_SENSOR;
+                if (index == ROBOT_AXIS_Y) dbg_y_last_stop_reason = ROBOT_MOVE_END_SENSOR;
+                if (index == ROBOT_AXIS_Z) dbg_z_last_stop_reason = ROBOT_MOVE_END_SENSOR;
+                RobotArm_UpdateDebugWatch();
+                return;
+            }
+            if (index == ROBOT_AXIS_X) { dbg_x_limit_stop_count++; dbg_x_last_stop_reason = ROBOT_MOVE_END_LIMIT; }
+            if (index == ROBOT_AXIS_Y) { dbg_y_limit_stop_count++; dbg_y_last_stop_reason = ROBOT_MOVE_END_LIMIT; }
+            if (index == ROBOT_AXIS_Z) { dbg_z_limit_stop_count++; dbg_z_last_stop_reason = ROBOT_MOVE_END_LIMIT; }
+            RobotArm_FailAxisMove((RobotAxisId_t)index, ROBOT_MOVE_END_LIMIT);
+            RobotArm_UpdateDebugWatch();
+            return;
+        }
+    }
 }
 
 /** 清除管理层 ERROR；不会恢复坐标有效性或回零状态。 */
