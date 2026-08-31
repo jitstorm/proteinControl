@@ -64,9 +64,9 @@ RobotArm 改造没有更换 DMA 算法、Timer/DMA 分配或 STEP 引脚。方�
 
 | 编号 | 机械定义 | 逻辑作用 |
 |---|---|---|
-| S1 | X_HOME | X- 硬限位、X Home |
-| S2 | Y_HOME | Y- 硬限位、Y Home |
-| S3 | Z_HOME / Z upper limit | Z- 硬限位、Z Home |
+| S1 | X_HOME | X 轴物理零点/Home |
+| S2 | Y_HOME | Y 轴物理零点/Home |
+| S3 | Z_HOME | Z 轴物理零点/Home |
 
 三路传感器通过集中 Sensor Adapter 转换成统一逻辑值：released=0、triggered=1。当前有效电平配置均为 1，但 HC165 采集层已经取反，最终电平仍必须通过实机逐路确认。若实测相反，只修改集中式有效电平配置，不在状态机内增加散落取反。
 
@@ -92,7 +92,7 @@ Z=0 定义为最高 Home 侧逻辑位置；Z 数值越大，机械位置越低�
 - 上电初始化时二者都为 0，current/target 数值虽然初始化为 0，但不能据此认为坐标可信。
 - Home 开始时对应轴的 homed 和 position_valid 都清零；Home 成功后两者同时置 1。
 - 绝对单轴、MoveTo 和 SafeMove 会检查 position_valid；当前相对运动入口没有显式检查该标志，而是以保存的 current 计算目标。V2 Android 合同已强制要求 valid=1 才能发送相对运动，后续维护不得把这一边界误认为 MCU 已具备同等保护。
-- 普通运动的 Stop、Limit、Timeout、Driver Error 会使活动轴 position_valid 清零，但保留其既有 homed 历史。
+- 普通运动的 Stop、Timeout、Driver Error 会使活动轴 position_valid 清零，但保留其既有 homed 历史；负向首次命中 S1～S3 时传感器反而重新确认 position_valid=1。
 - Home 过程失败或停止会清除该 Home 轴的 homed 和 position_valid。
 - ClearError 只清错误状态，不恢复 position_valid，也不伪造 homed。
 - 旧 V1 直驱入口执行后会主动使对应轴 position_valid 失效。
@@ -109,17 +109,14 @@ Z=0 定义为最高 Home 侧逻辑位置；Z 数值越大，机械位置越低�
 
 ## 9. 三轴 Home 状态机
 
-每轴使用非阻塞的双阶段寻边流程：
+每轴使用非阻塞的单阶段快速寻零流程：
 
-1. CHECK_SENSOR：读取 Home 传感器。
-2. 若上电时已触发，先 BACKOFF_IF_ACTIVE，反向移动直到可靠释放。
-3. SEEK_FAST：沿负方向快速寻找 Home 传感器。
-4. 触发后立即停止，按固定 backoff 步数反向退让。
-5. BACKOFF_AFTER_TRIGGER：必须完整走完退让且确认传感器释放。
-6. SEEK_SLOW：低速再次靠近并寻找最终触发边沿。
-7. 触发后停止，将 current/target 设为该轴 Home Offset，并置 homed=1、position_valid=1。
+1. CHECK_SENSOR：读取对应 Home 传感器。
+2. 若命令开始时已 Active，不输出 STEP，直接将 current/target 设为 0，并置 homed=1、position_valid=1。
+3. 若未 Active，SEEK_FAST 沿负方向寻找 Home 传感器。
+4. 运行中首次 Active 时立即停止，禁止续装 DMA chunk，并将 current/target 设为 0、homed=1、position_valid=1。
 
-Home 具备每轴 MAX_STEPS 和 TIMEOUT 约束。初始触发后无法释放、退让后仍触发、寻边步数耗尽或总时间超时都会失败。
+Home 具备每轴 MAX_STEPS 和 TIMEOUT 约束；只有传感器未触发且寻边步数耗尽或总时间超时才会失败。
 
 HomeAll 不是并行回零，固定顺序为 Z → Y → X。任何一轴失败都会终止 HomeAll，不继续启动后续轴。
 
@@ -127,12 +124,15 @@ HomeAll 不是并行回零，固定顺序为 Z → Y → X。任何一轴失败�
 
 Hard Limit 使用集中式传感器逻辑并按运动方向判断：
 
-- X- 遇到 S1：禁止启动或立即停止。
-- Y- 遇到 S2：禁止启动或立即停止。
-- Z- 遇到 S3：禁止启动或立即停止。
-- 从已触发限位向安全反方向离开是允许的；Home 状态机拥有专门的寻边/退让语义。
+- X- 已在 S1 零点时拒绝启动；从正坐标负向首次命中 S1 时立即归零。
+- Y- 已在 S2 零点时拒绝启动；从正坐标负向首次命中 S2 时立即归零。
+- Z- 已在 S3 零点时拒绝启动；从正坐标负向首次命中 S3 时立即归零。
+- 从已触发零点向正方向离开是允许的。
 
-普通动作运行中触发 Hard Limit 后，活动轴停止、position_valid 失效、arm_state 进入 ERROR，组合动作不再启动后续轴。
+S1～S3 Active 分别是 X/Y/Z 实际坐标为 0 的硬件证据。运行中首次命中时立即停止当前
+DMA/STEP，禁止续装下一 chunk，并将 current_position=0、homed=1、position_valid=1。
+Home 和目标为 0 的普通单轴、MOVE_TO、SafeMove 均以 COMPLETED/OK 收尾；只有已经在零点
+仍请求继续负方向时才返回 LIMIT。
 
 ## 11. Soft Limit
 
@@ -141,7 +141,7 @@ Soft Limit 是每轴可配置的目标范围检查：
 - 只有对应 `ROBOT_ARM_*_LIMIT_ENABLED=1` 时生效。
 - 启动运动前检查目标是否位于 `[MIN_POSITION, MAX_POSITION]`。
 - 超界返回 `ROBOT_ARM_ERR_LIMIT`，不产生 STEP。
-- 它不替代 S1～S3 Home 侧硬限位；运行期间仍持续检查硬限位方向。
+- 它不替代 S1～S3 物理零点语义；运行期间仍持续检查是否已经在零点还要求继续负向。
 
 当前生产配置三轴 Soft Limit 均禁用，MIN 为 0，MAX 为 INT32_MAX。这些不是已标定机械范围。
 
@@ -151,9 +151,9 @@ MoveTo 接受 XYZ 三轴绝对目标，要求：
 
 - 三轴 position_valid 均为 1；
 - 传感器快照已经就绪；
-- 目标通过已启用的 Soft Limit、当前硬限位方向和姿态安全检查。
+- 目标通过已启用的 Soft Limit、零点方向和姿态安全检查。
 
-执行顺序固定为 X → Y → Z。每轴必须正常完成并提交坐标后才启动下一轴；目标未变化的轴直接跳过。不做三轴同步、不做插补。任何 Limit、Timeout、Stop 或 Error 都会终止整个组合任务，禁止继续启动后续轴。
+执行顺序固定为 X → Y → Z。每轴必须正常完成并提交坐标后才启动下一轴；目标未变化的轴直接跳过。不做三轴同步、不做插补。目标为 0 的轴首次命中 S1～S3 会作为正常完成继续下一轴；越零 LIMIT、Timeout、Stop 或其他 Error 才会终止组合任务。
 
 当前生产态的姿态安全检查没有已标定碰撞区，默认通过；不能把这一点解释为已完成机械碰撞模型。
 

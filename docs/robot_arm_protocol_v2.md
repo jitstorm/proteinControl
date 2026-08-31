@@ -233,7 +233,7 @@ ACK 帧的 SEQ 与被确认请求一致。
 |---:|---|---|
 | 0 | COMPLETED | 非 Home 任务正常完成 |
 | 1 | STOPPED | 被 STOP 终止 |
-| 2 | LIMIT | 非 Home 任务因硬限位/限位条件终止 |
+| 2 | LIMIT | 非 Home 任务因 Soft Limit，或已在 Home 零点又继续请求负方向而终止；首次命中 S1/S2/S3 且目标为 0 不产生该终态 |
 | 3 | TIMEOUT | 非 Home 任务运动超时 |
 | 4 | INTERLOCK | 非 Home 任务因安全互锁终止 |
 | 5 | SENSOR_ERROR | 非 Home 任务因传感器条件错误终止 |
@@ -435,7 +435,7 @@ page3 的 `STATUS_RSP` SEQ 属于本次 `ARM_STATUS` 查询；Android 必须使�
 | 1 | BUSY | MCU 有未结束任务或清错时仍在运动；等待当前 EVENT/状态结束后再由用户决定是否重试 |
 | 2 | POSITION_UNKNOWN | 至少一个所需坐标不可信；禁止运动并引导用户完成 Home，不得在 Android 侧伪造有效坐标 |
 | 3 | NOT_HOMED | 需要 Home 条件但尚未建立原点；当前协议保留该结果值 |
-| 4 | LIMIT | 目标越过启用的 Soft Limit，或当前方向被 S1～S3 Home 侧传感器阻挡；拒绝时无 STEP，运行中触发则停止并使活动轴坐标失效 |
+| 4 | LIMIT | 目标越过启用的 Soft Limit，或轴已在对应 S1～S3 Home 零点且又请求继续负方向；拒绝时不产生 STEP。负向运行首次命中 Home 且目标为 0 时是正常归零，不返回 LIMIT |
 | 5 | INTERLOCK | SafeMove 转换不满足安全高度或安全策略；不得绕过后继续下一轴 |
 | 6 | DRIVER | 底层驱动拒绝启动，或 Busy 结束但完成步数证据不完整 |
 | 7 | SENSOR | 传感器快照未就绪，或 Home 退让后传感器未可靠释放 |
