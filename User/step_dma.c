@@ -324,8 +324,8 @@ static void dma_start_edges(uint16_t edges)
     /* 旧 TC 只能在重装后、重新使能 DMA 前清除。 */
     DMA_ClearITPendingBit(DMA2_IT_TC2);
 
-    /* S1 已触发时绝不续装 X(PB11) 的下一 DMA chunk；正方向脱离不受影响。 */
-    if (RobotArmDriver_ShouldStopForNegativeLimit(ROBOT_AXIS_X))
+    /* S2 已触发时绝不续装 Y(PB11) 的下一 DMA chunk；正方向脱离不受影响。 */
+    if (RobotArmDriver_ShouldStopForNegativeLimit(ROBOT_AXIS_Y))
     {
         stepdma_pb11_stop();
         return;
@@ -984,8 +984,8 @@ static void dma10_start_edges(uint16_t edges)
     /* 旧 TC 只能在重装后、重新使能 DMA 前清除。 */
     DMA_ClearITPendingBit(DMA2_IT_TC3);
 
-    /* S2 已触发时绝不续装 Y(PB10) 的下一 DMA chunk；只拦截逻辑负方向。 */
-    if (RobotArmDriver_ShouldStopForNegativeLimit(ROBOT_AXIS_Y))
+    /* S1 已触发时绝不续装 X(PB10) 的下一 DMA chunk；只拦截逻辑负方向。 */
+    if (RobotArmDriver_ShouldStopForNegativeLimit(ROBOT_AXIS_X))
     {
         stepdma_pb10_stop();
         return;

@@ -182,15 +182,6 @@ static uint32_t RobotArm_GetConfiguredHomeFastSpeed(RobotAxisId_t axis)
     return (axis < ROBOT_AXIS_COUNT) ? speed[axis] : 0u;
 }
 
-static int32_t RobotArm_GetHomeOffset(RobotAxisId_t axis)
-{
-    static const int32_t offset[ROBOT_AXIS_COUNT] = {
-        ROBOT_ARM_X_HOME_OFFSET,
-        ROBOT_ARM_Y_HOME_OFFSET,
-        ROBOT_ARM_Z_HOME_OFFSET};
-    return offset[axis];
-}
-
 static uint32_t RobotArm_CalculateMoveTimeout(uint32_t steps, uint32_t speed)
 {
     uint64_t estimated_ms;
@@ -298,6 +289,84 @@ static void RobotArm_FailAxisMove(RobotAxisId_t axis,
                                       ROBOT_SAFE_MOVE_ERROR : ROBOT_SAFE_MOVE_IDLE;
     s_robot_arm.home_state = ROBOT_HOME_IDLE;
     s_robot_arm.home_all_active = 0u;
+}
+
+/**
+ * 将已确认压到对应 Home 传感器的轴建立为物理零点。
+ *
+ * S1/S2/S3 分别是 X/Y/Z 的唯一零点传感器。传感器 Active 已经是实际位置为 0
+ * 的硬件证据，因此不能保留被中断前的估算步数，也不能把坐标标记为未知。
+ *
+ * @param axis 已被对应 Home 传感器确认处于物理零点的实际机械轴。
+ */
+static void RobotArm_SetAxisPositionToHome(RobotAxisId_t axis)
+{
+    RobotAxis_t *robot_axis = RobotArm_GetAxis(axis);
+    if (robot_axis == 0)
+    {
+        return;
+    }
+    robot_axis->current_position = 0;
+    robot_axis->homed = 1u;
+    robot_axis->position_valid = 1u;
+}
+
+/**
+ * 以已确认的 Home 零点结束当前负向轴动作。
+ *
+ * 该路径只用于目标恰为 0 的普通运动。必须先停实际 STEP/DMA/TIM，再提交零点，
+ * 防止 DMA 在主循环处理前续装下一段脉冲。完成后由单轴、MOVE_TO 或 SafeMove
+ * 状态机在下一轮把该轴作为正常完成继续收尾或启动后续轴。
+ *
+ * @param axis 已在负向运动中触发对应 Home 传感器的实际机械轴。
+ */
+static void RobotArm_CompleteAxisMoveAtHome(RobotAxisId_t axis)
+{
+    RobotAxis_t *robot_axis = RobotArm_GetAxis(axis);
+    if (robot_axis == 0)
+    {
+        return;
+    }
+    RobotArmDriver_Stop(axis);
+    RobotArm_SetAxisPositionToHome(axis);
+    robot_axis->target_position = 0;
+    robot_axis->active = 0u;
+    robot_axis->command_steps = 0u;
+    robot_axis->state = ROBOT_AXIS_IDLE;
+    robot_axis->end_reason = ROBOT_MOVE_END_COMPLETED;
+    s_robot_arm.last_move_end_reason = ROBOT_MOVE_END_COMPLETED;
+}
+
+/**
+ * 将负向 Home 命中但目标不是零点的动作以传感器错误结束。
+ *
+ * 传感器已经证明轴处于零点，故仍保留 current_position=0、homed=1 和
+ * position_valid=1；错误仅表示本次非零目标不可能准确完成，不能误报为 LIMIT
+ * 并丢失已确认的坐标基准。
+ *
+ * @param axis 已确认到达 Home 零点但本次目标不为 0 的实际机械轴。
+ */
+static void RobotArm_FailAxisMoveAtUnexpectedHome(RobotAxisId_t axis)
+{
+    RobotAxis_t *robot_axis = RobotArm_GetAxis(axis);
+    uint8_t was_move_to = (s_robot_arm.operation == ROBOT_OP_MOVE_TO) ? 1u : 0u;
+    uint8_t was_safe_move =
+        (s_robot_arm.operation == ROBOT_OP_MOVE_TO_SAFE) ? 1u : 0u;
+    if (robot_axis == 0)
+    {
+        return;
+    }
+    RobotArm_CompleteAxisMoveAtHome(axis);
+    robot_axis->state = ROBOT_AXIS_ERROR;
+    robot_axis->end_reason = ROBOT_MOVE_END_SENSOR;
+    s_robot_arm.last_move_end_reason = ROBOT_MOVE_END_SENSOR;
+    s_robot_arm.error_code = ROBOT_ARM_ERR_SENSOR;
+    s_robot_arm.state = ROBOT_ARM_ERROR;
+    s_robot_arm.operation = ROBOT_OP_NONE;
+    s_robot_arm.move_to_state = was_move_to ?
+                                    ROBOT_MOVE_TO_ERROR : ROBOT_MOVE_TO_IDLE;
+    s_robot_arm.safe_move_state = was_safe_move ?
+                                      ROBOT_SAFE_MOVE_ERROR : ROBOT_SAFE_MOVE_IDLE;
 }
 
 static RobotArmResult_t RobotArm_CheckAxisTarget(RobotAxisId_t axis,
@@ -414,15 +483,28 @@ static RobotArmResult_t RobotArm_StartAxisMoveInternal(RobotAxisId_t axis,
 static int8_t RobotArm_ProcessAxisMove(RobotAxisId_t axis)
 {
     RobotAxis_t *robot_axis = RobotArm_GetAxis(axis);
-    if ((robot_axis == 0) || !robot_axis->active)
+    if (robot_axis == 0)
     {
         return 0;
     }
 
-    /* Home 状态机主动找边时不走普通限位成功/失败语义。 */
+    /* Home 命中在传感器快照回调中已同步停机并提交零点；此处把它交给调用状态机
+     * 当作正常完成，才能让 MOVE_TO/SafeMove 继续后续实际轴。 */
+    if (!robot_axis->active)
+    {
+        return (robot_axis->end_reason == ROBOT_MOVE_END_COMPLETED) &&
+               (robot_axis->current_position == robot_axis->target_position);
+    }
+
+    /* 快照回调遗漏前的兜底：目标为 0 时，Home Active 仍是准确到位而非 LIMIT。 */
     if (RobotArm_IsDirectionBlocked(axis, robot_axis->moving_direction))
     {
-        RobotArm_FailAxisMove(axis, ROBOT_MOVE_END_LIMIT);
+        if (robot_axis->target_position == 0)
+        {
+            RobotArm_CompleteAxisMoveAtHome(axis);
+            return 1;
+        }
+        RobotArm_FailAxisMoveAtUnexpectedHome(axis);
         return -1;
     }
     if ((uint32_t)(millis() - robot_axis->move_start_ms) >=
@@ -650,10 +732,8 @@ static void RobotArm_CompleteHomeAxis(void)
     RobotAxisId_t completed_axis = s_robot_arm.home_axis;
     RobotArmResult_t result;
 
-    robot_axis->current_position = RobotArm_GetHomeOffset(completed_axis);
-    robot_axis->target_position = robot_axis->current_position;
-    robot_axis->homed = 1u;
-    robot_axis->position_valid = 1u;
+    RobotArm_SetAxisPositionToHome(completed_axis);
+    robot_axis->target_position = 0;
     robot_axis->active = 0u;
     robot_axis->state = ROBOT_AXIS_IDLE;
     robot_axis->end_reason = ROBOT_MOVE_END_COMPLETED;
@@ -1624,10 +1704,12 @@ void RobotArm_Stop(void)
 }
 
 /**
- * 在完整 HC165 快照更新后立即拦截正在压 S1/S2/S3 的负向运动。
+ * 在完整 HC165 快照更新后立即按 S1/S2/S3 的物理零点语义处理运动轴。
  *
- * 传感器触发后允许正方向继续脱离；仅当当前逻辑方向为负时停止对应 DMA。普通
- * 运动会将当前坐标标记为未知；Home 快速寻零命中则由 Home 状态机确认零点。
+ * S1=X、S2=Y、S3=Z 的 Active 均表示对应轴实际位置为 0。负向运行首次命中时
+ * 必须在此回调立刻停止 STEP/DMA/TIM，禁止下一 DMA chunk；目标为 0 的普通运动
+ * 与 Home 都正常完成并建立可信零点。只有已在 Active 零点还请求继续负向时，才由
+ * 启动前方向检查拒绝为 LIMIT。
  */
 void RobotArm_OnSensorSnapshotUpdated(void)
 {
@@ -1635,10 +1717,16 @@ void RobotArm_OnSensorSnapshotUpdated(void)
     RobotArm_UpdateDebugWatch();
     for (index = 0u; index < ROBOT_AXIS_COUNT; index++)
     {
+        RobotAxis_t *robot_axis = &s_robot_arm.axis[index];
+        RobotAxisId_t axis = (RobotAxisId_t)index;
+        if (RobotArmSensor_IsTriggered(RobotArm_GetHomeSensor(axis)))
+        {
+            /* 即使当前没有任务，Active 也是真实零点证据，不能让旧坐标继续存在。 */
+            RobotArm_SetAxisPositionToHome(axis);
+        }
         if (RobotArmDriver_ShouldStopForNegativeLimit((RobotAxisId_t)index))
         {
-            /* Home 快速寻零命中 S1/S2/S3 是成功条件，不得按普通越限置 ERROR；
-             * 这里只做最快 DMA 停机，随后 Home 状态机在同一 Active 快照中置零。 */
+            /* Home 快速寻零命中 S1/S2/S3 是成功条件，不得按普通越限置 ERROR。 */
             if (((s_robot_arm.operation == ROBOT_OP_HOME_X) ||
                  (s_robot_arm.operation == ROBOT_OP_HOME_Y) ||
                  (s_robot_arm.operation == ROBOT_OP_HOME_Z) ||
@@ -1651,15 +1739,25 @@ void RobotArm_OnSensorSnapshotUpdated(void)
                 if (index == ROBOT_AXIS_X) dbg_x_last_stop_reason = ROBOT_MOVE_END_SENSOR;
                 if (index == ROBOT_AXIS_Y) dbg_y_last_stop_reason = ROBOT_MOVE_END_SENSOR;
                 if (index == ROBOT_AXIS_Z) dbg_z_last_stop_reason = ROBOT_MOVE_END_SENSOR;
+                RobotArm_CompleteHomeAxis();
                 RobotArm_UpdateDebugWatch();
-                return;
+                continue;
             }
-            if (index == ROBOT_AXIS_X) { dbg_x_limit_stop_count++; dbg_x_last_stop_reason = ROBOT_MOVE_END_LIMIT; }
-            if (index == ROBOT_AXIS_Y) { dbg_y_limit_stop_count++; dbg_y_last_stop_reason = ROBOT_MOVE_END_LIMIT; }
-            if (index == ROBOT_AXIS_Z) { dbg_z_limit_stop_count++; dbg_z_last_stop_reason = ROBOT_MOVE_END_LIMIT; }
-            RobotArm_FailAxisMove((RobotAxisId_t)index, ROBOT_MOVE_END_LIMIT);
+            if (robot_axis->target_position == 0)
+            {
+                RobotArm_CompleteAxisMoveAtHome(axis);
+                if (index == ROBOT_AXIS_X) dbg_x_last_stop_reason = ROBOT_MOVE_END_COMPLETED;
+                if (index == ROBOT_AXIS_Y) dbg_y_last_stop_reason = ROBOT_MOVE_END_COMPLETED;
+                if (index == ROBOT_AXIS_Z) dbg_z_last_stop_reason = ROBOT_MOVE_END_COMPLETED;
+            }
+            else
+            {
+                RobotArm_FailAxisMoveAtUnexpectedHome(axis);
+                if (index == ROBOT_AXIS_X) dbg_x_last_stop_reason = ROBOT_MOVE_END_SENSOR;
+                if (index == ROBOT_AXIS_Y) dbg_y_last_stop_reason = ROBOT_MOVE_END_SENSOR;
+                if (index == ROBOT_AXIS_Z) dbg_z_last_stop_reason = ROBOT_MOVE_END_SENSOR;
+            }
             RobotArm_UpdateDebugWatch();
-            return;
         }
     }
 }

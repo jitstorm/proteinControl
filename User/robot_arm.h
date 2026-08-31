@@ -248,9 +248,11 @@ RobotArmResult_t RobotArm_HomeAxis(RobotAxisId_t axis);
 RobotArmResult_t RobotArm_HomeAxisWithSpeed(RobotAxisId_t axis,
                                             uint16_t home_speed);
 /**
- * 在 HC165 新快照到达时立即执行负向限位安全停机。
+ * 在 HC165 新快照到达时按 S1/S2/S3 的物理零点语义处理三轴。
  *
- * @return 无返回值；触发时停止对应 DMA 轴并将动作以限位错误结束。
+ * S1、S2、S3 Active 分别确认 X、Y、Z 的实际位置为 0。负向运动命中时立即
+ * 停止对应 STEP/DMA/TIM；目标为 0 的 Home、绝对运动、MOVE_TO 或 SafeMove
+ * 正常完成并建立可信零点。已在零点还请求继续负向，才在启动前返回 LIMIT。
  */
 void RobotArm_OnSensorSnapshotUpdated(void);
 /** 按 Z、Y、X 顺序启动非阻塞 HomeAll。 */

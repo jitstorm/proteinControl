@@ -81,6 +81,8 @@
 #define ROBOT_ARM_HOME_SLOW_SPEED 0u
 #define ROBOT_ARM_HOME_BACKOFF_STEPS 0u
 #endif
+/* S1/S2/S3 Active 的产品定义就是坐标 0；保留旧宏仅兼容外部配置，RobotArm
+ * 不再读取它们，也不得通过偏移把已触发 Home 的轴报告为非零坐标。 */
 #define ROBOT_ARM_X_HOME_OFFSET 0
 #define ROBOT_ARM_Y_HOME_OFFSET 0
 #define ROBOT_ARM_Z_HOME_OFFSET 0

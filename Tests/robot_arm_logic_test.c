@@ -207,7 +207,7 @@ int main(void)
     return s_test_failure;
 }
 #elif defined(ROBOT_ARM_HOME_LIMIT_CHAIN_TEST)
-/** 验证 S1/S2/S3 的完整快照映射及三轴 Home、运行中限位安全停止。 */
+/** 验证 S1/S2/S3 的完整快照映射及三轴 Home、运行中物理零点完成语义。 */
 int main(void)
 {
     RobotAxisId_t axis;
@@ -238,7 +238,7 @@ int main(void)
         TEST_CHECK(RobotArm_IsHomed(axis) == 1u);
         TEST_CHECK(RobotArm_IsPositionValid(axis) == 1u);
 
-        /* Active 只阻止轴继续压向负限位，正方向必须能脱离传感器。 */
+        /* Active 只阻止轴继续压向零点外侧，正方向必须能脱离传感器。 */
         if (axis == ROBOT_AXIS_X)
         {
             TEST_CHECK(RobotArm_MoveXRelative(1, 100u) == ROBOT_ARM_OK);
@@ -265,9 +265,20 @@ int main(void)
         TEST_CHECK(s_busy[axis] == 0u);
         TEST_CHECK(s_stop_count[axis] == stops + 1u);
         RobotArm_GetStatus(&status);
-        TEST_CHECK(status.last_move_end_reason == ROBOT_MOVE_END_LIMIT);
-        TEST_CHECK(RobotArm_IsPositionValid(axis) == 0u);
-        TEST_CHECK(RobotArm_ClearError() == ROBOT_ARM_OK);
+        TEST_CHECK(status.last_move_end_reason == ROBOT_MOVE_END_COMPLETED);
+        TEST_CHECK(RobotArm_IsHomed(axis) == 1u);
+        TEST_CHECK(RobotArm_IsPositionValid(axis) == 1u);
+        if (axis == ROBOT_AXIS_X) TEST_CHECK(RobotArm_GetX() == 0);
+        if (axis == ROBOT_AXIS_Y) TEST_CHECK(RobotArm_GetY() == 0);
+        if (axis == ROBOT_AXIS_Z) TEST_CHECK(RobotArm_GetZ() == 0);
+
+        /* 已经在物理零点还请求继续负向才是真正的越零 LIMIT，且不得启动 STEP。 */
+        starts = s_start_count[axis];
+        if (axis == ROBOT_AXIS_X) TEST_CHECK(RobotArm_MoveXRelative(-5000, 100u) == ROBOT_ARM_ERR_LIMIT);
+        if (axis == ROBOT_AXIS_Y) TEST_CHECK(RobotArm_MoveYRelative(-5000, 100u) == ROBOT_ARM_ERR_LIMIT);
+        if (axis == ROBOT_AXIS_Z) TEST_CHECK(RobotArm_MoveZRelative(-5000, 100u) == ROBOT_ARM_ERR_LIMIT);
+        TEST_CHECK(s_start_count[axis] == starts);
+        TestSensorSnapshot(0u, 0u, 0u);
     }
     return s_test_failure;
 }
@@ -377,6 +388,30 @@ int main(void)
     TEST_CHECK(status.operation == ROBOT_OP_NONE);
     TEST_CHECK(status.move_to_state == ROBOT_MOVE_TO_IDLE);
     TEST_CHECK(RobotArm_IsBusy() == 0u);
+
+    /* X 从正坐标负向目标 0 首次命中 S1 后，X 必须归零完成，Y/Z 仍继续完成整条 MOVE_TO。 */
+    TestSetPose(1, 1, 1);
+    TEST_CHECK(RobotArm_MoveTo(0, 2, 3) == ROBOT_ARM_OK);
+    RobotArm_Task();
+    TEST_CHECK(s_busy[ROBOT_AXIS_X] == 1u);
+    TestSensorSnapshot(1u, 0u, 0u);
+    TEST_CHECK(s_busy[ROBOT_AXIS_X] == 0u);
+    TEST_CHECK(RobotArm_GetX() == 0);
+    TEST_CHECK(RobotArm_IsHomed(ROBOT_AXIS_X) == 1u);
+    TEST_CHECK(RobotArm_IsPositionValid(ROBOT_AXIS_X) == 1u);
+    RobotArm_Task();
+    RobotArm_Task();
+    TEST_CHECK(s_busy[ROBOT_AXIS_Y] == 1u);
+    TestDriverComplete(ROBOT_AXIS_Y);
+    RobotArm_Task();
+    RobotArm_Task();
+    TEST_CHECK(s_busy[ROBOT_AXIS_Z] == 1u);
+    TestDriverComplete(ROBOT_AXIS_Z);
+    RobotArm_Task();
+    TEST_CHECK(RobotArm_GetState() == ROBOT_ARM_IDLE);
+    TEST_CHECK(RobotArm_GetX() == 0 && RobotArm_GetY() == 2 && RobotArm_GetZ() == 3);
+    TEST_CHECK(RobotArm_IsPositionValid(ROBOT_AXIS_X) == 1u);
+    TestSensorSnapshot(0u, 0u, 0u);
 
     /* speed=0 必须继续使用每轴既有默认速度，不改变旧 MOVE_TO 行为。 */
     TEST_CHECK(s_last_start_speed[ROBOT_AXIS_X] == ROBOT_ARM_X_DEFAULT_SPEED);
@@ -510,14 +545,15 @@ int main(void)
     TEST_CHECK(status.x_homed == 0u);
     TEST_CHECK(status.x_valid == 0u);
 
-    /* Z Home 从 S3 已触发开始时，必须先向正方向脱离，不能继续压负限位。 */
+    /* Z Home 从 S3 已触发开始时直接置零，不能产生任何负方向 STEP。 */
     TEST_CHECK(RobotArm_ClearError() == ROBOT_ARM_OK);
     TestSensorSnapshot(0u, 0u, 1u);
     TEST_CHECK(RobotArm_HomeAxis(ROBOT_AXIS_Z) == ROBOT_ARM_OK);
     RobotArm_Task();
-    TEST_CHECK(s_direction[ROBOT_AXIS_Z] == -1);
-    TEST_CHECK(RobotArm_GetState() == ROBOT_ARM_HOMING);
-    RobotArm_Stop();
+    TEST_CHECK(RobotArm_GetZ() == 0);
+    TEST_CHECK(RobotArm_IsHomed(ROBOT_AXIS_Z) == 1u);
+    TEST_CHECK(RobotArm_IsPositionValid(ROBOT_AXIS_Z) == 1u);
+    TEST_CHECK(RobotArm_GetState() == ROBOT_ARM_IDLE);
 
     /* 为组合运动异常场景重新建立三轴可信坐标。 */
     TestSensorSnapshot(0u, 0u, 0u);
@@ -539,7 +575,7 @@ int main(void)
     TEST_CHECK(status.z_valid == 1u);
     TEST_CHECK(s_start_count[ROBOT_AXIS_Z] == z_starts);
 
-    /* MoveTo 的 Z- 阶段遇到 S3 时必须立即停止且不提交 target。 */
+    /* MoveTo 的 Z- 阶段目标为 0 时，S3 命中必须立即归零并正常完成。 */
     TEST_CHECK(RobotArm_ClearError() == ROBOT_ARM_OK);
     TestHomeAxis(ROBOT_AXIS_Y, 0u);
     TestSensorSnapshot(0u, 0u, 0u);
@@ -550,11 +586,12 @@ int main(void)
     TestSensorSnapshot(0u, 0u, 1u);
     RobotArm_Task();
     RobotArm_GetStatus(&status);
-    TEST_CHECK(status.last_move_end_reason == ROBOT_MOVE_END_LIMIT);
+    TEST_CHECK(status.last_move_end_reason == ROBOT_MOVE_END_COMPLETED);
     TEST_CHECK(status.z == 0);
-    TEST_CHECK(status.z_valid == 0u);
+    TEST_CHECK(status.z_valid == 1u);
+    TEST_CHECK(status.z_homed == 1u);
 
-    /* MoveTo 的 Z- 阶段遇到 S3 时采用同样的硬限位中断语义。 */
+    /* 三轴 MOVE_TO 中 Z=0 命中 S3 后仍应完成该轴并收尾整条命令。 */
     TEST_CHECK(RobotArm_ClearError() == ROBOT_ARM_OK);
     TestHomeAxis(ROBOT_AXIS_Z, 0u);
     TestSensorSnapshot(0u, 0u, 0u);
@@ -568,9 +605,10 @@ int main(void)
     TestSensorSnapshot(0u, 0u, 1u);
     RobotArm_Task();
     RobotArm_GetStatus(&status);
-    TEST_CHECK(status.last_move_end_reason == ROBOT_MOVE_END_LIMIT);
-    TEST_CHECK(status.z == 1);
-    TEST_CHECK(status.z_valid == 0u);
+    TEST_CHECK(status.last_move_end_reason == ROBOT_MOVE_END_COMPLETED);
+    TEST_CHECK(status.z == 0);
+    TEST_CHECK(status.z_valid == 1u);
+    TEST_CHECK(status.z_homed == 1u);
 
     /* SafeMove 启用时，位置未知必须在产生任何 STEP 之前拒绝任务。 */
     RobotArm_Init();
@@ -673,7 +711,7 @@ int main(void)
     TEST_CHECK(s_start_count[ROBOT_AXIS_Y] == y_starts);
     TEST_CHECK(s_start_count[ROBOT_AXIS_Z] == z_starts);
 
-    /* Y 遇到 Home 侧硬限位后不得启动 Final Z。 */
+    /* SafeMove 的 Y=0 命中 S2 后，该轴正常归零并继续执行 Final Z。 */
     TestResetAndHomeAll();
     TestSetPose(0, 1, 5);
     z_starts = s_start_count[ROBOT_AXIS_Z];
@@ -685,8 +723,11 @@ int main(void)
     TestSensorSnapshot(0u, 1u, 0u);
     RobotArm_Task();
     RobotArm_GetStatus(&status);
-    TEST_CHECK(status.last_move_end_reason == ROBOT_MOVE_END_LIMIT);
-    TEST_CHECK(s_start_count[ROBOT_AXIS_Z] == z_starts);
+    TEST_CHECK(status.y == 0);
+    TEST_CHECK(status.y_valid == 1u);
+    TEST_CHECK(status.y_homed == 1u);
+    RobotArm_Task();
+    TEST_CHECK(s_start_count[ROBOT_AXIS_Z] == z_starts + 1u);
 
     /* Final Z 前重新检查真实 XY 姿态，互锁失败时不得启动 Z。 */
     TestResetAndHomeAll();
@@ -707,10 +748,10 @@ int main(void)
     TEST_CHECK(status.last_move_end_reason == ROBOT_MOVE_END_INTERLOCK);
     TEST_CHECK(s_start_count[ROBOT_AXIS_Z] == z_starts);
 
-    /* Final Z 向负方向期间触发 S3，不能提交最终 Z target。 */
+    /* Final Z 的目标为 0 时，S3 命中是准确到位，SafeMove 应正常完成。 */
     TestResetAndHomeAll();
     TestSetPose(0, 0, 5);
-    TEST_CHECK(RobotArm_MoveToSafe(1, 1, 20) == ROBOT_ARM_OK);
+    TEST_CHECK(RobotArm_MoveToSafe(1, 1, 0) == ROBOT_ARM_OK);
     RobotArm_Task();
     RobotArm_Task();
     TestDriverComplete(ROBOT_AXIS_X);
@@ -722,9 +763,10 @@ int main(void)
     TestSensorSnapshot(0u, 0u, 1u);
     RobotArm_Task();
     RobotArm_GetStatus(&status);
-    TEST_CHECK(status.last_move_end_reason == ROBOT_MOVE_END_LIMIT);
-    TEST_CHECK(status.z == 5);
-    TEST_CHECK(status.z_valid == 0u);
+    TEST_CHECK(status.last_move_end_reason == ROBOT_MOVE_END_COMPLETED);
+    TEST_CHECK(status.z == 0);
+    TEST_CHECK(status.z_valid == 1u);
+    TEST_CHECK(status.z_homed == 1u);
 
     /* SafeMove 独占期间拒绝 Relative 和普通 MoveTo。 */
     TestResetAndHomeAll();

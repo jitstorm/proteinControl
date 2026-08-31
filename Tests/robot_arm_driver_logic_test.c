@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include "robot_arm_driver.h"
+#include "robot_arm_sensor.h"
 
 #define TEST_CHECK(condition) do { if (!(condition) && (s_failure == 0)) s_failure = __LINE__; } while (0)
 
@@ -17,6 +18,13 @@ static uint8_t s_z_direction;
 
 /** 模拟 595 写入；方向影子值由测试直接检查。 */
 void ShiftRegister_WriteAll(uint8_t *data) { (void)data; }
+
+/** 为驱动适配层测试提供未触发的 Home 传感器状态。 */
+uint8_t RobotArmSensor_IsTriggered(RobotArmSensorId_t sensor)
+{
+    (void)sensor;
+    return 0u;
+}
 
 /** 模拟实际 PU2（PB11）梯形 DMA 请求并记录步数。 */
 void stepdma_pb11_request_trap(uint32_t steps, uint32_t start,
@@ -82,18 +90,26 @@ uint32_t PU3_Stepper_GetRemainingSteps(void) { return s_z_steps; }
 /** 返回 PB13 模拟完成步数。 */
 uint32_t PU3_Stepper_GetCompletedSteps(void) { return 0u; }
 
-/** 验证三轴适配器调用、方向、步数和真实运行态校验。 */
+/** 验证逻辑 XYZ 到已确认 STEP/DIR 驱动的绑定、步数和真实运行态校验。 */
 int main(void)
 {
+    /* 现场确认物理 X 使用 PB10 与 DIR1(Q4)。 */
     TEST_CHECK(RobotArmDriver_Start(ROBOT_AXIS_X, 1, 1427u, 1000u) == 1u);
     TEST_CHECK(s_pb10_steps == 1427u);
     TEST_CHECK(s_pb10_direction == 1u);
+    TEST_CHECK(RobotArmDriver_IsBusy(ROBOT_AXIS_X) == 1u);
+    TEST_CHECK(RobotArmDriver_GetRemainingSteps(ROBOT_AXIS_X) == 1427u);
     RobotArmDriver_Stop(ROBOT_AXIS_X);
+    TEST_CHECK(s_pb10_running == 0u);
 
+    /* 现场确认物理 Y 使用 PB11 与 DIR2(Q5)。 */
     TEST_CHECK(RobotArmDriver_Start(ROBOT_AXIS_Y, -1, 23u, 1000u) == 1u);
     TEST_CHECK(s_pb11_steps == 23u);
     TEST_CHECK((HC595Data[1] & (1u << 5)) == 0u);
+    TEST_CHECK(RobotArmDriver_IsBusy(ROBOT_AXIS_Y) == 1u);
+    TEST_CHECK(RobotArmDriver_GetRemainingSteps(ROBOT_AXIS_Y) == 23u);
     RobotArmDriver_Stop(ROBOT_AXIS_Y);
+    TEST_CHECK(s_pb11_running == 0u);
 
     TEST_CHECK(RobotArmDriver_Start(ROBOT_AXIS_Y, 1, 23u, 1000u) == 1u);
     TEST_CHECK((HC595Data[1] & (1u << 5)) != 0u);
