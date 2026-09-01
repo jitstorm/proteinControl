@@ -20,10 +20,6 @@ void PWM_Init(const PWM_Channel* pwm, uint32_t period, uint32_t prescaler);
 void PWM_SetDuty(const PWM_Channel* pwm, float duty);  // 0.0 ~ 100.0%
 void PWM_SetFreq(PWM_Channel *pwm, uint32_t frequency);
 
-void GPIO_Config(void);
-void TIM1_PWM_CH2N_Config(uint16_t arr, uint16_t psc, uint16_t ccr);
-void TIM1_SetDuty_CH2N_Percent(float percent);
-void PWM_SetPB0_Duty(uint8_t percent);
 void PWM_SetPC14_Duty(uint8_t percent);
 void PWM_SetPC15_Duty(uint8_t percent);
 void PWM_SetPC15_Motor(uint8_t enable);
@@ -37,8 +33,8 @@ void PWM_SetExtraDuty(uint8_t channel, uint8_t percent);
 /**
  * 获取 PWM 电机运行状态位图。
  *
- * bit0=PB0，bit1=PC14，bit2=PC15，bit3=PC1，
- * bit4=PC2，bit5=PA0，bit6=PA1，bit7=PA11。
+ * bit0 不由旧 PWM 状态位图表示；搅拌电机速度应通过 CMD=0x09 回包读取。
+ * bit1=PC14，bit2=PC15，bit3=PC1，bit4=PC2，bit5=PA0，bit6=PA1，bit7=PA11。
  */
 uint8_t PWM_GetMotorRunStatus(void);
 #endif

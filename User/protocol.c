@@ -14,6 +14,7 @@
 #include "step_dma.h"
 #include "single_motor.h"
 #include "reversible_motor.h"
+#include "mixer_pwm.h"
 #include "time.h"
 #include "robot_arm.h"
 
@@ -738,6 +739,7 @@ void handle_command(uint8_t cmd, uint8_t *data)
 {
     uint32_t duration_ms;
     uint16_t timeout_100ms;
+    uint16_t mixer_speed;
     uint8_t bitmap[3];
 
     dbg_handle_cmd_count[cmd]++;
@@ -858,22 +860,49 @@ void handle_command(uint8_t cmd, uint8_t *data)
         (void)Protocol_SendCmd08Reply(data);
         break;
     case 0x09:
-        /* 绔嬪嵆鎺у埗浠呮帴鍙楀凡閰嶇疆鐨勬鍙嶈浆鐢垫満缂栧彿鍜屽仠姝?姝ｈ浆/鍙嶈浆鍔ㄤ綔銆?*/
-        if (data[0] < 1u || data[0] > REVERSIBLE_MOTOR_COUNT)
+        /* D0/D1 是速度、D2/D3 是 100ms 时长，D4/D5 必须为零。 */
+        if (!Protocol_IsAllZero(data, 4u))
         {
-            /* 09 鐨勫洖搴旀牸寮忓浐瀹氬洖鏄捐姹傚瓧娈碉紝閿欒浠呬繚鐣欏湪鍐呴儴璇婃柇銆?*/
-            ReversibleMotor_RecordError(SINGLE_MOTOR_RESULT_INVALID_MOTOR);
+            /* 非保留字段错误不得覆盖当前搅拌任务；回包明确给出参数错误。 */
+            SingleMotor_RecordError(SINGLE_MOTOR_RESULT_INVALID_ACTION);
+            data[0] = 0u;
+            data[1] = 0u;
+            data[2] = 0u;
+            data[3] = 0u;
+            data[4] = MixerPwm_IsRunning();
+            data[5] = SINGLE_MOTOR_RESULT_INVALID_ACTION;
             send_frame(cmd, data);
             break;
         }
-        if (data[1] > 2u || !Protocol_IsAllZero(data, 2u))
+        mixer_speed = (uint16_t)data[0] | ((uint16_t)data[1] << 8);
+        timeout_100ms = (uint16_t)data[2] | ((uint16_t)data[3] << 8);
+        if ((mixer_speed != 0u) && (timeout_100ms == 0u))
         {
-            ReversibleMotor_RecordError(SINGLE_MOTOR_RESULT_INVALID_ACTION);
+            /* 禁止把零时长解释为无限运行，拒绝时保持正在执行的任务不变。 */
+            SingleMotor_RecordError(SINGLE_MOTOR_RESULT_INVALID_TIME);
+            data[0] = 0u;
+            data[1] = 0u;
+            data[2] = 0u;
+            data[3] = 0u;
+            data[4] = MixerPwm_IsRunning();
+            data[5] = SINGLE_MOTOR_RESULT_INVALID_TIME;
             send_frame(cmd, data);
             break;
         }
-        ReversibleMotor_Immediate(data[0], data[1]);
-        /* 鎴愬姛鍥炲簲鎸夊崗璁繚鐣欑數鏈虹紪鍙蜂笌鍔ㄤ綔瀛楁銆?*/
+
+        /* 合法重发会在模块内立即覆盖速度与截止时间；speed=0 则无条件安全停止。 */
+        (void)MixerPwm_StartTimed(mixer_speed, timeout_100ms);
+        if (mixer_speed == 0u)
+        {
+            timeout_100ms = 0u;
+        }
+        mixer_speed = MixerPwm_GetSpeed();
+        data[0] = (uint8_t)(mixer_speed & 0xFFu);
+        data[1] = (uint8_t)(mixer_speed >> 8);
+        data[2] = (uint8_t)(timeout_100ms & 0xFFu);
+        data[3] = (uint8_t)(timeout_100ms >> 8);
+        data[4] = MixerPwm_IsRunning();
+        data[5] = SINGLE_MOTOR_RESULT_OK;
         send_frame(cmd, data);
         break;
     case 0x0A:
@@ -939,13 +968,39 @@ void handle_command(uint8_t cmd, uint8_t *data)
             Protocol_SendReversibleMotorResult(cmd, SINGLE_MOTOR_RESULT_INVALID_ACTION, 0u);
             break;
         }
-        /* 鏂囨。绾﹀畾 D0..D4 鍒嗗埆杩斿洖浜旇矾鐢垫満鐘舵�侊紝D5 淇濈暀銆?*/
+        /* D0..D3 分别返回四路保留正反转电机状态；D4/D5 固定保留为零。 */
         data[0] = Protocol_GetReversibleMotorStateForResponse(g_reversible_motors[0].state);
         data[1] = Protocol_GetReversibleMotorStateForResponse(g_reversible_motors[1].state);
         data[2] = Protocol_GetReversibleMotorStateForResponse(g_reversible_motors[2].state);
         data[3] = Protocol_GetReversibleMotorStateForResponse(g_reversible_motors[3].state);
-        data[4] = Protocol_GetReversibleMotorStateForResponse(g_reversible_motors[4].state);
+        data[4] = 0u;
         data[5] = 0u;
+        send_frame(cmd, data);
+        break;
+    case 0x0D:
+        /* 0x0D 是搅拌 PWM 查询；请求不含参数，回复使用固定六字节状态布局。 */
+        if (!Protocol_IsAllZero(data, 0u))
+        {
+            data[0] = MixerPwm_IsRunning();
+            mixer_speed = MixerPwm_GetSpeed();
+            timeout_100ms = MixerPwm_GetRemaining100ms();
+            data[1] = (uint8_t)(mixer_speed & 0xFFu);
+            data[2] = (uint8_t)(mixer_speed >> 8);
+            data[3] = (uint8_t)(timeout_100ms & 0xFFu);
+            data[4] = (uint8_t)(timeout_100ms >> 8);
+            data[5] = SINGLE_MOTOR_RESULT_INVALID_ACTION;
+            SingleMotor_RecordError(SINGLE_MOTOR_RESULT_INVALID_ACTION);
+            send_frame(cmd, data);
+            break;
+        }
+        data[0] = MixerPwm_IsRunning();
+        mixer_speed = MixerPwm_GetSpeed();
+        timeout_100ms = MixerPwm_GetRemaining100ms();
+        data[1] = (uint8_t)(mixer_speed & 0xFFu);
+        data[2] = (uint8_t)(mixer_speed >> 8);
+        data[3] = (uint8_t)(timeout_100ms & 0xFFu);
+        data[4] = (uint8_t)(timeout_100ms >> 8);
+        data[5] = SINGLE_MOTOR_RESULT_OK;
         send_frame(cmd, data);
         break;
     case 0x1B:

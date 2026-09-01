@@ -6,7 +6,6 @@ volatile uint8_t pwm_pc15_duty = 0;
 volatile uint8_t pwm_pc15_enable = 0;
 volatile uint8_t pwm_pc1_enable = 0;
 volatile uint8_t pwm_pc2_enable = 0;
-static volatile uint8_t pwm_pb0_enable = 0;
 static volatile uint8_t pwm_pa0_enable = 0;
 static volatile uint8_t pwm_pa1_enable = 0;
 static volatile uint8_t pwm_pa11_enable = 0;
@@ -44,11 +43,6 @@ void PWM_Init(const PWM_Channel *pwm, uint32_t period, uint32_t prescaler)
     {
       // TIM2 �?PB3 是完全重映射才支�?CH2
       GPIO_PinRemapConfig(GPIO_FullRemap_TIM2, ENABLE); // TIM2_CH2 �?PB3
-    }
-    else if (pwm->TIMx == TIM3)
-    { 
-      // TIM3 �?PB4 是部分重映射支持 CH1
-      GPIO_PinRemapConfig(GPIO_PartialRemap_TIM3, ENABLE); // TIM3_CH1 �?PB4
     }
   }
 
@@ -226,28 +220,18 @@ void PWM_SetPA11_Duty(uint8_t percent)
   TIM_SetCompare4(TIM1, PWM_PercentToCCR(TIM1, percent));
 }
 
-void PWM_SetPB0_Duty(uint8_t percent)
-{
-  /* PB0 已作为正反转电机 5 的 IN2，旧 PWM 入口禁止再驱动该引脚。 */
-  (void)percent;
-  pwm_pb0_enable = 0;
-}
 
 /**
  * 获取 PWM 电机运行状态位图。
  *
- * bit0=PB0，bit1=PC14，bit2=PC15，bit3=PC1，
- * bit4=PC2，bit5=PA0，bit6=PA1，bit7=PA11。
+ * bit0 ���ɾ� PWM ״̬λͼ��ʾ���������ٶ�Ӧͨ�� CMD=0x09 �ذ���ȡ��
+ * bit1=PC14��bit2=PC15��bit3=PC1��bit4=PC2��bit5=PA0��bit6=PA1��bit7=PA11��
  */
 uint8_t PWM_GetMotorRunStatus(void)
 {
   uint8_t status = 0;
 
   /* 使用状态缓存表达控制意图，避免直接读取复用输出寄存器造成误判。 */
-  if (pwm_pb0_enable)
-  {
-    status |= (1 << 0);
-  }
   if (pwm_pc14_enable)
   {
     status |= (1 << 1);
@@ -402,82 +386,4 @@ void PWM_SetFreq(PWM_Channel *pwm, uint32_t frequency)
   // 更新定时器周�?
   pwm->TIMx->ARR = period;
   TIM_GenerateEvent(pwm->TIMx, TIM_EventSource_Update); // 触发更新事件，应用新频率
-}
-
-void GPIO_Config(void)
-{
-  GPIO_InitTypeDef gpio;
-  RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB | RCC_APB2Periph_AFIO, ENABLE);
-  // 在使能了 AFIO 时钟之后调用
-  GPIO_PinRemapConfig(GPIO_PartialRemap_TIM1, ENABLE); // 开�?TIM1 部分重映�?�?CH2N �?PB0
-
-  gpio.GPIO_Pin = GPIO_Pin_0; // PB0 = TIM1_CH2N
-  gpio.GPIO_Speed = GPIO_Speed_50MHz;
-  gpio.GPIO_Mode = GPIO_Mode_AF_PP; // 复用推挽
-  GPIO_Init(GPIOB, &gpio);
-}
-
-void TIM1_PWM_CH2N_Config(uint16_t arr, uint16_t psc, uint16_t ccr)
-{
-  TIM_OCInitTypeDef oc;
-  TIM_BDTRInitTypeDef bdtr;
-
-  // 1) 基本定时�?
-  TIM_TimeBaseInitTypeDef tb;
-  RCC_APB2PeriphClockCmd(RCC_APB2Periph_TIM1, ENABLE);
-
-  TIM_TimeBaseStructInit(&tb);
-  tb.TIM_Period = arr;    // 自动重装�?
-  tb.TIM_Prescaler = psc; // 预分�?
-  tb.TIM_ClockDivision = TIM_CKD_DIV1;
-  tb.TIM_CounterMode = TIM_CounterMode_Up;
-  TIM_TimeBaseInit(TIM1, &tb);
-
-  // 2) 通道2�?PWM1，仅使能互补输出(N)
-  TIM_OCStructInit(&oc);
-  oc.TIM_OCMode = TIM_OCMode_PWM1;
-  oc.TIM_OutputState = TIM_OutputState_Disable;  // 主端不需�?
-  oc.TIM_OutputNState = TIM_OutputNState_Enable; // 仅使�?N �?
-  oc.TIM_Pulse = ccr;                            // 占空�?
-  oc.TIM_OCPolarity = TIM_OCPolarity_High;       // 主端极性（无所谓）
-  oc.TIM_OCNPolarity = TIM_OCNPolarity_High;     // N 端极性：需要反向就改为 Low
-  oc.TIM_OCIdleState = TIM_OCIdleState_Reset;
-  oc.TIM_OCNIdleState = TIM_OCNIdleState_Reset;
-  TIM_OC2Init(TIM1, &oc);
-  TIM_OC2PreloadConfig(TIM1, TIM_OCPreload_Enable);
-
-  // 3) 使能 ARR 预装�?
-  TIM_ARRPreloadConfig(TIM1, ENABLE);
-
-  // 4) BDTR（死�?刹车）。即使不用刹车，也要确保 MOE 可被置位
-  TIM_BDTRStructInit(&bdtr);
-  bdtr.TIM_OSSRState = TIM_OSSRState_Enable;
-  bdtr.TIM_OSSIState = TIM_OSSIState_Enable;
-  bdtr.TIM_LOCKLevel = TIM_LOCKLevel_OFF;
-  bdtr.TIM_Break = TIM_Break_Disable;
-  bdtr.TIM_BreakPolarity = TIM_BreakPolarity_High;
-  bdtr.TIM_AutomaticOutput = TIM_AutomaticOutput_Enable; // 允许自动置位 MOE
-  TIM_BDTRConfig(TIM1, &bdtr);
-  // �?5) 立即生效一次（�?PSC/ARR/CCR 装载到影子寄存器，并�?CNT�?
-  TIM_GenerateEvent(TIM1, TIM_EventSource_Update);
-  // 6) 计数器启�?+ 主输出使能（关键�?
-  TIM_Cmd(TIM1, ENABLE);
-  TIM_CtrlPWMOutputs(TIM1, ENABLE); // 设置 BDTR.MOE=1
-}
-// 0~100(�?；注意：PWM1模式�?00%无法做到绝对满占空，会差1/ARR个计�?
-void TIM1_SetDuty_CH2N_Percent(float percent)
-{
-  uint32_t arr;
-  uint32_t ccr;
-  if (percent < 0.0f)
-    percent = 0.0f;
-  if (percent > 100.0f)
-    percent = 100.0f;
-
-  arr = TIM1->ARR; // 当前自动重装载�?
-  ccr = (uint32_t)((percent * (arr + 1) / 100.0f) + 0.5f);
-
-  if (ccr > arr)
-    ccr = arr;                          // 饱和�?arr
-  TIM_SetCompare2(TIM1, (uint16_t)ccr); // 预装载已开，下一次更新自动生�?
 }

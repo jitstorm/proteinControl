@@ -512,6 +512,11 @@
               <FilePath>..\User\reversible_motor.c</FilePath>
             </File>
             <File>
+              <FileName>mixer_pwm.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\mixer_pwm.c</FilePath>
+            </File>
+            <File>
               <FileName>time.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\User\time.c</FilePath>

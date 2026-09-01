@@ -27,8 +27,7 @@ static const ReversibleMotorHardware g_reversible_motor_hardware[REVERSIBLE_MOTO
     {REV_MOTOR_BACKEND_595, 0, 0u, 0, 0u, 0, 0u},
     {REV_MOTOR_BACKEND_595, 0, 0u, 0, 0u, 0, 0u},
     {REV_MOTOR_BACKEND_GPIO, GPIOC, GPIO_Pin_14, GPIOC, GPIO_Pin_15, GPIOC, GPIO_Pin_0},
-    {REV_MOTOR_BACKEND_GPIO, GPIOC, GPIO_Pin_1, GPIOC, GPIO_Pin_2, GPIOC, GPIO_Pin_3},
-    {REV_MOTOR_BACKEND_GPIO, GPIOC, GPIO_Pin_5, GPIOB, GPIO_Pin_0, GPIOB, GPIO_Pin_1}
+    {REV_MOTOR_BACKEND_GPIO, GPIOC, GPIO_Pin_1, GPIOC, GPIO_Pin_2, GPIOC, GPIO_Pin_3}
 };
 
 ReversibleMotorRuntime g_reversible_motors[REVERSIBLE_MOTOR_COUNT];

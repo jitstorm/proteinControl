@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-#define REVERSIBLE_MOTOR_COUNT 5u
+#define REVERSIBLE_MOTOR_COUNT 4u
 #define REVERSIBLE_MOTOR_DEADTIME_MS 20u
 
 /** 正反转电机的当前运行状态。 */
@@ -35,7 +35,7 @@ typedef enum
     REV_MOTOR_RUN_DEADTIME
 } ReversibleMotorRunMode;
 
-/** 五路正反转电机共用的运行时状态。 */
+/** 四路保留正反转电机共用的运行时状态；原第 5 路 PB0/PB1 已释放给搅拌 PWM。 */
 typedef struct
 {
     ReversibleMotorState state;
@@ -60,7 +60,7 @@ extern ReversibleMotorRuntime g_reversible_motors[REVERSIBLE_MOTOR_COUNT];
 extern volatile uint32_t g_reversible_motor_error_count;
 extern volatile uint8_t g_reversible_motor_last_error;
 
-/** 初始化五路正反转电机，并确保所有后端输出停止。 */
+/** 初始化四路保留正反转电机，并确保所有后端输出停止。 */
 void ReversibleMotor_Init(void);
 /** 设置指定电机的安全方向输出，禁止两个方向输入同时为高。 */
 uint8_t ReversibleMotor_SetOutput(uint8_t motor_id, ReversibleMotorState direction);

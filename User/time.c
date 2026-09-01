@@ -15,7 +15,6 @@ char handle_step_motor2;
 extern stepMotor stepMotorA;
 TIM_TimeBaseInitTypeDef TIM_TimeBaseStructure;
 NVIC_InitTypeDef NVIC_InitStructure;
-volatile uint16_t pwm_counter = 0;
 volatile uint8_t pwm_counter1 = 0;
 extern uint8_t pwm_duty;
 extern uint16_t pwm_duty0;
@@ -70,27 +69,6 @@ void Timer2_Init(void)
 
     TIM_Cmd(TIM2, ENABLE);
 }
-void TIM3_10us_Init(void)
-{
-    RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM3, ENABLE);
-
-    TIM_TimeBaseStructure.TIM_Period = 9;     // ARR
-    TIM_TimeBaseStructure.TIM_Prescaler = 71; // PSC
-    TIM_TimeBaseStructure.TIM_ClockDivision = TIM_CKD_DIV1;
-    TIM_TimeBaseStructure.TIM_CounterMode = TIM_CounterMode_Up;
-    TIM_TimeBaseInit(TIM3, &TIM_TimeBaseStructure);
-
-    // 使能定时器更新中断
-    TIM_ITConfig(TIM3, TIM_IT_Update, ENABLE);
-
-    NVIC_InitStructure.NVIC_IRQChannel = TIM3_IRQn;
-    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 1;
-    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
-    NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
-    NVIC_Init(&NVIC_InitStructure);
-
-    TIM_Cmd(TIM3, ENABLE);
-}
 void TIM4_10us_Init(void)
 {
     RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM4, ENABLE);
@@ -129,21 +107,6 @@ void TIM2_IRQHandler(void)
     }
 }
 
-volatile uint32_t base_interval = 0;    // 当前累计的 10 us 节拍数
-volatile uint32_t target_interval = 50; // 目标间隔的 10 us 节拍数
-
-void TIM3_IRQHandler(void)
-{
-    if (TIM_GetITStatus(TIM3, TIM_IT_Update) != RESET)
-    {
-        TIM_ClearITPendingBit(TIM3, TIM_IT_Update);
-
-        if (++pwm_counter >= 100)
-            pwm_counter = 0;
-
-        /* PC14/PC15 已改为正反转电机 3 的方向输入，定时器中断不得再写入。 */
-    }
-}
 uint16_t base_interval3 = 0;    // 当前累计的 10 us 节拍数
 uint16_t target_interval3 = 50; // 50 个 10 us 节拍等于 500 us
 

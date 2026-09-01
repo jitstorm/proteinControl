@@ -13,6 +13,7 @@
 #include "max31855.h"
 #include "stepMotor.h"
 #include "IWDG.h"
+#include "mixer_pwm.h"
 #include "step_dma.h"
 #include "single_motor.h"
 #include "reversible_motor.h"
@@ -344,7 +345,7 @@ int main(void)
     ShiftRegister_Init();
     ShiftRegisterInput_Init();
     Motor_InitAll();
-    /* 新协议电机状态机统一管理 19 路单向和正反转电机的非阻塞任务。 */
+    /* 新协议电机状态机统一管理 19 路单向和四路保留正反转电机的非阻塞任务。 */
     SingleMotor_Init();
     ReversibleMotor_Init();
     last_single_motor_task_ms = millis();
@@ -353,17 +354,14 @@ int main(void)
     SPI1_InitOnce();
     Timer2_Init();
     MAX31855_Init();
-    TIM3_10us_Init();
+    MixerPwm_Init();
     TIM4_10us_Init();
     stepdma_pb11_init(72000000);
     Stepper2_Init();
     PU3_Stepper_Init();
     /* 管理层仅初始化逻辑状态，绝不会在上电时输出 STEP。 */
     RobotArm_Init();
-    GPIO_Config();
-    TIM1_PWM_CH2N_Config(1000 - 1, 71, 0);
     // PWM_PA0_PA1_PA11_Init();
-    GPIO_SetBits(GPIOB, GPIO_Pin_1);
     USART1_Init();
     ProtocolV2_Init();
     RobotArmProtocol_Init(task_protocol_v2_send);
@@ -385,6 +383,8 @@ int main(void)
         Main_DebugBeginStage(MAIN_STAGE_UART_FRAMES);
         task_uart_frames();
         (void)Main_DebugEndStage();
+        /* 使用 TIM2 的毫秒时基推进搅拌到期停机，TIM3 仅保持 CH3 PWM 输出。 */
+        MixerPwm_Process();
         Main_DebugBeginStage(MAIN_STAGE_PROTOCOL);
         task_protocol_commands();
         (void)Main_DebugEndStage();

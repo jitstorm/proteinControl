@@ -15,6 +15,7 @@
 ".\motor_ctrl.o"
 ".\single_motor.o"
 ".\reversible_motor.o"
+".\mixer_pwm.o"
 ".\time.o"
 ".\max31855.o"
 ".\stepmotor.o"
