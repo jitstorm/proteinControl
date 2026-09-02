@@ -446,6 +446,66 @@ int main(void)
     TestDriverComplete(ROBOT_AXIS_Z);
     RobotArm_Task();
 
+    /* XYZ_SYNC 必须在同一轮启动所有有位移轴；Z 距离为 0 时不得启动。 */
+    x_starts = s_start_count[ROBOT_AXIS_X];
+    y_starts = s_start_count[ROBOT_AXIS_Y];
+    z_starts = s_start_count[ROBOT_AXIS_Z];
+    TEST_CHECK(RobotArm_MoveToWithSpeedAndMode(
+        34, 43, 50, 800u, 800u, 800u,
+        ROBOT_MOVE_MOTION_XYZ_SYNC) == ROBOT_ARM_OK);
+    RobotArm_Task();
+    TEST_CHECK(s_start_count[ROBOT_AXIS_X] == x_starts + 1u);
+    TEST_CHECK(s_start_count[ROBOT_AXIS_Y] == y_starts + 1u);
+    TEST_CHECK(s_start_count[ROBOT_AXIS_Z] == z_starts);
+    TEST_CHECK(s_busy[ROBOT_AXIS_X] == 1u && s_busy[ROBOT_AXIS_Y] == 1u);
+    TEST_CHECK(s_last_start_speed[ROBOT_AXIS_X] == 800u);
+    TEST_CHECK(s_last_start_speed[ROBOT_AXIS_Y] == 600u);
+    TestDriverComplete(ROBOT_AXIS_X);
+    RobotArm_Task();
+    TEST_CHECK(RobotArm_IsBusy() == 1u);
+    RobotArm_GetStatus(&status);
+    TEST_CHECK(status.move_to_state == ROBOT_MOVE_TO_XYZ_WAIT);
+    TestDriverComplete(ROBOT_AXIS_Y);
+    RobotArm_Task();
+    TEST_CHECK(RobotArm_GetState() == ROBOT_ARM_IDLE);
+
+    /* 三轴同步中，Y/Z 先完成后必须保持 XYZ_WAIT，直至最后的 X 完成。 */
+    TEST_CHECK(RobotArm_MoveToWithSpeedAndMode(
+        38, 46, 52, 800u, 800u, 800u,
+        ROBOT_MOVE_MOTION_XYZ_SYNC) == ROBOT_ARM_OK);
+    RobotArm_Task();
+    TestDriverComplete(ROBOT_AXIS_Y);
+    RobotArm_Task();
+    RobotArm_GetStatus(&status);
+    TEST_CHECK(status.move_to_state == ROBOT_MOVE_TO_XYZ_WAIT);
+    TestDriverComplete(ROBOT_AXIS_Z);
+    RobotArm_Task();
+    RobotArm_GetStatus(&status);
+    TEST_CHECK(status.move_to_state == ROBOT_MOVE_TO_XYZ_WAIT);
+    TestDriverComplete(ROBOT_AXIS_X);
+    RobotArm_Task();
+    TEST_CHECK(RobotArm_GetState() == ROBOT_ARM_IDLE);
+
+    /* 同步中任一轴超时必须立即停止其他仍在运动的轴，不能让其独自跑完。 */
+    TEST_CHECK(RobotArm_MoveToWithSpeedAndMode(
+        39, 47, 53, 800u, 800u, 800u,
+        ROBOT_MOVE_MOTION_XYZ_SYNC) == ROBOT_ARM_OK);
+    RobotArm_Task();
+    TEST_CHECK(s_busy[ROBOT_AXIS_X] == 1u && s_busy[ROBOT_AXIS_Y] == 1u &&
+               s_busy[ROBOT_AXIS_Z] == 1u);
+    s_now_ms += 31000u;
+    RobotArm_Task();
+    TEST_CHECK(s_busy[ROBOT_AXIS_X] == 0u && s_busy[ROBOT_AXIS_Y] == 0u &&
+               s_busy[ROBOT_AXIS_Z] == 0u);
+    RobotArm_GetStatus(&status);
+    TEST_CHECK(status.error_code == ROBOT_ARM_ERR_MOVE_TIMEOUT);
+    TEST_CHECK(status.y_valid == 0u && status.z_valid == 0u);
+    TEST_CHECK(RobotArm_ClearError() == ROBOT_ARM_OK);
+    TestSensorSnapshot(0u, 0u, 0u);
+    TestHomeAxis(ROBOT_AXIS_X, 0u);
+    TestHomeAxis(ROBOT_AXIS_Y, 0u);
+    TestHomeAxis(ROBOT_AXIS_Z, 0u);
+
     /* 后续既有回归仍从原来的已完成坐标开始，避免扩展用例改变历史场景前置条件。 */
     TEST_CHECK(RobotArm_MoveTo(10, 20, 30) == ROBOT_ARM_OK);
     RobotArm_Task();

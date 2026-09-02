@@ -21,6 +21,7 @@ static uint16_t s_last_speed;
 static uint16_t s_last_x_speed;
 static uint16_t s_last_y_speed;
 static uint16_t s_last_z_speed;
+static RobotMoveMotionMode_t s_last_motion_mode;
 
 /** 为无 C 运行库的测试可执行文件提供最小内存复制实现。 */
 void *memcpy(void *destination, const void *source, __SIZE_TYPE__ count)
@@ -121,6 +122,16 @@ RobotArmResult_t RobotArm_MoveToWithSpeed(int32_t x, int32_t y, int32_t z,
 {
     s_last_x = x; s_last_y = y; s_last_z = z;
     s_last_x_speed = x_speed; s_last_y_speed = y_speed; s_last_z_speed = z_speed;
+    return TestAccept(5u);
+}
+/** 模拟可选同步模式的普通 MoveTo 接口，并记录协议传入的 DATA[15]。 */
+RobotArmResult_t RobotArm_MoveToWithSpeedAndMode(
+    int32_t x, int32_t y, int32_t z, uint16_t x_speed, uint16_t y_speed,
+    uint16_t z_speed, RobotMoveMotionMode_t motion_mode)
+{
+    s_last_x = x; s_last_y = y; s_last_z = z;
+    s_last_x_speed = x_speed; s_last_y_speed = y_speed; s_last_z_speed = z_speed;
+    s_last_motion_mode = motion_mode;
     return TestAccept(5u);
 }
 /** 保留旧 MoveTo 测试替身，确保历史调用仍走默认速度。 */
@@ -249,8 +260,46 @@ int main(void)
     RobotArmProtocol_HandleFrame(&request);
     TEST_CHECK(s_last_call == 5u && s_last_x == 1 && s_last_y == 2 && s_last_z == 3);
     TEST_CHECK(s_last_x_speed == 101u && s_last_y_speed == 202u && s_last_z_speed == 303u);
+    TEST_CHECK(s_last_motion_mode == ROBOT_MOVE_MOTION_SEQUENTIAL);
     TestSetAsyncResult(ROBOT_MOVE_END_COMPLETED, ROBOT_ARM_OK);
     RobotArmProtocol_Task();
+
+    /* DATA[15]=1 只改变普通 MOVE_TO 的内部关节启动方式，CMD 和 ACK 生命周期不变。 */
+    TestClearFrame(&request, ROBOT_ARM_CMD_MOVE_TO, 0x312u);
+    request.data[0] = 4u; request.data[3] = 5u; request.data[6] = 6u;
+    ProtocolV2_WriteU16LE(&request.data[9], 401u);
+    ProtocolV2_WriteU16LE(&request.data[11], 402u);
+    ProtocolV2_WriteU16LE(&request.data[13], 403u);
+    request.data[15] = ROBOT_MOVE_MOTION_XYZ_SYNC;
+    RobotArmProtocol_HandleFrame(&request);
+    TEST_CHECK(s_last_call == 5u);
+    TEST_CHECK(s_last_motion_mode == ROBOT_MOVE_MOTION_XYZ_SYNC);
+    TestSetAsyncResult(ROBOT_MOVE_END_COMPLETED, ROBOT_ARM_OK);
+    RobotArmProtocol_Task();
+
+    /* 未定义的 DATA[15] 必须在执行层前拒绝，避免未知路径变成真实机械动作。 */
+    TestClearFrame(&request, ROBOT_ARM_CMD_MOVE_TO, 0x313u);
+    ProtocolV2_WriteU16LE(&request.data[9], 100u);
+    ProtocolV2_WriteU16LE(&request.data[11], 100u);
+    ProtocolV2_WriteU16LE(&request.data[13], 100u);
+    request.data[15] = 2u;
+    before = s_tx_count;
+    RobotArmProtocol_HandleFrame(&request);
+    TEST_CHECK(s_tx_count == (uint8_t)(before + 1u));
+    TEST_CHECK(s_tx[before].data[1] == ROBOT_ARM_ACK_REJECTED);
+    TEST_CHECK(s_tx[before].data[2] == ROBOT_ARM_ERR_CONFIG);
+
+    /* SafeMove 的同步值必须被拒绝，不能绕过既有抬 Z 防撞路径。 */
+    TestClearFrame(&request, ROBOT_ARM_CMD_MOVE_TO_SAFE, 0x314u);
+    ProtocolV2_WriteU16LE(&request.data[9], 100u);
+    ProtocolV2_WriteU16LE(&request.data[11], 100u);
+    ProtocolV2_WriteU16LE(&request.data[13], 100u);
+    request.data[15] = ROBOT_MOVE_MOTION_XYZ_SYNC;
+    before = s_tx_count;
+    RobotArmProtocol_HandleFrame(&request);
+    TEST_CHECK(s_tx_count == (uint8_t)(before + 1u));
+    TEST_CHECK(s_tx[before].data[1] == ROBOT_ARM_ACK_REJECTED);
+    TEST_CHECK(s_tx[before].data[2] == ROBOT_ARM_ERR_CONFIG);
 
     /* 活动单轴 Home 未完成时，下一条动作必须得到 BUSY ACK，不能覆盖原 SEQ。 */
     TestClearFrame(&request, ROBOT_ARM_CMD_HOME_AXIS, 0x330u);

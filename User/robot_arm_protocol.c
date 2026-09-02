@@ -565,19 +565,35 @@ void RobotArmProtocol_HandleFrame(const ProtocolV2Frame_t *request)
                                      ROBOT_ARM_ERR_CONFIG);
             return;
         }
-        result = RobotArm_MoveToWithSpeed(
+        if (request->data[15] > (uint8_t)ROBOT_MOVE_MOTION_XYZ_SYNC)
+        {
+            RobotArmProtocol_SendAck(request->cmd, request->seq,
+                                     ROBOT_ARM_ACK_REJECTED,
+                                     ROBOT_ARM_ERR_CONFIG);
+            return;
+        }
+        result = RobotArm_MoveToWithSpeedAndMode(
             ProtocolV2_ReadI24LE(&request->data[0]),
             ProtocolV2_ReadI24LE(&request->data[3]),
             ProtocolV2_ReadI24LE(&request->data[6]),
             ProtocolV2_ReadU16LE(&request->data[9]),
             ProtocolV2_ReadU16LE(&request->data[11]),
-            ProtocolV2_ReadU16LE(&request->data[13]));
+            ProtocolV2_ReadU16LE(&request->data[13]),
+            (RobotMoveMotionMode_t)request->data[15]);
         break;
     case ROBOT_ARM_CMD_MOVE_TO_SAFE:
         /* 0x35 已有安全路径时使用与 0x34 相同的压缩布局和三轴速度。 */
         if ((ProtocolV2_ReadU16LE(&request->data[9]) == 0u) ||
             (ProtocolV2_ReadU16LE(&request->data[11]) == 0u) ||
             (ProtocolV2_ReadU16LE(&request->data[13]) == 0u))
+        {
+            RobotArmProtocol_SendAck(request->cmd, request->seq,
+                                     ROBOT_ARM_ACK_REJECTED,
+                                     ROBOT_ARM_ERR_CONFIG);
+            return;
+        }
+        /* SafeMove 的抬 Z、X、Y、最终 Z 是已验证的防撞路径，不能被同步模式绕过。 */
+        if (request->data[15] != (uint8_t)ROBOT_MOVE_MOTION_SEQUENTIAL)
         {
             RobotArmProtocol_SendAck(request->cmd, request->seq,
                                      ROBOT_ARM_ACK_REJECTED,

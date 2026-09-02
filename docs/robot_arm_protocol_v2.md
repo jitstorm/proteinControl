@@ -85,7 +85,7 @@ frame[23] = (crc >> 8) & 0xFF
 | ARM_HOME_AXIS | `0x31` | 单轴 Home | ACK，终态通过 page3 查询 |
 | ARM_MOVE_AXIS_ABS | `0x32` | 单轴绝对位置运动 | ACK，终态通过 page3 查询 |
 | ARM_MOVE_AXIS_REL | `0x33` | 单轴相对步数运动 | ACK，终态通过 page3 查询 |
-| ARM_MOVE_TO | `0x34` | XYZ 顺序运动 | ACK，终态通过 page3 查询 |
+| ARM_MOVE_TO | `0x34` | 默认 XYZ 顺序运动；可选关节同步 | ACK，终态通过 page3 查询 |
 | ARM_MOVE_TO_SAFE | `0x35` | 带 Safe Z 的 XYZ 顺序运动 | ACK，终态通过 page3 查询 |
 | ARM_STOP | `0x36` | 停止当前 RobotArm 任务 | STOP 自身 ACK；原任务终态通过 page3 查询 |
 | ARM_CLEAR_ERROR | `0x37` | 清除管理层 ERROR | 仅 ACK |
@@ -153,23 +153,29 @@ frame[23] = (crc >> 8) & 0xFF
 
 | DATA 字节 | 类型 | 定义 |
 |---|---|---|
-| D0～D3 | int32 LE | X 绝对目标坐标 |
-| D4～D7 | int32 LE | Y 绝对目标坐标 |
-| D8～D11 | int32 LE | Z 绝对目标坐标 |
-| D12～D15 | - | 保留，必须为 0 |
+| D0～D2 | int24 LE | X 绝对目标坐标 |
+| D3～D5 | int24 LE | Y 绝对目标坐标 |
+| D6～D8 | int24 LE | Z 绝对目标坐标 |
+| D9～D10 | uint16 LE | X 最大速度，steps/s，必须非 0 |
+| D11～D12 | uint16 LE | Y 最大速度，steps/s，必须非 0 |
+| D13～D14 | uint16 LE | Z 最大速度，steps/s，必须非 0 |
+| D15 | uint8 | motionMode：`0=SEQUENTIAL`，`1=XYZ_SYNC` |
 
-使用各轴默认速度，按 X → Y → Z 串行执行；不做三轴同步或插补。目标等于当前坐标的轴会跳过。
+`motionMode=0`（以及旧 Android 未写入 D15 时的默认值）严格保持 X → Y → Z 串行执行。`motionMode=1` 只会让有位移的关节轴同时启动；MCU 以距离/最大速度最长的限制轴为时间基准，并降低较短轴速度，使其尽量同时到达。距离为 0 的轴不启动。该模式不是笛卡尔直线插补、DDA 或逆运动学，X/Y 为旋转关节时末端轨迹仍可能有弧度。
 
 ### 7.6 ARM_MOVE_TO_SAFE (`0x35`)
 
 | DATA 字节 | 类型 | 定义 |
 |---|---|---|
-| D0～D3 | int32 LE | X 绝对目标坐标 |
-| D4～D7 | int32 LE | Y 绝对目标坐标 |
-| D8～D11 | int32 LE | Z 绝对目标坐标 |
-| D12～D15 | - | 保留，必须为 0 |
+| D0～D2 | int24 LE | X 绝对目标坐标 |
+| D3～D5 | int24 LE | Y 绝对目标坐标 |
+| D6～D8 | int24 LE | Z 绝对目标坐标 |
+| D9～D10 | uint16 LE | X 最大速度，steps/s，必须非 0 |
+| D11～D12 | uint16 LE | Y 最大速度，steps/s，必须非 0 |
+| D13～D14 | uint16 LE | Z 最大速度，steps/s，必须非 0 |
+| D15 | uint8 | 仅接受 `0=SEQUENTIAL` |
 
-要求三轴坐标有效且 SafeMove 配置已启用。当前 Z 数值越大位置越低：当 X/Y 需要变化且 `currentZ > SAFE_Z` 时，顺序为 Raise Z → X → Y → Final Z；否则跳过 Raise Z。各阶段串行，不做插补。
+要求三轴坐标有效且 SafeMove 配置已启用。当前 Z 数值越大位置越低：当 X/Y 需要变化且 `currentZ > SAFE_Z` 时，顺序为 Raise Z → X → Y → Final Z；否则跳过 Raise Z。各阶段串行，不做插补。`D15=1` 被拒绝，因为同步启动会绕过已验证的 SafeMove 防撞路径。
 
 ### 7.7 ARM_STOP (`0x36`)
 

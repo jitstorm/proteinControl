@@ -68,8 +68,21 @@ typedef enum
     ROBOT_MOVE_TO_Z_START,
     ROBOT_MOVE_TO_Z_WAIT,
     ROBOT_MOVE_TO_DONE,
-    ROBOT_MOVE_TO_ERROR
+    ROBOT_MOVE_TO_ERROR,
+    /** 在同步模式下连续启动所有需要运动的轴，启动失败时立即停止已经启动的轴。 */
+    ROBOT_MOVE_TO_XYZ_START,
+    /** 等待同步启动的 X/Y/Z 全部真实完成；任一轴异常立即停止其余运动轴。 */
+    ROBOT_MOVE_TO_XYZ_WAIT
 } RobotMoveToState_t;
+
+/** MOVE_TO 的关节运动方式；同步只保证关节尽量同时到达，不是末端直线插补。 */
+typedef enum
+{
+    /** 沿既有 X→Y→Z 顺序逐轴运动，供全部旧路径和默认调用使用。 */
+    ROBOT_MOVE_MOTION_SEQUENTIAL = 0u,
+    /** 根据关节距离配速后同时启动需要运动的 X/Y/Z 轴。 */
+    ROBOT_MOVE_MOTION_XYZ_SYNC = 1u
+} RobotMoveMotionMode_t;
 
 typedef enum
 {
@@ -206,6 +219,24 @@ RobotArmResult_t RobotArm_MoveTo(int32_t x, int32_t y, int32_t z);
 RobotArmResult_t RobotArm_MoveToWithSpeed(int32_t x, int32_t y, int32_t z,
                                           uint16_t x_speed, uint16_t y_speed,
                                           uint16_t z_speed);
+/**
+ * 以指定关节运动方式启动普通目标位置任务。
+ *
+ * SEQUENTIAL 保留 X→Y→Z 旧路径；XYZ_SYNC 只在每轴安全检查通过后按距离和最大速度
+ * 降低较短轴速度并同时启动。它不是笛卡尔直线插补，现场使用前仍须完成短距离实机验证。
+ *
+ * @param x X 轴目标绝对逻辑坐标，单位为步数。
+ * @param y Y 轴目标绝对逻辑坐标，单位为步数。
+ * @param z Z 轴目标绝对逻辑坐标，单位为步数。
+ * @param x_speed X 轴最大速度，单位为 steps/s；0 表示使用既有默认速度。
+ * @param y_speed Y 轴最大速度，单位为 steps/s；0 表示使用既有默认速度。
+ * @param z_speed Z 轴最大速度，单位为 steps/s；0 表示使用既有默认速度。
+ * @param motion_mode 本次 MOVE_TO 的运动方式，只接受 SEQUENTIAL 或 XYZ_SYNC。
+ * @return 已受理返回 ROBOT_ARM_OK；坐标、限位、传感器、速度或驱动检查失败时返回错误码。
+ */
+RobotArmResult_t RobotArm_MoveToWithSpeedAndMode(
+    int32_t x, int32_t y, int32_t z, uint16_t x_speed, uint16_t y_speed,
+    uint16_t z_speed, RobotMoveMotionMode_t motion_mode);
 /** 按“必要时抬高 Z、移动 X/Y、最后移动 Z”的安全路径接受绝对位置任务。 */
 RobotArmResult_t RobotArm_MoveToSafe(int32_t x, int32_t y, int32_t z);
 /**

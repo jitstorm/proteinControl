@@ -67,6 +67,43 @@ volatile uint32_t dbg_z_limit_stop_count;
 volatile RobotMoveEndReason_t dbg_x_last_stop_reason;
 volatile RobotMoveEndReason_t dbg_y_last_stop_reason;
 volatile RobotMoveEndReason_t dbg_z_last_stop_reason;
+/* RAM Watch：XYZ_SYNC 只镜像上层完成收集状态，不能参与运动控制或协议输出。 */
+volatile RobotMoveToState_t dbg_xyz_state;
+volatile uint8_t dbg_xyz_x_required;
+volatile uint8_t dbg_xyz_y_required;
+volatile uint8_t dbg_xyz_z_required;
+volatile uint8_t dbg_xyz_x_done;
+volatile uint8_t dbg_xyz_y_done;
+volatile uint8_t dbg_xyz_z_done;
+
+/**
+ * 刷新 XYZ_SYNC 的完成收集快照，供 Keil Watch 确认较早完成的轴是否保持锁存。
+ *
+ * 距离为零的轴不会启动，在此按“无需等待即已完成”显示为 done=1，避免把正常的
+ * XY 同步误判为缺少 Z 完成事件。调试变量只读取正式状态机，绝不作为控制输入。
+ */
+static void RobotArm_UpdateXyzSyncDebug(void)
+{
+    dbg_xyz_state = s_robot_arm.move_to_state;
+    dbg_xyz_x_required = (s_robot_arm.move_axis_progress[ROBOT_AXIS_X] !=
+                          ROBOT_MOVE_AXIS_NOT_REQUIRED) ? 1u : 0u;
+    dbg_xyz_y_required = (s_robot_arm.move_axis_progress[ROBOT_AXIS_Y] !=
+                          ROBOT_MOVE_AXIS_NOT_REQUIRED) ? 1u : 0u;
+    dbg_xyz_z_required = (s_robot_arm.move_axis_progress[ROBOT_AXIS_Z] !=
+                          ROBOT_MOVE_AXIS_NOT_REQUIRED) ? 1u : 0u;
+    dbg_xyz_x_done = (s_robot_arm.move_axis_progress[ROBOT_AXIS_X] ==
+                      ROBOT_MOVE_AXIS_NOT_REQUIRED ||
+                      s_robot_arm.move_axis_progress[ROBOT_AXIS_X] ==
+                      ROBOT_MOVE_AXIS_COMPLETED) ? 1u : 0u;
+    dbg_xyz_y_done = (s_robot_arm.move_axis_progress[ROBOT_AXIS_Y] ==
+                      ROBOT_MOVE_AXIS_NOT_REQUIRED ||
+                      s_robot_arm.move_axis_progress[ROBOT_AXIS_Y] ==
+                      ROBOT_MOVE_AXIS_COMPLETED) ? 1u : 0u;
+    dbg_xyz_z_done = (s_robot_arm.move_axis_progress[ROBOT_AXIS_Z] ==
+                      ROBOT_MOVE_AXIS_NOT_REQUIRED ||
+                      s_robot_arm.move_axis_progress[ROBOT_AXIS_Z] ==
+                      ROBOT_MOVE_AXIS_COMPLETED) ? 1u : 0u;
+}
 
 /**
  * 刷新现场 RAM Watch，便于在不增加高频串口输出的前提下核对三轴限位链路。
@@ -862,6 +899,142 @@ static void RobotArm_FailCombinedMoveStart(RobotAxisId_t axis,
     }
 }
 
+/**
+ * 为 XYZ_SYNC 预先核对每个需要运动的轴，避免启动第一轴后才发现其他轴不能启动。
+ *
+ * 这只复用现有目标、传感器和负方向限位检查；实际启动仍由既有 DMA 驱动入口负责。
+ *
+ * @return 全部需要运动的轴均可启动时返回 ROBOT_ARM_OK，否则返回首个错误。
+ */
+static RobotArmResult_t RobotArm_ValidateSyncMoveStart(void)
+{
+    uint8_t index;
+    RobotArmResult_t result;
+
+    if (!RobotArmSensor_IsReady())
+    {
+        return ROBOT_ARM_ERR_SENSOR;
+    }
+    for (index = 0u; index < ROBOT_AXIS_COUNT; index++)
+    {
+        if (s_robot_arm.move_axis_progress[index] ==
+            ROBOT_MOVE_AXIS_NOT_REQUIRED)
+        {
+            continue;
+        }
+        result = RobotArm_CheckAxisTarget((RobotAxisId_t)index,
+                                          s_robot_arm.move_to_target[index]);
+        if (result != ROBOT_ARM_OK)
+        {
+            return result;
+        }
+        result = RobotArm_CheckTargetDirection((RobotAxisId_t)index,
+                                                s_robot_arm.move_to_target[index]);
+        if (result != ROBOT_ARM_OK)
+        {
+            return result;
+        }
+    }
+    return ROBOT_ARM_OK;
+}
+
+/**
+ * 按距离/最大速度比例计算 XYZ_SYNC 的实际速度。
+ *
+ * 使用限制轴作为时间基准，所有乘法通过 uint64_t 完成，避免 int24 距离与 uint16
+ * 速度相乘时发生 32 位溢出。距离为零的轴不参与计算也不会被启动。
+ *
+ * @return 速度可用时返回 ROBOT_ARM_OK；需要运动的轴没有有效速度时返回 CONFIG。
+ */
+static RobotArmResult_t RobotArm_CalculateSyncMoveSpeed(void)
+{
+    uint8_t index;
+    uint8_t limit_axis = ROBOT_AXIS_COUNT;
+    uint32_t distance[ROBOT_AXIS_COUNT];
+    uint32_t maximum_speed[ROBOT_AXIS_COUNT];
+
+    for (index = 0u; index < ROBOT_AXIS_COUNT; index++)
+    {
+        int64_t delta = (int64_t)s_robot_arm.move_to_target[index] -
+                        (int64_t)s_robot_arm.axis[index].current_position;
+        distance[index] = (uint32_t)((delta >= 0) ? delta : -delta);
+        if (distance[index] == 0u)
+        {
+            s_robot_arm.move_to_speed[index] = 0u;
+            continue;
+        }
+        maximum_speed[index] = RobotArm_ResolveMoveSpeed(
+            (RobotAxisId_t)index, s_robot_arm.move_to_speed[index]);
+        if (maximum_speed[index] == 0u)
+        {
+            return ROBOT_ARM_ERR_CONFIG;
+        }
+        if ((limit_axis == ROBOT_AXIS_COUNT) ||
+            ((uint64_t)distance[index] * maximum_speed[limit_axis] >
+             (uint64_t)distance[limit_axis] * maximum_speed[index]))
+        {
+            limit_axis = index;
+        }
+    }
+    if (limit_axis == ROBOT_AXIS_COUNT)
+    {
+        return ROBOT_ARM_OK;
+    }
+    for (index = 0u; index < ROBOT_AXIS_COUNT; index++)
+    {
+        uint64_t calculated;
+        if (distance[index] == 0u)
+        {
+            continue;
+        }
+        if (index == limit_axis)
+        {
+            s_robot_arm.move_to_speed[index] = (uint16_t)maximum_speed[index];
+            continue;
+        }
+        calculated = ((uint64_t)distance[index] * maximum_speed[limit_axis]) /
+                     distance[limit_axis];
+        if (calculated == 0u)
+        {
+            calculated = 1u;
+        }
+        if (calculated > maximum_speed[index])
+        {
+            calculated = maximum_speed[index];
+        }
+        s_robot_arm.move_to_speed[index] = (uint16_t)calculated;
+    }
+    return ROBOT_ARM_OK;
+}
+
+/**
+ * 任一同步轴异常时立即停止其余仍在运行的实际轴。
+ *
+ * 不能让其他轴继续完成，否则停止后的坐标不再可信且会形成危险的非预期姿态。
+ *
+ * @param failed_axis 已经由既有单轴处理标记失败的轴。
+ */
+static void RobotArm_StopOtherSyncAxes(RobotAxisId_t failed_axis)
+{
+    uint8_t index;
+    for (index = 0u; index < ROBOT_AXIS_COUNT; index++)
+    {
+        RobotAxis_t *robot_axis = &s_robot_arm.axis[index];
+        if ((index == failed_axis) || !robot_axis->active)
+        {
+            continue;
+        }
+        RobotArmDriver_Stop((RobotAxisId_t)index);
+        robot_axis->active = 0u;
+        robot_axis->position_valid = 0u;
+        robot_axis->state = ROBOT_AXIS_ERROR;
+        robot_axis->end_reason = s_robot_arm.last_move_end_reason;
+        s_robot_arm.move_axis_progress[index] = ROBOT_MOVE_AXIS_NOT_REQUIRED;
+        s_move_debug.axis_progress[index] = ROBOT_MOVE_AXIS_NOT_REQUIRED;
+    }
+    s_robot_arm.move_to_state = ROBOT_MOVE_TO_ERROR;
+}
+
 static void RobotArm_TryCompleteMoveTo(void)
 {
     uint8_t index;
@@ -922,6 +1095,8 @@ static void RobotArm_TaskMoveTo(void)
 {
     RobotArmResult_t result;
     int8_t progress;
+    uint8_t index;
+    uint8_t all_completed;
     switch (s_robot_arm.move_to_state)
     {
     case ROBOT_MOVE_TO_X_START:
@@ -1040,6 +1215,85 @@ static void RobotArm_TaskMoveTo(void)
                 ROBOT_MOVE_AXIS_COMPLETED;
             s_robot_arm.move_to_state = ROBOT_MOVE_TO_DONE;
             RobotArm_TryCompleteMoveTo();
+        }
+        break;
+
+    case ROBOT_MOVE_TO_XYZ_START:
+        /* 先完成所有轴的共同安全检查，再连续启动，避免第二轴被拒绝时第一轴独自运动。 */
+        result = RobotArm_ValidateSyncMoveStart();
+        if (result != ROBOT_ARM_OK)
+        {
+            RobotArm_FailCombinedMoveStart(ROBOT_AXIS_X, result, 0u);
+            break;
+        }
+        for (index = 0u; index < ROBOT_AXIS_COUNT; index++)
+        {
+            if (s_robot_arm.move_axis_progress[index] ==
+                ROBOT_MOVE_AXIS_NOT_REQUIRED)
+            {
+                continue;
+            }
+            result = RobotArm_StartAxisMoveInternal(
+                (RobotAxisId_t)index, s_robot_arm.move_to_target[index],
+                s_robot_arm.move_to_speed[index]);
+            if (result != ROBOT_ARM_OK)
+            {
+                /* 已连续启动的轴必须立刻停止，不能留下部分同步动作继续执行。 */
+                RobotArm_StopOtherSyncAxes((RobotAxisId_t)index);
+                RobotArm_FailCombinedMoveStart((RobotAxisId_t)index, result, 0u);
+                break;
+            }
+            s_robot_arm.move_axis_progress[index] = ROBOT_MOVE_AXIS_RUNNING;
+            s_move_debug.axis_progress[index] = ROBOT_MOVE_AXIS_RUNNING;
+        }
+        if (s_robot_arm.operation == ROBOT_OP_MOVE_TO)
+        {
+            s_robot_arm.move_to_state = ROBOT_MOVE_TO_XYZ_WAIT;
+        }
+        RobotArm_UpdateXyzSyncDebug();
+        break;
+
+    case ROBOT_MOVE_TO_XYZ_WAIT:
+        /* 每轮持续收集所有未完成轴；已锁存 COMPLETED 的轴绝不再次处理或清零。 */
+        for (index = 0u; index < ROBOT_AXIS_COUNT; index++)
+        {
+            if ((s_robot_arm.move_axis_progress[index] ==
+                 ROBOT_MOVE_AXIS_NOT_REQUIRED) ||
+                (s_robot_arm.move_axis_progress[index] ==
+                 ROBOT_MOVE_AXIS_COMPLETED))
+            {
+                continue;
+            }
+            progress = RobotArm_ProcessAxisMove((RobotAxisId_t)index);
+            if (progress < 0)
+            {
+                RobotArm_StopOtherSyncAxes((RobotAxisId_t)index);
+                break;
+            }
+            if (progress > 0)
+            {
+                s_robot_arm.move_axis_progress[index] = ROBOT_MOVE_AXIS_COMPLETED;
+                s_move_debug.axis_progress[index] = ROBOT_MOVE_AXIS_COMPLETED;
+            }
+        }
+        all_completed = 1u;
+        for (index = 0u; index < ROBOT_AXIS_COUNT; index++)
+        {
+            if ((s_robot_arm.move_axis_progress[index] !=
+                 ROBOT_MOVE_AXIS_NOT_REQUIRED) &&
+                (s_robot_arm.move_axis_progress[index] !=
+                 ROBOT_MOVE_AXIS_COMPLETED))
+            {
+                all_completed = 0u;
+                break;
+            }
+        }
+        RobotArm_UpdateXyzSyncDebug();
+        if ((s_robot_arm.operation == ROBOT_OP_MOVE_TO) && all_completed)
+        {
+            s_robot_arm.move_to_state = ROBOT_MOVE_TO_DONE;
+            RobotArm_TryCompleteMoveTo();
+            RobotArm_UpdateXyzSyncDebug();
         }
         break;
 
@@ -1349,20 +1603,23 @@ RobotArmResult_t RobotArm_MoveZ(int32_t target, uint32_t speed)
 }
 
 /**
- * 按 X、Y、Z 顺序启动一次非阻塞普通目标位置任务。
+ * 按指定运动方式启动一次非阻塞普通目标位置任务。
  *
- * speed 只保留在本次 MOVE_TO 运行态，绝不修改三轴 default_speed；每轴真正启动前
+ * 速度只保留在本次 MOVE_TO 运行态，绝不修改三轴 default_speed；每轴真正启动前
  * 都会再次应用各自最大安全速度和既有 DMA 加减速控制。
  *
  * @param x X 轴目标绝对逻辑坐标，单位为步数。
  * @param y Y 轴目标绝对逻辑坐标，单位为步数。
  * @param z Z 轴目标绝对逻辑坐标，单位为步数。
- * @param speed 本次三轴速度，单位为 steps/s；0 表示完全使用既有默认速度。
+ * @param x_speed X 轴最大速度，单位为 steps/s；0 表示使用既有默认速度。
+ * @param y_speed Y 轴最大速度，单位为 steps/s；0 表示使用既有默认速度。
+ * @param z_speed Z 轴最大速度，单位为 steps/s；0 表示使用既有默认速度。
+ * @param motion_mode 本次普通 MOVE_TO 的关节运动方式。
  * @return 命令被接受时返回 ROBOT_ARM_OK；坐标、传感器、安全检查或驱动前置条件失败时返回对应错误。
  */
-RobotArmResult_t RobotArm_MoveToWithSpeed(int32_t x, int32_t y, int32_t z,
-                                          uint16_t x_speed, uint16_t y_speed,
-                                          uint16_t z_speed)
+RobotArmResult_t RobotArm_MoveToWithSpeedAndMode(
+    int32_t x, int32_t y, int32_t z, uint16_t x_speed, uint16_t y_speed,
+    uint16_t z_speed, RobotMoveMotionMode_t motion_mode)
 {
     RobotArmResult_t result;
     uint8_t index;
@@ -1376,6 +1633,11 @@ RobotArmResult_t RobotArm_MoveToWithSpeed(int32_t x, int32_t y, int32_t z,
     if (RobotArm_IsBusy())
     {
         return ROBOT_ARM_ERR_BUSY;
+    }
+    if ((motion_mode != ROBOT_MOVE_MOTION_SEQUENTIAL) &&
+        (motion_mode != ROBOT_MOVE_MOTION_XYZ_SYNC))
+    {
+        return ROBOT_ARM_ERR_CONFIG;
     }
     if (!s_robot_arm.axis[ROBOT_AXIS_X].position_valid ||
         !s_robot_arm.axis[ROBOT_AXIS_Y].position_valid ||
@@ -1433,12 +1695,38 @@ RobotArmResult_t RobotArm_MoveToWithSpeed(int32_t x, int32_t y, int32_t z,
         s_move_debug.finalize_reason = ROBOT_MOVE_FINALIZE_COMPLETED;
         return ROBOT_ARM_OK;
     }
-    s_robot_arm.move_to_state = ROBOT_MOVE_TO_X_START;
+    if (motion_mode == ROBOT_MOVE_MOTION_XYZ_SYNC)
+    {
+        result = RobotArm_CalculateSyncMoveSpeed();
+        if (result != ROBOT_ARM_OK)
+        {
+            return result;
+        }
+        s_robot_arm.move_to_state = ROBOT_MOVE_TO_XYZ_START;
+        RobotArm_UpdateXyzSyncDebug();
+    }
+    else
+    {
+        s_robot_arm.move_to_state = ROBOT_MOVE_TO_X_START;
+    }
     s_robot_arm.operation = ROBOT_OP_MOVE_TO;
     s_robot_arm.state = ROBOT_ARM_MOVING;
     s_robot_arm.error_code = 0;
     s_robot_arm.last_move_end_reason = ROBOT_MOVE_END_NONE;
     return ROBOT_ARM_OK;
+}
+
+/**
+ * 按 X/Y/Z 顺序启动带临时速度的普通 MOVE_TO，保留旧调用路径。
+ *
+ * @return 已受理时返回 ROBOT_ARM_OK；安全、传感器或驱动失败时返回对应错误码。
+ */
+RobotArmResult_t RobotArm_MoveToWithSpeed(int32_t x, int32_t y, int32_t z,
+                                          uint16_t x_speed, uint16_t y_speed,
+                                          uint16_t z_speed)
+{
+    return RobotArm_MoveToWithSpeedAndMode(
+        x, y, z, x_speed, y_speed, z_speed, ROBOT_MOVE_MOTION_SEQUENTIAL);
 }
 
 /**
