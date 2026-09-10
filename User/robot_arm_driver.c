@@ -1,4 +1,5 @@
 #include "robot_arm_driver.h"
+#include "robot_arm.h"
 #include "robot_arm_sensor.h"
 #ifdef ROBOT_ARM_DRIVER_LOGIC_TEST
 extern uint8_t HC595Data[4];
@@ -209,10 +210,16 @@ uint32_t RobotArmDriver_GetCompletedSteps(RobotAxisId_t axis)
     }
 }
 
-/** 检查已启动轴是否正向负方向 Home 传感器继续施压。 */
+/**
+ * 检查负向轴是否应因 Home 命中停止，供三轴 DMA 续段与传感器回调共用。
+ * 同步零目标第一阶段必须完整输出计算步数；搜索阶段恢复立即停止。
+ * @param axis 实际 X/Y/Z 机械轴。
+ * @return 应停止返回 1，正向或限定的同步第一阶段返回 0。
+ */
 uint8_t RobotArmDriver_ShouldStopForNegativeLimit(RobotAxisId_t axis)
 {
-    if ((axis >= ROBOT_AXIS_COUNT) || (s_robot_arm_driver_direction[axis] >= 0))
+    if ((axis >= ROBOT_AXIS_COUNT) || RobotArm_ShouldDeferHome(axis) ||
+        (s_robot_arm_driver_direction[axis] >= 0))
     {
         return 0u;
     }

@@ -18,7 +18,12 @@
  * 下列值必须由实际机械标定填写，单位为步数；未知时保持 0 会安全地拒绝一切
  * 正方向目标，绝不能猜测生产坐标或回退到已取消的 S4 硬限位。
  */
-#if defined(ROBOT_ARM_LOGIC_TEST)
+#if defined(ROBOT_ARM_POST_HOME_TEST)
+/* 仅扩大补充找零回归的模拟行程，验证 20000 步下发；生产标定不变。 */
+#define ROBOT_ARM_X_MAX_TRAVEL 30000
+#define ROBOT_ARM_Y_MAX_TRAVEL 30000
+#define ROBOT_ARM_Z_MAX_TRAVEL 30000
+#elif defined(ROBOT_ARM_LOGIC_TEST)
 #define ROBOT_ARM_X_MAX_TRAVEL 1000
 #define ROBOT_ARM_Y_MAX_TRAVEL 1000
 #define ROBOT_ARM_Z_MAX_TRAVEL 1000

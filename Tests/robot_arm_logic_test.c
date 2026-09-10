@@ -63,10 +63,14 @@ uint8_t RobotArmDriver_IsBusy(RobotAxisId_t axis) { return s_busy[axis]; }
 uint32_t RobotArmDriver_GetRemainingSteps(RobotAxisId_t axis) { return s_remaining[axis]; }
 /** 查询模拟轴完成步数。 */
 uint32_t RobotArmDriver_GetCompletedSteps(RobotAxisId_t axis) { return s_completed[axis]; }
-/** 模拟 DMA 续段前的负向限位检查，确保 Home 命中传感器立即停轴。 */
+/**
+ * 模拟 DMA 续段前的负向限位检查；同步零目标第一阶段延后 Home，其他阶段命中即停。
+ * @param axis 被检查的模拟 X/Y/Z 轴。
+ * @return 应立即停止时返回 1，否则返回 0。
+ */
 uint8_t RobotArmDriver_ShouldStopForNegativeLimit(RobotAxisId_t axis)
 {
-    return (s_direction[axis] < 0 && RobotArmSensor_IsTriggered(
+    return (!RobotArm_ShouldDeferHome(axis) && s_direction[axis] < 0 && RobotArmSensor_IsTriggered(
         (RobotArmSensorId_t)(ROBOT_ARM_SENSOR_X_HOME + axis))) ? 1u : 0u;
 }
 

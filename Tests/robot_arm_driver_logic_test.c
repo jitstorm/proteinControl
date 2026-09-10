@@ -4,6 +4,17 @@
 
 #define TEST_CHECK(condition) do { if (!(condition) && (s_failure == 0)) s_failure = __LINE__; } while (0)
 
+/** 模拟管理层是否处于同步零目标第一阶段。 */
+static uint8_t s_defer_home;
+/** 模拟 Home 传感器触发状态。 */
+static uint8_t s_home_triggered;
+/**
+ * 返回测试指定的同步阶段，验证真实驱动的 DMA 续段保护判断。
+ * @param axis 模拟机械轴，本夹具对各轴使用同一阶段。
+ * @return 延后处理 Home 返回 1，否则返回 0。
+ */
+uint8_t RobotArm_ShouldDeferHome(RobotAxisId_t axis) { (void)axis; return s_defer_home; }
+
 uint8_t HC595Data[4];
 static int s_failure;
 static uint8_t s_pb11_running;
@@ -19,11 +30,15 @@ static uint8_t s_z_direction;
 /** 模拟 595 写入；方向影子值由测试直接检查。 */
 void ShiftRegister_WriteAll(uint8_t *data) { (void)data; }
 
-/** 为驱动适配层测试提供未触发的 Home 传感器状态。 */
+/**
+ * 提供可切换的 Home 传感器状态。
+ * @param sensor 模拟传感器，本夹具对各传感器使用同一触发值。
+ * @return 触发时返回 1，否则返回 0。
+ */
 uint8_t RobotArmSensor_IsTriggered(RobotArmSensorId_t sensor)
 {
     (void)sensor;
-    return 0u;
+    return s_home_triggered;
 }
 
 /** 模拟实际 PU2（PB11）梯形 DMA 请求并记录步数。 */
@@ -119,6 +134,16 @@ int main(void)
     TEST_CHECK(s_z_steps == 23u);
     TEST_CHECK(s_z_direction == 0u);
     RobotArmDriver_Stop(ROBOT_AXIS_Z);
+
+    /* 真实驱动判断：第一阶段延后 Home，进入搜索后同一触发必须恢复停轴。 */
+    TEST_CHECK(RobotArmDriver_Start(ROBOT_AXIS_X, -1, 20000u, 1000u) == 1u);
+    s_home_triggered = 1u;
+    s_defer_home = 1u;
+    TEST_CHECK(RobotArmDriver_ShouldStopForNegativeLimit(ROBOT_AXIS_X) == 0u);
+    s_defer_home = 0u;
+    TEST_CHECK(RobotArmDriver_ShouldStopForNegativeLimit(ROBOT_AXIS_X) == 1u);
+    RobotArmDriver_Stop(ROBOT_AXIS_X);
+    s_home_triggered = 0u;
 
     /* 底层函数即使返回成功，未进入 running 也必须由适配器判为失败。 */
     s_allow_start = 0u;

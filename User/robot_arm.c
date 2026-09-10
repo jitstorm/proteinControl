@@ -25,6 +25,21 @@ typedef struct
     RobotMoveEndReason_t end_reason;
 } RobotAxis_t;
 
+/** 同步移动的命令级阶段，保证所有普通轴完成后只检查一次补充找零。 */
+typedef enum
+{
+    /** 非同步命令或已收尾，不应用补充找零语义。 */
+    ROBOT_POST_HOME_NONE = 0,
+    /** 等待 XYZ 原计算步数全部完成，目标零轴暂不按 Home 提前结束。 */
+    ROBOT_POST_HOME_NORMAL_MOVE,
+    /** 等待原目标零轴命中 S1/S2/S3；全部成功才收尾，失败则停止其他轴。 */
+    ROBOT_POST_HOME_SEARCH
+} RobotPostHomePhase_t;
+
+/* 同步到位后每轮负向找零的最大步数；未命中可续段，总时限仍由轴 Home 配置控制。 */
+#define ROBOT_ARM_POST_HOME_CHUNK_STEPS 5000u
+
+/** 机械臂命令运行态；原始目标保留至移动及补充找零全部结束。 */
 typedef struct
 {
     RobotAxis_t axis[ROBOT_AXIS_COUNT];
@@ -36,6 +51,12 @@ typedef struct
     RobotAxisId_t home_axis;
     uint8_t home_all_active;
     uint32_t home_start_ms;
+    /** 当前同步命令的普通移动/补充找零阶段，STOP 时清除。 */
+    RobotPostHomePhase_t post_home_phase;
+    /** 本次同步命令受理时刻，单位毫秒；零目标轴总超时覆盖两个阶段。 */
+    uint32_t post_home_start_ms;
+    /** 原请求每轴速度，单位 steps/s；补充找零不使用同步降速后的速度。 */
+    uint16_t post_home_speed[ROBOT_AXIS_COUNT];
     int32_t move_to_target[ROBOT_AXIS_COUNT];
     uint16_t move_to_speed[ROBOT_AXIS_COUNT];
     /* 0 表示 HomeAll 使用 MCU 已标定快速速度；非零仅由 0x31 单轴 Home 设置。 */
@@ -283,9 +304,11 @@ static RobotArmResult_t RobotArm_ResultFromEndReason(RobotMoveEndReason_t reason
     }
 }
 
+/** 清除组合动作及补充找零阶段，确保 STOP 或清错后不会续跑旧命令。 */
 static void RobotArm_ResetCombinedStates(void)
 {
     uint8_t index;
+    s_robot_arm.post_home_phase = ROBOT_POST_HOME_NONE;
     s_robot_arm.home_state = ROBOT_HOME_IDLE;
     s_robot_arm.move_to_state = ROBOT_MOVE_TO_IDLE;
     s_robot_arm.safe_move_state = ROBOT_SAFE_MOVE_IDLE;
@@ -351,7 +374,7 @@ static void RobotArm_SetAxisPositionToHome(RobotAxisId_t axis)
 /**
  * 以已确认的 Home 零点结束当前负向轴动作。
  *
- * 该路径只用于目标恰为 0 的普通运动。必须先停实际 STEP/DMA/TIM，再提交零点，
+ * 该路径用于普通零目标运动及同步移动后的补充找零。必须先停实际 STEP/DMA/TIM，再提交零点，
  * 防止 DMA 在主循环处理前续装下一段脉冲。完成后由单轴、MOVE_TO 或 SafeMove
  * 状态机在下一轮把该轴作为正常完成继续收尾或启动后续轴。
  *
@@ -422,10 +445,30 @@ static RobotArmResult_t RobotArm_CheckAxisTarget(RobotAxisId_t axis,
     return ROBOT_ARM_OK;
 }
 
+/**
+ * 判断本轴是否应在同步普通移动结束后再处理 Home。
+ * 仅原目标为零的 0x01 第一阶段适用；供上层与 DMA 续段共用，防止提前截断计算步数。
+ * @param axis X/Y/Z 实际机械轴。
+ * @return 当前命令需延后处理该轴 Home 时返回 1；其他动作和搜索阶段返回 0。
+ */
+uint8_t RobotArm_ShouldDeferHome(RobotAxisId_t axis)
+{
+    return axis < ROBOT_AXIS_COUNT &&
+           s_robot_arm.operation == ROBOT_OP_MOVE_TO &&
+           s_robot_arm.post_home_phase == ROBOT_POST_HOME_NORMAL_MOVE &&
+           s_robot_arm.move_to_target[axis] == 0;
+}
+
+/**
+ * 判断当前运动方向是否被 Home 阻挡；同步零目标第一阶段仅按完整步数结束。
+ * @param axis 需要检查的实际机械轴。
+ * @param direction 逻辑运动方向，负数表示朝 Home 方向。
+ * @return 除限定的同步第一阶段外，负向且 Home 已触发时返回 1。
+ */
 static uint8_t RobotArm_IsDirectionBlocked(RobotAxisId_t axis,
                                            int8_t direction)
 {
-    if (direction < 0 &&
+    if (!RobotArm_ShouldDeferHome(axis) && direction < 0 &&
         RobotArmSensor_IsTriggered(RobotArm_GetHomeSensor(axis)))
     {
         return 1u;
@@ -517,6 +560,11 @@ static RobotArmResult_t RobotArm_StartAxisMoveInternal(RobotAxisId_t axis,
     return ROBOT_ARM_OK;
 }
 
+/**
+ * 收集普通轴运动结果；同步零目标轴必须以底层完整步数结束，不提前按 Home 置零。
+ * @param axis 当前收集完成状态的实际机械轴。
+ * @return 完成返回 1，等待返回 0，限位、超时或驱动异常返回 -1 并终止命令。
+ */
 static int8_t RobotArm_ProcessAxisMove(RobotAxisId_t axis)
 {
     RobotAxis_t *robot_axis = RobotArm_GetAxis(axis);
@@ -902,7 +950,7 @@ static void RobotArm_FailCombinedMoveStart(RobotAxisId_t axis,
 /**
  * 为 XYZ_SYNC 预先核对每个需要运动的轴，避免启动第一轴后才发现其他轴不能启动。
  *
- * 这只复用现有目标、传感器和负方向限位检查；实际启动仍由既有 DMA 驱动入口负责。
+ * 复用现有目标和传感器检查；同步零目标第一阶段延后 Home 处理，实际启动仍由既有 DMA 入口负责。
  *
  * @return 全部需要运动的轴均可启动时返回 ROBOT_ARM_OK，否则返回首个错误。
  */
@@ -1035,6 +1083,107 @@ static void RobotArm_StopOtherSyncAxes(RobotAxisId_t failed_axis)
     s_robot_arm.move_to_state = ROBOT_MOVE_TO_ERROR;
 }
 
+/**
+ * 结束补充找零失败并停止其余同步轴，避免单轴失控后其他轴继续运行。
+ * @param axis 失败的 X/Y/Z 轴。
+ * @param reason 超时或驱动异常原因。
+ */
+static void RobotArm_FailPostMoveHome(RobotAxisId_t axis, RobotMoveEndReason_t reason)
+{
+    RobotArm_FailAxisMove(axis, reason);
+    s_robot_arm.axis[axis].homed = 0u;
+    RobotArm_StopOtherSyncAxes(axis);
+    if (reason == ROBOT_MOVE_END_TIMEOUT)
+    {
+        s_robot_arm.error_code = ROBOT_ARM_ERR_HOME_TIMEOUT;
+    }
+    s_robot_arm.post_home_phase = ROBOT_POST_HOME_NONE;
+}
+
+/**
+ * 复用 Home 驱动启动最多 5000 步负向搜索，保留原坐标目标，不累计搜索路程。
+ * @param axis 原目标为零且尚未触发 S1/S2/S3 的机械轴。
+ * @return 实际进入 Busy 返回 1；启动失败会停止组合动作并返回 0。
+ */
+static uint8_t RobotArm_StartPostMoveHomeChunk(RobotAxisId_t axis)
+{
+    if (RobotArm_StartHomeDriver(axis, RobotArm_GetHomeDirection(axis),
+            ROBOT_ARM_POST_HOME_CHUNK_STEPS,
+            RobotArm_ResolveMoveSpeed(axis, s_robot_arm.post_home_speed[axis])) != ROBOT_ARM_OK ||
+        !RobotArmDriver_IsBusy(axis))
+    {
+        RobotArm_FailPostMoveHome(axis, ROBOT_MOVE_END_DRIVER_ERROR);
+        return 0u;
+    }
+    s_robot_arm.axis[axis].state = ROBOT_AXIS_HOMING;
+    s_robot_arm.axis[axis].position_valid = 0u;
+    s_robot_arm.move_axis_progress[axis] = ROBOT_MOVE_AXIS_RUNNING;
+    return 1u;
+}
+
+/**
+ * 普通 XYZ 全部结束后一次性检查原目标零轴，同时启动未命中 Home 的各轴搜索。
+ * 已触发 S1/S2/S3 的轴直接建立零点，绝不追加补偿运动。
+ * @return 存在搜索或启动失败时返回 1，阻止本轮成功收尾；无需搜索返回 0。
+ */
+static uint8_t RobotArm_StartPostMoveHomeIfNeeded(void)
+{
+    uint8_t index;
+    uint8_t started = 0u;
+    s_robot_arm.post_home_phase = ROBOT_POST_HOME_SEARCH;
+    /* 普通位移结束并不代表整条请求完成；复用现有等待状态，避免 page0 在补零时报告 DONE。
+     * 搜索由 post_home_phase 分支推进，只有全部轴结束后统一清为 IDLE；失败仍进入 ERROR。 */
+    s_robot_arm.move_to_state = ROBOT_MOVE_TO_XYZ_WAIT;
+    for (index = 0u; index < ROBOT_AXIS_COUNT; index++)
+    {
+        if (s_robot_arm.move_to_target[index] != 0) continue;
+        if (RobotArmSensor_IsTriggered(RobotArm_GetHomeSensor((RobotAxisId_t)index)))
+        {
+            RobotArm_CompleteAxisMoveAtHome((RobotAxisId_t)index);
+        }
+        else
+        {
+            if (!RobotArm_StartPostMoveHomeChunk((RobotAxisId_t)index)) return 1u;
+            started = 1u;
+        }
+    }
+    return started;
+}
+
+/**
+ * 推进所有补充找零轴：传感器命中即停轴置零，完整走完一段但未命中则续段。
+ * 各轴独立锁存完成；超时由命令级检查处理，驱动短走则整体失败。
+ */
+static void RobotArm_TaskPostMoveHome(void)
+{
+    uint8_t index;
+    for (index = 0u; index < ROBOT_AXIS_COUNT; index++)
+    {
+        RobotAxisId_t axis = (RobotAxisId_t)index;
+        RobotAxis_t *robot_axis = &s_robot_arm.axis[index];
+        if (s_robot_arm.move_to_target[index] != 0 ||
+            s_robot_arm.move_axis_progress[index] != ROBOT_MOVE_AXIS_RUNNING) continue;
+        /* 快照回调已经停轴时同样锁存完成，不要求传感器持续保持触发。 */
+        if ((!robot_axis->active && robot_axis->end_reason == ROBOT_MOVE_END_COMPLETED) ||
+            RobotArmSensor_IsTriggered(RobotArm_GetHomeSensor(axis)))
+        {
+            RobotArm_CompleteAxisMoveAtHome(axis);
+            s_robot_arm.move_axis_progress[index] = ROBOT_MOVE_AXIS_COMPLETED;
+        }
+        else if (!RobotArmDriver_IsBusy(axis))
+        {
+            if (RobotArmDriver_GetRemainingSteps(axis) != 0u ||
+                RobotArmDriver_GetCompletedSteps(axis) < robot_axis->command_steps)
+            {
+                RobotArm_FailPostMoveHome(axis, ROBOT_MOVE_END_DRIVER_ERROR);
+                return;
+            }
+            if (!RobotArm_StartPostMoveHomeChunk(axis)) return;
+        }
+    }
+}
+
+/** 所有轴真实完成且坐标一致后收尾；同步命令先完成一次补充找零检查。 */
 static void RobotArm_TryCompleteMoveTo(void)
 {
     uint8_t index;
@@ -1082,6 +1231,11 @@ static void RobotArm_TryCompleteMoveTo(void)
         return;
     }
 
+    /* 只有普通三轴全部结束才进入第二阶段；SEARCH 标志防止重复启动。 */
+    if (s_robot_arm.post_home_phase == ROBOT_POST_HOME_NORMAL_MOVE &&
+        RobotArm_StartPostMoveHomeIfNeeded()) return;
+    s_robot_arm.post_home_phase = ROBOT_POST_HOME_NONE;
+
     /* 最终轴确认完成的同一轮立即清理，避免 STATUS 读到短暂的伪 Busy。 */
     s_robot_arm.operation = ROBOT_OP_NONE;
     s_robot_arm.move_to_state = ROBOT_MOVE_TO_IDLE;
@@ -1091,12 +1245,37 @@ static void RobotArm_TryCompleteMoveTo(void)
     s_move_debug.finalize_reason = ROBOT_MOVE_FINALIZE_COMPLETED;
 }
 
+/** 推进 MOVE_TO；同步零目标轴在原请求内完成普通移动和搜索，失败或 STOP 后不续跑。 */
 static void RobotArm_TaskMoveTo(void)
 {
     RobotArmResult_t result;
     int8_t progress;
     uint8_t index;
     uint8_t all_completed;
+    /* 零目标轴总时限从受理开始，不能在每轮 5000 步搜索时重置。 */
+    if (s_robot_arm.post_home_phase != ROBOT_POST_HOME_NONE)
+    {
+        for (index = 0u; index < ROBOT_AXIS_COUNT; index++)
+        {
+            if (s_robot_arm.move_to_target[index] == 0 &&
+                (s_robot_arm.post_home_phase == ROBOT_POST_HOME_NORMAL_MOVE ||
+                 (s_robot_arm.move_axis_progress[index] == ROBOT_MOVE_AXIS_RUNNING &&
+                  s_robot_arm.axis[index].active)) &&
+                (uint32_t)(millis() - s_robot_arm.post_home_start_ms) >=
+                    RobotArm_GetHomeTimeout((RobotAxisId_t)index))
+            {
+                RobotArm_FailPostMoveHome((RobotAxisId_t)index, ROBOT_MOVE_END_TIMEOUT);
+                return;
+            }
+        }
+    }
+    if (s_robot_arm.post_home_phase == ROBOT_POST_HOME_SEARCH)
+    {
+        RobotArm_TaskPostMoveHome();
+        if (s_robot_arm.operation == ROBOT_OP_MOVE_TO) RobotArm_TryCompleteMoveTo();
+        RobotArm_UpdateXyzSyncDebug();
+        return;
+    }
     switch (s_robot_arm.move_to_state)
     {
     case ROBOT_MOVE_TO_X_START:
@@ -1614,7 +1793,7 @@ RobotArmResult_t RobotArm_MoveZ(int32_t target, uint32_t speed)
  * @param x_speed X 轴最大速度，单位为 steps/s；0 表示使用既有默认速度。
  * @param y_speed Y 轴最大速度，单位为 steps/s；0 表示使用既有默认速度。
  * @param z_speed Z 轴最大速度，单位为 steps/s；0 表示使用既有默认速度。
- * @param motion_mode 本次普通 MOVE_TO 的关节运动方式。
+ * @param motion_mode 顺序模式保持原行为；同步模式完整到位后对零目标轴按需找零，总超时或搜索失败会终止请求。
  * @return 命令被接受时返回 ROBOT_ARM_OK；坐标、传感器、安全检查或驱动前置条件失败时返回对应错误。
  */
 RobotArmResult_t RobotArm_MoveToWithSpeedAndMode(
@@ -1652,14 +1831,35 @@ RobotArmResult_t RobotArm_MoveToWithSpeedAndMode(
     result = RobotArm_CheckAxisTarget(ROBOT_AXIS_X, x);
     if (result == ROBOT_ARM_OK) result = RobotArm_CheckAxisTarget(ROBOT_AXIS_Y, y);
     if (result == ROBOT_ARM_OK) result = RobotArm_CheckAxisTarget(ROBOT_AXIS_Z, z);
-    if (result == ROBOT_ARM_OK) result = RobotArm_CheckTargetDirection(ROBOT_AXIS_X, x);
-    if (result == ROBOT_ARM_OK) result = RobotArm_CheckTargetDirection(ROBOT_AXIS_Y, y);
-    if (result == ROBOT_ARM_OK) result = RobotArm_CheckTargetDirection(ROBOT_AXIS_Z, z);
+    /* 仅同步零目标允许先跑完计算步数；非零目标及顺序模式保留负向限位检查。 */
+    if (result == ROBOT_ARM_OK &&
+        !(motion_mode == ROBOT_MOVE_MOTION_XYZ_SYNC && x == 0))
+        result = RobotArm_CheckTargetDirection(ROBOT_AXIS_X, x);
+    if (result == ROBOT_ARM_OK &&
+        !(motion_mode == ROBOT_MOVE_MOTION_XYZ_SYNC && y == 0))
+        result = RobotArm_CheckTargetDirection(ROBOT_AXIS_Y, y);
+    if (result == ROBOT_ARM_OK &&
+        !(motion_mode == ROBOT_MOVE_MOTION_XYZ_SYNC && z == 0))
+        result = RobotArm_CheckTargetDirection(ROBOT_AXIS_Z, z);
     if (result == ROBOT_ARM_OK) result = RobotArm_CheckPoseSafety(x, y, z);
     if (result != ROBOT_ARM_OK)
     {
         return result;
     }
+    /* 提前校验搜索配置；原请求速度需另存，避免短轴同步降速或零距离清零污染搜索速度。 */
+    if (motion_mode == ROBOT_MOVE_MOTION_XYZ_SYNC)
+    {
+        if (x == 0) result = RobotArm_ValidateHomeConfig(ROBOT_AXIS_X,
+            RobotArm_ResolveMoveSpeed(ROBOT_AXIS_X, x_speed));
+        if (result == ROBOT_ARM_OK && y == 0) result = RobotArm_ValidateHomeConfig(ROBOT_AXIS_Y,
+            RobotArm_ResolveMoveSpeed(ROBOT_AXIS_Y, y_speed));
+        if (result == ROBOT_ARM_OK && z == 0) result = RobotArm_ValidateHomeConfig(ROBOT_AXIS_Z,
+            RobotArm_ResolveMoveSpeed(ROBOT_AXIS_Z, z_speed));
+        if (result != ROBOT_ARM_OK) return result;
+    }
+    s_robot_arm.post_home_speed[ROBOT_AXIS_X] = x_speed;
+    s_robot_arm.post_home_speed[ROBOT_AXIS_Y] = y_speed;
+    s_robot_arm.post_home_speed[ROBOT_AXIS_Z] = z_speed;
     targets[ROBOT_AXIS_X] = x;
     targets[ROBOT_AXIS_Y] = y;
     targets[ROBOT_AXIS_Z] = z;
@@ -1683,7 +1883,8 @@ RobotArmResult_t RobotArm_MoveToWithSpeedAndMode(
         s_move_debug.axis_progress[index] =
             s_robot_arm.move_axis_progress[index];
     }
-    if ((s_robot_arm.move_axis_progress[ROBOT_AXIS_X] ==
+    if ((motion_mode != ROBOT_MOVE_MOTION_XYZ_SYNC || (x != 0 && y != 0 && z != 0)) &&
+        (s_robot_arm.move_axis_progress[ROBOT_AXIS_X] ==
          ROBOT_MOVE_AXIS_NOT_REQUIRED) &&
         (s_robot_arm.move_axis_progress[ROBOT_AXIS_Y] ==
          ROBOT_MOVE_AXIS_NOT_REQUIRED) &&
@@ -1709,6 +1910,10 @@ RobotArmResult_t RobotArm_MoveToWithSpeedAndMode(
     {
         s_robot_arm.move_to_state = ROBOT_MOVE_TO_X_START;
     }
+    s_robot_arm.post_home_phase = (motion_mode == ROBOT_MOVE_MOTION_XYZ_SYNC &&
+        (x == 0 || y == 0 || z == 0)) ?
+        ROBOT_POST_HOME_NORMAL_MOVE : ROBOT_POST_HOME_NONE;
+    s_robot_arm.post_home_start_ms = millis();
     s_robot_arm.operation = ROBOT_OP_MOVE_TO;
     s_robot_arm.state = ROBOT_ARM_MOVING;
     s_robot_arm.error_code = 0;
@@ -1995,7 +2200,7 @@ void RobotArm_Stop(void)
  * 在完整 HC165 快照更新后立即按 S1/S2/S3 的物理零点语义处理运动轴。
  *
  * S1=X、S2=Y、S3=Z 的 Active 均表示对应轴实际位置为 0。负向运行首次命中时
- * 必须在此回调立刻停止 STEP/DMA/TIM，禁止下一 DMA chunk；目标为 0 的普通运动
+ * 除同步零目标的普通移动阶段外，必须立刻停止 STEP/DMA/TIM；目标为 0 的普通运动
  * 与 Home 都正常完成并建立可信零点。只有已在 Active 零点还请求继续负向时，才由
  * 启动前方向检查拒绝为 LIMIT。
  */
@@ -2007,6 +2212,8 @@ void RobotArm_OnSensorSnapshotUpdated(void)
     {
         RobotAxis_t *robot_axis = &s_robot_arm.axis[index];
         RobotAxisId_t axis = (RobotAxisId_t)index;
+        /* 同步零目标第一阶段保持原坐标和完整脉冲，等待全轴结束后统一检查 Home。 */
+        if (RobotArm_ShouldDeferHome(axis)) continue;
         if (RobotArmSensor_IsTriggered(RobotArm_GetHomeSensor(axis)))
         {
             /* 即使当前没有任务，Active 也是真实零点证据，不能让旧坐标继续存在。 */

@@ -71,7 +71,7 @@ typedef enum
     ROBOT_MOVE_TO_ERROR,
     /** 在同步模式下连续启动所有需要运动的轴，启动失败时立即停止已经启动的轴。 */
     ROBOT_MOVE_TO_XYZ_START,
-    /** 等待同步启动的 X/Y/Z 全部真实完成；任一轴异常立即停止其余运动轴。 */
+    /** 等待同步位移及零目标轴按需补零全部完成；补零以 Home 命中为准，任一轴异常停止其余运动轴。 */
     ROBOT_MOVE_TO_XYZ_WAIT
 } RobotMoveToState_t;
 
@@ -80,7 +80,7 @@ typedef enum
 {
     /** 沿既有 X→Y→Z 顺序逐轴运动，供全部旧路径和默认调用使用。 */
     ROBOT_MOVE_MOTION_SEQUENTIAL = 0u,
-    /** 根据关节距离配速后同时启动需要运动的 X/Y/Z 轴。 */
+    /** 根据关节距离配速同步到位，再对目标为零的轴按需找零；全部结束才完成请求。 */
     ROBOT_MOVE_MOTION_XYZ_SYNC = 1u
 } RobotMoveMotionMode_t;
 
@@ -231,7 +231,7 @@ RobotArmResult_t RobotArm_MoveToWithSpeed(int32_t x, int32_t y, int32_t z,
  * @param x_speed X 轴最大速度，单位为 steps/s；0 表示使用既有默认速度。
  * @param y_speed Y 轴最大速度，单位为 steps/s；0 表示使用既有默认速度。
  * @param z_speed Z 轴最大速度，单位为 steps/s；0 表示使用既有默认速度。
- * @param motion_mode 本次 MOVE_TO 的运动方式，只接受 SEQUENTIAL 或 XYZ_SYNC。
+ * @param motion_mode SEQUENTIAL 顺序移动；XYZ_SYNC 完整同步到位后对零目标轴按需找零，超时则失败。
  * @return 已受理返回 ROBOT_ARM_OK；坐标、限位、传感器、速度或驱动检查失败时返回错误码。
  */
 RobotArmResult_t RobotArm_MoveToWithSpeedAndMode(
@@ -323,5 +323,12 @@ RobotArmResult_t RobotArm_CheckTransitionSafety(int32_t current_x,
                                                 int32_t target_x,
                                                 int32_t target_y,
                                                 int32_t target_z);
+
+/**
+ * 判断同步零目标第一阶段是否需要延后 Home 处理，供 DMA 续段保持完整计算步数。
+ * @param axis 实际 X/Y/Z 机械轴。
+ * @return 仅当前同步普通移动阶段的零目标轴返回 1，搜索和其他操作返回 0。
+ */
+uint8_t RobotArm_ShouldDeferHome(RobotAxisId_t axis);
 
 #endif
