@@ -250,7 +250,7 @@ void SingleMotor_Task(uint32_t elapsed_ms)
         else if (motor->remaining_ms > 0u)
         {
             motor->remaining_ms -= elapsed_ms;
-        }
+        } 
     }
 }
 

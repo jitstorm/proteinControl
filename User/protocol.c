@@ -587,6 +587,7 @@ void send_temperature_frame(uint8_t cmd)
         dbg_temperature_report_skipped_count++;
         dbg_temperature_report_last_skip_reason = rs485_tx_last_failure_reason;
     }
+    send_frame_event(cmd, data);
 }
 // 模拟器测试用
 // void send_temperature_frame(uint8_t cmd)
@@ -680,7 +681,6 @@ static void Protocol_SendSingleMotorTimedResult(uint8_t cmd, uint8_t motor_id,
 {
     uint8_t response[6] = {0u};
 
-    /* 06 回包先回显电机与时间，状态码紧随时间字段，便于按请求格式解析�?*/
     response[0] = motor_id;
     response[1] = time_100ms;
     response[2] = result;
@@ -691,14 +691,12 @@ static void Protocol_SendSingleMotorTimedResult(uint8_t cmd, uint8_t motor_id,
     send_frame(cmd, response);
 }
 
-/**
- * @brief 发送正反转电机命令的统一结果应答�? * @param cmd 当前命令字�? * @param result 执行结果码�? */
+
 static void Protocol_SendReversibleMotorResult(uint8_t cmd, uint8_t result,
                                                uint8_t motor_id)
 {
     uint8_t response[6] = {0u};
 
-    /* D0 返回结果，D1 回显电机编号，其他保留字节固定清零�?*/
     response[0] = result;
     response[1] = motor_id;
     if (result != SINGLE_MOTOR_RESULT_OK)
@@ -722,7 +720,7 @@ static uint8_t Protocol_IsAllZero(const uint8_t *data, uint8_t start_index)
     return 1u;
 }
 
-/* 协议仅定义停止、正转和反转；换向死区时实际输出已停止，因此按停止上报�?*/
+
 static uint8_t Protocol_GetReversibleMotorStateForResponse(ReversibleMotorState state)
 {
     if (state == REV_MOTOR_DEADTIME)
@@ -733,8 +731,7 @@ static uint8_t Protocol_GetReversibleMotorStateForResponse(ReversibleMotorState 
     return (uint8_t)state;
 }
 
-/**
- * @brief 分发当前协议命令�? * @param cmd 已完成校验的命令字�? * @param data 六字节命令数据�? */
+
 void handle_command(uint8_t cmd, uint8_t *data)
 {
     uint32_t duration_ms;
@@ -747,10 +744,8 @@ void handle_command(uint8_t cmd, uint8_t *data)
     switch (cmd)
     {
     case 0x00:
-        /* 保留旧功能：当前命令为空操作�?*/
         break;
     case 0x01:
-        /* 保留旧功能：读取两字�?74HC165 输入快照�?*/
         send_165DataSource(TX_SOURCE_ACK);
         break;
     case 0x05:
@@ -846,7 +841,7 @@ void handle_command(uint8_t cmd, uint8_t *data)
             data[2] = 0u;
             data[3] = 0u;
             data[4] = 0u;
-            data[5] = 0u;
+            data[5] = 0u;   
             (void)Protocol_SendCmd08Reply(data);
             break;
         }
@@ -1064,6 +1059,9 @@ void handle_command(uint8_t cmd, uint8_t *data)
             data[4] = 0;
             send_frame(cmd, data);
         }
+        break;
+    case 0x21:
+        send_temperature_frame(cmd);
         break;
     default:
         /* 未知命令没有电机编号，D1 保持为零�?*/

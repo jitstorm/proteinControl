@@ -119,7 +119,7 @@ static void task_temperature_report(void)
     last_temperature_report_ms = now;
     temp = MAX31855_GetTemperature();
     temperature = (uint16_t)temp;
-    send_temperature_frame(0x00);
+    send_temperature_frame(0x21);
 }
 
 /**
@@ -363,7 +363,7 @@ int main(void)
     SPI_GPIO_Init();
     SPI1_InitOnce();
     Timer2_Init();
-    MAX31855_Init();
+    // MAX31855_Init();
     MixerPwm_Init();
     TIM4_10us_Init();
     stepdma_pb11_init(72000000);
