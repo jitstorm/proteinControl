@@ -84,3 +84,7 @@ V2 命令由 `RobotArmProtocol_HandleFrame()` 接收，接受动作后先回 ACK
 - 坐标、Home、单轴/组合动作和 STOP 状态机：`User/robot_arm.c`。
 - V2 的 ACK、EVENT、STATUS 生命周期：`User/robot_arm_protocol.c`。
 - 旧 V1 `0x1B/0x1C/0x1E/0x1F/0x20` 命令：`User/protocol.c`。
+
+
+
+xy同时控制，z轴不动，z轴需要使用单独的速度，xy不和z一起使用合速度，这样的话，现在的长度够用了吗？噢，转换了，改为len，不使用固定长度，这样的话，根据cmd，可以不同的长度
