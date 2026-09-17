@@ -53,7 +53,7 @@ typedef struct
     uint8_t valid;
     /* 尚待发送 ACK 的原请求 CMD，不能在动作结束后依赖活动槽位读取。 */
     uint8_t request_cmd;
-    uint16_t seq;
+    uint16_t seq;                                                 
 } RobotArmProtocolPendingStopAck_t;
 
 static RobotArmProtocolTx_t s_tx_callback;
@@ -66,6 +66,72 @@ static uint8_t s_tx_head;
 static uint8_t s_tx_tail;
 static uint8_t s_tx_count;
 static RobotArmProtocolStats_t s_stats;
+
+/** 已通过整包校验、等待按顺序执行的 0x39 Phase。 */
+typedef struct
+{
+    uint8_t active;
+    uint16_t run_id;
+    uint8_t count;
+    uint8_t index;
+    RobotArmPhase_t phase[PROTOCOL_V2_PHASE_BATCH_MAX_PHASES];
+} RobotArmProtocolPhaseBatch_t;
+
+static RobotArmProtocolPhaseBatch_t s_phase_batch;
+/* 当前 Phase 的 DMA 完成屏障；仅由 0x39 运行期间的 TC 中断写入。 */
+static volatile uint8_t s_phase_done_mask;
+static uint8_t s_last_phase_seq_valid;
+static uint16_t s_last_phase_seq;
+
+/**
+ * 校验一个 Batch 内每根实际轴的非零位移方向是否固定。
+ *
+ * 同向连续 Phase 才能避免边界重新换向；若同一轴正负混用，必须在尚未输出 STEP 前拒绝，
+ * 不能在运行中依赖 DIR 重写修正。
+ *
+ * @param phase 已完成协议基础校验的 Phase 数组。
+ * @param count Phase 条数。
+ * @return 所有非零轴方向固定时返回 1，否则返回 0。
+ */
+static uint8_t RobotArmProtocol_HasFixedBatchDirections(
+    const RobotArmPhase_t *phase, uint8_t count)
+{
+    int8_t direction[ROBOT_AXIS_COUNT] = {0, 0, 0};
+    uint8_t index;
+    uint8_t axis;
+    int32_t delta;
+    int8_t next_direction;
+
+    for (index = 0u; index < count; index++)
+    {
+        for (axis = 0u; axis < ROBOT_AXIS_COUNT; axis++)
+        {
+            delta = (axis == ROBOT_AXIS_X) ? phase[index].delta_x :
+                    ((axis == ROBOT_AXIS_Y) ? phase[index].delta_y :
+                                                phase[index].delta_z);
+            if (delta == 0)
+                continue;
+            next_direction = (delta > 0) ? 1 : -1;
+            if ((direction[axis] != 0) && (direction[axis] != next_direction))
+                return 0u;
+            direction[axis] = next_direction;
+        }
+    }
+    return 1u;
+}
+
+/** 返回当前 Phase 实际需要等待 DMA 完成的机械轴掩码。 */
+static uint8_t RobotArmProtocol_GetPhaseAxisMask(const RobotArmPhase_t *phase)
+{
+    uint8_t mask = 0u;
+    if ((phase->flags & ROBOT_ARM_PHASE_FLAG_XY_ENABLE) && phase->delta_x != 0)
+        mask |= (uint8_t)(1u << ROBOT_AXIS_X);
+    if ((phase->flags & ROBOT_ARM_PHASE_FLAG_XY_ENABLE) && phase->delta_y != 0)
+        mask |= (uint8_t)(1u << ROBOT_AXIS_Y);
+    if ((phase->flags & ROBOT_ARM_PHASE_FLAG_Z_ENABLE) && phase->delta_z != 0)
+        mask |= (uint8_t)(1u << ROBOT_AXIS_Z);
+    return mask;
+}
 
 static void RobotArmProtocol_ClearData(uint8_t *data)
 {
@@ -297,8 +363,9 @@ static RobotArmResult_t RobotArmProtocol_MoveAxisRelative(uint8_t axis,
 /**
  * 根据 Android 指定页码构造 ARM_STATUS 的 0x72 回复。
  *
- * page0、page1、page2 保持既有状态和坐标语义；page3 读取最近一次异步终态缓存。
- * 读取 page3 不会清除缓存，且仅在收到 STATUS 请求后发送 0x72，不主动发送 0x71。
+ * page0、page1、page2 保持既有状态和坐标语义；page3 读取最近一次异步终态缓存；
+ * page4 返回正在执行的 0x39 批量路径进度。读取任意页均不会改变执行队列，且仅在
+ * 收到 STATUS 请求后发送 0x72，不主动发送 0x71。
  *
  * @param request 已通过 CRC 校验的 ARM_STATUS 请求；回复帧 SEQ 沿用该查询 SEQ。
  */
@@ -364,6 +431,23 @@ static void RobotArmProtocol_SendStatus(const ProtocolV2Frame_t *request)
             data[7] = s_terminal.result;
         }
     }
+    else if (page == 4u)
+    {
+        /*
+         * 仅报告当前仍在执行的批次：Phase 序号采用上位机可直接显示的 1 起始编号，
+         * remaining 包含正在执行的当前 Phase。批次终态、STOP 或尚未受理批次时各字段
+         * 保持 0，避免 Android 将上一次已结束路径误认为仍可继续。
+         */
+        data[0] = 4u;
+        data[1] = s_phase_batch.active ? 1u : 0u;
+        if (s_phase_batch.active)
+        {
+            ProtocolV2_WriteU16LE(&data[2], s_phase_batch.run_id);
+            data[4] = (uint8_t)(s_phase_batch.index + 1u);
+            data[5] = s_phase_batch.count;
+            data[6] = (uint8_t)(s_phase_batch.count - s_phase_batch.index);
+        }
+    }
     else
     {
         RobotArmProtocol_SendAck(request->cmd, request->seq,
@@ -415,6 +499,13 @@ void RobotArmProtocol_Init(RobotArmProtocolTx_t tx_callback)
     s_tx_head = 0u;
     s_tx_tail = 0u;
     s_tx_count = 0u;
+    s_phase_batch.active = 0u;
+    s_phase_batch.count = 0u;
+    s_phase_batch.index = 0u;
+    s_phase_batch.run_id = 0u;
+    s_phase_done_mask = 0u;
+    s_last_phase_seq_valid = 0u;
+    s_last_phase_seq = 0u;
     /* 裸机工程不依赖 C 运行库，逐项清零可避免编译器为结构体赋值生成 memset。 */
     s_stats.tx_queued_count = 0u;
     s_stats.tx_consumed_count = 0u;
@@ -453,6 +544,11 @@ void RobotArmProtocol_HandleFrame(const ProtocolV2Frame_t *request)
     if (request->cmd == ROBOT_ARM_CMD_STOP)
     {
         RobotArm_Stop();
+        /* STOP 必须同时废弃尚未启动的 Phase，禁止下一轮任务继续取队列。 */
+        s_phase_batch.active = 0u;
+        s_phase_batch.count = 0u;
+        s_phase_batch.index = 0u;
+        s_phase_done_mask = 0u;
         ack_queued = RobotArmProtocol_SendAck(
             request->cmd, request->seq,
             ROBOT_ARM_ACK_ACCEPTED, ROBOT_ARM_OK);
@@ -642,6 +738,125 @@ void RobotArmProtocol_HandleFrame(const ProtocolV2Frame_t *request)
 }
 
 /**
+ * 校验、原子保存并启动一批 0x39 Phase。
+ *
+ * 变长帧的长度、尾字节和 CRC 已在 ProtocolV2 完成；本层只在 16 条 Phase 全部
+ * 解码并通过基础语义校验后才写入执行队列，避免坏包造成部分机械动作。
+ */
+void RobotArmProtocol_HandlePhaseBatch(const ProtocolV2PhaseBatchFrame_t *request)
+{
+    uint8_t count;
+    uint8_t index;
+    uint16_t expected_length;
+    uint16_t offset;
+    RobotArmPhase_t decoded[PROTOCOL_V2_PHASE_BATCH_MAX_PHASES];
+    ProtocolV2Frame_t active_request;
+    RobotArmResult_t result;
+    uint8_t ack_queued;
+    if (request == 0)
+    {
+        return;
+    }
+    if (s_last_phase_seq_valid && request->seq == s_last_phase_seq)
+    {
+        RobotArmProtocol_SendAck(ROBOT_ARM_CMD_PHASE_BATCH, request->seq,
+                                 ROBOT_ARM_ACK_ACCEPTED, ROBOT_ARM_OK);
+        return;
+    }
+    if (s_active.valid || s_phase_batch.active)
+    {
+        RobotArmProtocol_SendAck(ROBOT_ARM_CMD_PHASE_BATCH, request->seq,
+                                 ROBOT_ARM_ACK_REJECTED, ROBOT_ARM_ERR_BUSY);
+        return;
+    }
+    if (request->length < PROTOCOL_V2_PHASE_BATCH_HEADER_SIZE)
+    {
+        RobotArmProtocol_SendAck(ROBOT_ARM_CMD_PHASE_BATCH, request->seq,
+                                 ROBOT_ARM_ACK_REJECTED, ROBOT_ARM_ERR_CONFIG);
+        return;
+    }
+    count = request->payload[2];
+    expected_length = (uint16_t)(PROTOCOL_V2_PHASE_BATCH_HEADER_SIZE +
+        (uint16_t)count * PROTOCOL_V2_PHASE_SIZE);
+    if ((count == 0u) || (count > PROTOCOL_V2_PHASE_BATCH_MAX_PHASES) ||
+        (request->payload[3] != 0u) || (request->length != expected_length))
+    {
+        RobotArmProtocol_SendAck(ROBOT_ARM_CMD_PHASE_BATCH, request->seq,
+                                 ROBOT_ARM_ACK_REJECTED, ROBOT_ARM_ERR_CONFIG);
+        return;
+    }
+    for (index = 0u; index < count; index++)
+    {
+        offset = (uint16_t)(PROTOCOL_V2_PHASE_BATCH_HEADER_SIZE +
+                            (uint16_t)index * PROTOCOL_V2_PHASE_SIZE);
+        decoded[index].delta_x = ProtocolV2_ReadI24LE(&request->payload[offset]);
+        decoded[index].delta_y = ProtocolV2_ReadI24LE(&request->payload[offset + 3u]);
+        decoded[index].delta_z = ProtocolV2_ReadI24LE(&request->payload[offset + 6u]);
+        decoded[index].f0 = ProtocolV2_ReadU16LE(&request->payload[offset + 9u]);
+        decoded[index].f1 = ProtocolV2_ReadU16LE(&request->payload[offset + 11u]);
+        decoded[index].z_speed = ProtocolV2_ReadU16LE(&request->payload[offset + 13u]);
+        decoded[index].flags = request->payload[offset + 15u];
+        if (((decoded[index].flags & (ROBOT_ARM_PHASE_FLAG_XY_ENABLE |
+                                      ROBOT_ARM_PHASE_FLAG_Z_ENABLE)) == 0u) ||
+            ((decoded[index].flags & (uint8_t)~(ROBOT_ARM_PHASE_FLAG_XY_ENABLE |
+                ROBOT_ARM_PHASE_FLAG_Z_ENABLE | ROBOT_ARM_PHASE_FLAG_SYNC_END |
+                ROBOT_ARM_PHASE_FLAG_STOP_AT_END)) != 0u) ||
+            ((decoded[index].flags & ROBOT_ARM_PHASE_FLAG_XY_ENABLE) &&
+             decoded[index].delta_x == 0 && decoded[index].delta_y == 0) ||
+            (!(decoded[index].flags & ROBOT_ARM_PHASE_FLAG_XY_ENABLE) &&
+             (decoded[index].delta_x != 0 || decoded[index].delta_y != 0)) ||
+            ((decoded[index].flags & ROBOT_ARM_PHASE_FLAG_Z_ENABLE) &&
+             (decoded[index].delta_z == 0 || decoded[index].z_speed == 0u)) ||
+            (!(decoded[index].flags & ROBOT_ARM_PHASE_FLAG_Z_ENABLE) &&
+             decoded[index].delta_z != 0) ||
+            ((decoded[index].flags & ROBOT_ARM_PHASE_FLAG_XY_ENABLE) &&
+             (decoded[index].f0 > 50000u || decoded[index].f1 > 50000u)))
+        {
+            RobotArmProtocol_SendAck(ROBOT_ARM_CMD_PHASE_BATCH, request->seq,
+                                     ROBOT_ARM_ACK_REJECTED, ROBOT_ARM_ERR_CONFIG);
+            return;
+        }
+    }
+    if (!RobotArmProtocol_HasFixedBatchDirections(decoded, count))
+    {
+        RobotArmProtocol_SendAck(ROBOT_ARM_CMD_PHASE_BATCH, request->seq,
+                                 ROBOT_ARM_ACK_REJECTED, ROBOT_ARM_ERR_CONFIG);
+        return;
+    }
+    s_phase_batch.run_id = ProtocolV2_ReadU16LE(&request->payload[0]);
+    s_phase_batch.count = count;
+    s_phase_batch.index = 0u;
+    for (index = 0u; index < count; index++)
+    {
+        s_phase_batch.phase[index] = decoded[index];
+    }
+    s_phase_batch.active = 1u;
+    s_phase_done_mask = 0u;
+    /* 先完整保存 Batch 再启动首条，避免极短 Phase 在屏障就绪前进入 TC。 */
+    result = RobotArm_StartPhase(&s_phase_batch.phase[0]);
+    if (result != ROBOT_ARM_OK)
+    {
+        s_phase_batch.active = 0u;
+        RobotArmProtocol_SendAck(ROBOT_ARM_CMD_PHASE_BATCH, request->seq,
+                                 ROBOT_ARM_ACK_REJECTED, (uint8_t)result);
+        return;
+    }
+    active_request.cmd = ROBOT_ARM_CMD_PHASE_BATCH;
+    active_request.seq = request->seq;
+    ack_queued = RobotArmProtocol_SendAck(active_request.cmd, active_request.seq,
+                                          ROBOT_ARM_ACK_ACCEPTED, ROBOT_ARM_OK);
+    RobotArmProtocol_BindActive(&active_request, 0xFFu);
+    if (!ack_queued)
+    {
+        s_pending_active_ack.valid = 1u;
+        s_pending_active_ack.request_cmd = active_request.cmd;
+        s_pending_active_ack.seq = active_request.seq;
+    }
+    s_last_phase_seq_valid = 1u;
+    s_last_phase_seq = request->seq;
+}
+
+/**
  * 轮询异步机械臂操作并保存真正的完成或失败终态。
  *
  * 仅在执行层已停止且能确认正常完成或 ERROR 后生成 pending 0x71 结果；
@@ -661,6 +876,33 @@ void RobotArmProtocol_Task(void)
         return;
     }
     RobotArm_GetStatus(&status);
+    if (s_phase_batch.active)
+    {
+        if (status.arm_state == ROBOT_ARM_ERROR)
+        {
+            s_phase_batch.active = 0u;
+            RobotArmProtocol_ProduceTerminal(
+                RobotArmProtocol_EventFromReason(status.last_move_end_reason),
+                (uint8_t)status.error_code);
+            return;
+        }
+        if ((status.arm_state == ROBOT_ARM_IDLE) &&
+            (status.last_move_end_reason == ROBOT_MOVE_END_COMPLETED))
+        {
+            if (s_phase_batch.index >= s_phase_batch.count)
+            {
+                s_phase_batch.active = 0u;
+                RobotArmProtocol_ProduceTerminal(ROBOT_ARM_EVENT_COMPLETED,
+                                                 ROBOT_ARM_OK);
+                return;
+            }
+            /* 正常中间条目必须已由 DMA TC 屏障直接续启；到此仍未续启说明运行态异常。 */
+            s_phase_batch.active = 0u;
+            RobotArmProtocol_ProduceTerminal(ROBOT_ARM_EVENT_DRIVER_ERROR,
+                                             ROBOT_ARM_ERR_DRIVER);
+        }
+        return;
+    }
     if (status.arm_state == ROBOT_ARM_ERROR)
     {
         result = (uint8_t)status.error_code;
@@ -681,6 +923,64 @@ void RobotArmProtocol_Task(void)
         return;
     }
     RobotArmProtocol_ProduceTerminal(event_type, result);
+}
+
+/**
+ * 在最后一个参与轴的 DMA TC 收尾后检查当前 Phase 屏障，并直接启动下一条。
+ *
+ * TC 中断已使对应 STEP 停在低电平；此处先让既有 RobotArm 完整步数校验收尾当前条，
+ * 再在同一中断上下文进入下一条的 XYZ_START，避免经主循环和协议轮询形成毫秒级空洞。
+ * STOP、LIMIT 或故障会使 RobotArm 不再处于正常完成态，因此不会续启后续 Phase。
+ *
+ * @param axis 刚刚完成当前 Phase 最后一个 DMA chunk 的机械轴。
+ */
+void RobotArmProtocol_OnPhaseAxisDmaCompleted(RobotAxisId_t axis)
+{
+    uint8_t expected_mask;
+    RobotArmStatus_t status;
+    RobotArmResult_t result;
+
+    if (!s_phase_batch.active || axis >= ROBOT_AXIS_COUNT ||
+        s_phase_batch.index >= s_phase_batch.count)
+    {
+        return;
+    }
+    expected_mask = RobotArmProtocol_GetPhaseAxisMask(
+        &s_phase_batch.phase[s_phase_batch.index]);
+    s_phase_done_mask |= (uint8_t)(1u << axis);
+    if ((s_phase_done_mask & expected_mask) != expected_mask)
+    {
+        return;
+    }
+
+    /* 所有参与轴均已停止，复用既有 completed/remaining 校验提交本条目标坐标。 */
+    RobotArm_Task();
+    RobotArm_GetStatus(&status);
+    if ((status.arm_state != ROBOT_ARM_IDLE) ||
+        (status.last_move_end_reason != ROBOT_MOVE_END_COMPLETED))
+    {
+        return;
+    }
+
+    s_phase_batch.index++;
+    s_phase_done_mask = 0u;
+    if (s_phase_batch.index >= s_phase_batch.count)
+    {
+        return;
+    }
+
+    result = RobotArm_StartPhase(&s_phase_batch.phase[s_phase_batch.index]);
+    if (result != ROBOT_ARM_OK)
+    {
+        /* 续启失败即为 Batch 故障：立即停轴、废弃后续条目并保留原 CMD/SEQ 的终态。 */
+        RobotArm_Stop();
+        s_phase_batch.active = 0u;
+        RobotArmProtocol_ProduceTerminal(ROBOT_ARM_EVENT_DRIVER_ERROR,
+                                         (uint8_t)result);
+        return;
+    }
+    /* 直接执行本条 XYZ_START；不等待下一轮 main loop。 */
+    RobotArm_Task();
 }
 
 /** 查询发送队列是否至少能可靠保存一个命令可能产生的 ACK。 */

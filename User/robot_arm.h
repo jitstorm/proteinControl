@@ -34,6 +34,39 @@ typedef enum
     ROBOT_OP_HOME_ALL
 } RobotArmOperation_t;
 
+/**
+ * 批量 Phase 的一条已解码运动记录。
+ *
+ * delta 为相对逻辑坐标、单位为实际 STEP 脉冲；f0/f1 只描述 XY 主导轴的边界频率，
+ * 执行层会按 X/Y 距离比例分别换算，Z 始终使用独立 z_speed。
+ */
+typedef struct
+{
+    /** X 轴本 Phase 的相对脉冲数，正负号决定实际方向。 */
+    int32_t delta_x;
+    /** Y 轴本 Phase 的相对脉冲数，正负号决定实际方向。 */
+    int32_t delta_y;
+    /** Z 轴本 Phase 的相对脉冲数；未启用 Z 时必须为 0。 */
+    int32_t delta_z;
+    /** XY 主导轴起始频率，单位 steps/s；0 表示协议层起步语义。 */
+    uint16_t f0;
+    /** XY 主导轴结束频率，单位 steps/s；0 表示协议层停下语义。 */
+    uint16_t f1;
+    /** Z 轴独立运行速度，单位 steps/s；不参与 XY 的 f0/f1 缩放。 */
+    uint16_t z_speed;
+    /** XY/Z 启用及边界控制标志，未知位必须在协议层拒绝。 */
+    uint8_t flags;
+} RobotArmPhase_t;
+
+/** 本 Phase 启用 X/Y 独立 DMA 路径。 */
+#define ROBOT_ARM_PHASE_FLAG_XY_ENABLE 0x01u
+/** 本 Phase 启用 Z 轴独立 DMA 路径。 */
+#define ROBOT_ARM_PHASE_FLAG_Z_ENABLE 0x02u
+/** 保留的同步完成语义；当前所有启用轴均完成才切换下一 Phase。 */
+#define ROBOT_ARM_PHASE_FLAG_SYNC_END 0x04u
+/** 保留的末端停止语义；当前 DMA 在本 Phase 最后一个脉冲后关闭。 */
+#define ROBOT_ARM_PHASE_FLAG_STOP_AT_END 0x08u
+
 typedef enum
 {
     ROBOT_MOVE_END_NONE = 0,
@@ -183,6 +216,13 @@ typedef struct
 void RobotArm_Init(void);
 /** 在主循环中推进 Home、单轴和 MoveTo 状态机。 */
 void RobotArm_Task(void);
+/**
+ * 启动一条已校验的 Phase；XY 使用按主导轴比例换算的 f0/f1，Z 保持 z_speed。
+ *
+ * @param phase 本次相对位移、XY 主导轴 f0/f1、Z 独立速度及启用轴标志。
+ * @return 仅受理成功时返回 OK；坐标、限位、传感器、速度或驱动条件不满足时返回错误。
+ */
+RobotArmResult_t RobotArm_StartPhase(const RobotArmPhase_t *phase);
 /** 启动 X 轴相对 STEP 运动。 */
 RobotArmResult_t RobotArm_MoveXRelative(int32_t delta, uint32_t speed);
 /** 启动 Y 轴相对 STEP 运动。 */
@@ -286,7 +326,7 @@ RobotArmResult_t RobotArm_HomeAxisWithSpeed(RobotAxisId_t axis,
  * 正常完成并建立可信零点。已在零点还请求继续负向，才在启动前返回 LIMIT。
  */
 void RobotArm_OnSensorSnapshotUpdated(void);
-/** 按 Z、Y、X 顺序启动非阻塞 HomeAll。 */
+/** 同时启动 X/Y/Z 三轴非阻塞 HomeAll，并分别等待 S1/S2/S3 确认物理零点。 */
 RobotArmResult_t RobotArm_Home(void);
 /** 停止全部三轴并彻底结束当前组合操作。 */
 void RobotArm_Stop(void);

@@ -5,6 +5,16 @@
 
 static int s_failure;
 
+/** 为无 C 运行库的测试可执行文件提供结构复制所需的最小内存复制实现。 */
+void *memcpy(void *destination, const void *source, __SIZE_TYPE__ count)
+{
+    unsigned char *to = (unsigned char *)destination;
+    const unsigned char *from = (const unsigned char *)source;
+    __SIZE_TYPE__ index;
+    for (index = 0u; index < count; index++) to[index] = from[index];
+    return destination;
+}
+
 static void TestFeed(const uint8_t *data, uint16_t length)
 {
     uint16_t index;
@@ -45,6 +55,36 @@ static void TestBuildV1(uint8_t *raw, uint8_t cmd)
     raw[9] = sum;
 }
 
+/** 构造仅供解析器测试的 0x39 可变长批量相位帧。 */
+static uint16_t TestBuildPhaseBatch(uint8_t *raw, uint16_t seq,
+                                    uint8_t phase_count)
+{
+    uint16_t payload_length;
+    uint16_t frame_length;
+    uint16_t crc;
+    uint16_t index;
+    payload_length = (uint16_t)(4u + (uint16_t)phase_count *
+                                PROTOCOL_V2_PHASE_SIZE);
+    raw[0] = PROTOCOL_V2_HEAD;
+    raw[1] = PROTOCOL_V2_MARK;
+    raw[2] = PROTOCOL_V2_PHASE_BATCH_CMD;
+    ProtocolV2_WriteU16LE(&raw[3], seq);
+    ProtocolV2_WriteU16LE(&raw[5], payload_length);
+    ProtocolV2_WriteU16LE(&raw[7], 0x1234u);
+    raw[9] = phase_count;
+    raw[10] = 0u;
+    for (index = 0u; index < (uint16_t)phase_count *
+         PROTOCOL_V2_PHASE_SIZE; index++)
+    {
+        raw[11u + index] = (uint8_t)index;
+    }
+    frame_length = (uint16_t)(payload_length + 10u);
+    raw[frame_length - 3u] = PROTOCOL_V2_TAIL;
+    crc = ProtocolV2_CalculateCrc(raw, frame_length - 2u);
+    ProtocolV2_WriteU16LE(&raw[frame_length - 2u], crc);
+    return frame_length;
+}
+
 static void TestExpectV2(uint8_t cmd, uint16_t seq)
 {
     ProtocolV2Frame_t frame;
@@ -61,13 +101,45 @@ int main(void)
     uint8_t v1[PROTOCOL_V1_FRAME_SIZE];
     uint8_t v1_out[PROTOCOL_V1_FRAME_SIZE];
     uint8_t stream[PROTOCOL_V2_FRAME_SIZE + 1u];
+    uint8_t phase_raw[PROTOCOL_V2_PHASE_BATCH_MAX_FRAME_SIZE];
     uint8_t crc_vector[9] = {'1','2','3','4','5','6','7','8','9'};
     ProtocolV2Frame_t frame;
     ProtocolV2Stats_t stats;
     uint8_t index;
+    uint16_t phase_length;
+    ProtocolV2PhaseBatchFrame_t phase_frame;
 
     TEST_CHECK(ProtocolV2_CalculateCrc(crc_vector, 9u) == 0x29B1u);
     TestBuildFrame(raw, 0x30u, 105u);
+
+    /* 0x39：最小和最大批量帧均按 LEN 收满，且不进入旧 24B 队列。 */
+    phase_length = TestBuildPhaseBatch(phase_raw, 77u, 1u);
+    ProtocolV2_Init();
+    TestFeed(phase_raw, phase_length);
+    TEST_CHECK(ProtocolV2_TakeFrame(&frame) == 0u);
+    TEST_CHECK(ProtocolV2_TakePhaseBatchFrame(&phase_frame) == 1u);
+    TEST_CHECK(phase_frame.seq == 77u && phase_frame.length == 20u);
+    TEST_CHECK(phase_frame.payload[0] == 0x34u && phase_frame.payload[1] == 0x12u);
+    phase_length = TestBuildPhaseBatch(phase_raw, 78u, 16u);
+    ProtocolV2_Init();
+    TestFeed(phase_raw, phase_length);
+    TEST_CHECK(ProtocolV2_TakePhaseBatchFrame(&phase_frame) == 1u);
+    TEST_CHECK(phase_frame.seq == 78u && phase_frame.length == 260u);
+    /* CRC、尾字节和异常 LEN 必须丢弃，不可占用批量队列。 */
+    phase_raw[phase_length - 1u] ^= 0x01u;
+    ProtocolV2_Init();
+    TestFeed(phase_raw, phase_length);
+    TEST_CHECK(ProtocolV2_TakePhaseBatchFrame(&phase_frame) == 0u);
+    phase_raw[phase_length - 1u] ^= 0x01u;
+    ProtocolV2_WriteU16LE(&phase_raw[5], 261u);
+    ProtocolV2_Init();
+    TestFeed(phase_raw, 7u);
+    TEST_CHECK(ProtocolV2_TakePhaseBatchFrame(&phase_frame) == 0u);
+    phase_length = TestBuildPhaseBatch(phase_raw, 79u, 1u);
+    phase_raw[phase_length - 3u] = 0x54u;
+    ProtocolV2_Init();
+    TestFeed(phase_raw, phase_length);
+    TEST_CHECK(ProtocolV2_TakePhaseBatchFrame(&phase_frame) == 0u);
 
     /* 1：正常固定 24B 帧。 */
     ProtocolV2_Init();

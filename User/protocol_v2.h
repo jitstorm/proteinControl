@@ -6,6 +6,15 @@
 #define PROTOCOL_V1_FRAME_SIZE 10u
 #define PROTOCOL_V2_FRAME_SIZE 24u
 #define PROTOCOL_V2_DATA_SIZE 16u
+#define PROTOCOL_V2_PHASE_BATCH_CMD 0x39u
+#define PROTOCOL_V2_PHASE_BATCH_MAX_PHASES 16u
+#define PROTOCOL_V2_PHASE_SIZE 16u
+#define PROTOCOL_V2_PHASE_BATCH_HEADER_SIZE 4u
+#define PROTOCOL_V2_PHASE_BATCH_MAX_PAYLOAD \
+    (PROTOCOL_V2_PHASE_BATCH_HEADER_SIZE + \
+     PROTOCOL_V2_PHASE_BATCH_MAX_PHASES * PROTOCOL_V2_PHASE_SIZE)
+#define PROTOCOL_V2_PHASE_BATCH_MAX_FRAME_SIZE \
+    (PROTOCOL_V2_PHASE_BATCH_MAX_PAYLOAD + 10u)
 #define PROTOCOL_V2_HEAD 0xAAu
 #define PROTOCOL_V2_MARK 0xFEu
 #define PROTOCOL_V2_TAIL 0x55u
@@ -16,6 +25,19 @@ typedef struct
     uint16_t seq;
     uint8_t data[PROTOCOL_V2_DATA_SIZE];
 } ProtocolV2Frame_t;
+
+/**
+ * 0x39 批量相位请求的已校验原始载荷。
+ *
+ * 旧 V2 保持固定 24B；仅 0x39 使用 LEN 指定的变长载荷。payload 仅在 CRC、尾字节
+ * 和长度均通过后才进入该结构，调用方仍须继续校验批头和每条相位字段。
+ */
+typedef struct
+{
+    uint16_t seq;
+    uint16_t length;
+    uint8_t payload[PROTOCOL_V2_PHASE_BATCH_MAX_PAYLOAD];
+} ProtocolV2PhaseBatchFrame_t;
 
 typedef struct
 {
@@ -35,6 +57,16 @@ void ProtocolV2_InputByte(uint8_t byte);
 uint8_t ProtocolV2_TakeV1Frame(uint8_t *frame);
 /** 取出一帧已校验并解码的 V2 固定 24B 帧。 */
 uint8_t ProtocolV2_TakeFrame(ProtocolV2Frame_t *frame);
+/**
+ * 取出一帧已完成长度、尾字节和 CRC 校验的 0x39 批量相位请求。
+ *
+ * 批量帧使用独立单槽队列，避免将变长数据误解释为旧 24B V2；调用方取得后仍需
+ * 校验业务字段。队列为空或 frame 无效时不改变队列状态。
+ *
+ * @param frame 接收已校验 SEQ、LEN 与原始 payload 的输出结构。
+ * @return 成功取出一帧返回 1；无帧或输出指针为空返回 0。
+ */
+uint8_t ProtocolV2_TakePhaseBatchFrame(ProtocolV2PhaseBatchFrame_t *frame);
 /** 将 V2 逻辑帧编码为固定 24B 线格式。 */
 void ProtocolV2_Encode(const ProtocolV2Frame_t *frame, uint8_t *raw_frame);
 /** 校验并解码固定 24B 线格式。 */

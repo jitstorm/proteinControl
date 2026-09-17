@@ -4,9 +4,9 @@
 
 typedef struct
 {
-    uint8_t candidate[PROTOCOL_V2_FRAME_SIZE];
-    uint8_t index;
-    uint8_t expected_size;
+    uint8_t candidate[PROTOCOL_V2_PHASE_BATCH_MAX_FRAME_SIZE];
+    uint16_t index;
+    uint16_t expected_size;
 } ProtocolV2Parser_t;
 
 static ProtocolV2Parser_t s_parser;
@@ -18,6 +18,8 @@ static ProtocolV2Frame_t s_v2_queue[PROTOCOL_V2_QUEUE_SIZE];
 static uint8_t s_v2_head;
 static uint8_t s_v2_tail;
 static uint8_t s_v2_count;
+static ProtocolV2PhaseBatchFrame_t s_phase_batch_queue;
+static uint8_t s_phase_batch_ready;
 static ProtocolV2Stats_t s_stats;
 
 static void ProtocolV2_CopyBytes(uint8_t *destination,
@@ -83,28 +85,67 @@ static void ProtocolV2_QueueV2(const ProtocolV2Frame_t *frame)
     s_v2_count++;
 }
 
+/** 保存一帧已经完成线上校验的 0x39 原始载荷。 */
+static void ProtocolV2_QueuePhaseBatch(const uint8_t *candidate,
+                                        uint16_t length)
+{
+    uint16_t index;
+    uint16_t payload_length;
+    if (s_phase_batch_ready)
+    {
+        s_stats.queue_overflow_count++;
+        s_stats.v2_queue_overflow_count++;
+        return;
+    }
+    payload_length = ProtocolV2_ReadU16LE(&candidate[5]);
+    s_phase_batch_queue.seq = ProtocolV2_ReadU16LE(&candidate[3]);
+    s_phase_batch_queue.length = payload_length;
+    for (index = 0u; index < payload_length; index++)
+    {
+        s_phase_batch_queue.payload[index] = candidate[7u + index];
+    }
+    s_phase_batch_ready = 1u;
+    (void)length;
+}
+
 static void ProtocolV2_ResyncCandidate(void)
 {
     int16_t source;
-    uint8_t length;
-    uint8_t index;
+    uint16_t length;
+    uint16_t index;
 
     /* 从最近的 AA 重新开始，避免一帧损坏后长期错位。 */
     for (source = (int16_t)s_parser.index - 1; source > 0; source--)
     {
         if (s_parser.candidate[source] == PROTOCOL_V2_HEAD)
         {
-            length = (uint8_t)(s_parser.index - (uint8_t)source);
+            length = (uint16_t)(s_parser.index - (uint16_t)source);
             for (index = 0u; index < length; index++)
             {
-                s_parser.candidate[index] =
-                    s_parser.candidate[(uint8_t)source + index];
+                s_parser.candidate[index] = s_parser.candidate[(uint16_t)source + index];
             }
             s_parser.index = length;
-            s_parser.expected_size = (length >= 2u &&
-                                      s_parser.candidate[1] == PROTOCOL_V2_MARK) ?
-                                         PROTOCOL_V2_FRAME_SIZE :
-                                         ((length >= 2u) ? PROTOCOL_V1_FRAME_SIZE : 0u);
+            if ((length >= 7u) &&
+                (s_parser.candidate[1] == PROTOCOL_V2_MARK) &&
+                (s_parser.candidate[2] == PROTOCOL_V2_PHASE_BATCH_CMD))
+            {
+                /* 重新同步到 0x39 时必须重新读取 LEN，不能错误地退回旧 24B 长度。 */
+                length = ProtocolV2_ReadU16LE(&s_parser.candidate[5]);
+                if (length > PROTOCOL_V2_PHASE_BATCH_MAX_PAYLOAD)
+                {
+                    s_parser.index = 0u;
+                    s_parser.expected_size = 0u;
+                    return;
+                }
+                s_parser.expected_size = (uint16_t)(length + 10u);
+            }
+            else
+            {
+                s_parser.expected_size = (s_parser.index >= 2u &&
+                                          s_parser.candidate[1] == PROTOCOL_V2_MARK) ?
+                                             PROTOCOL_V2_FRAME_SIZE :
+                                             ((s_parser.index >= 2u) ? PROTOCOL_V1_FRAME_SIZE : 0u);
+            }
             return;
         }
     }
@@ -115,6 +156,38 @@ static void ProtocolV2_ResyncCandidate(void)
 static void ProtocolV2_ProcessCandidate(void)
 {
     ProtocolV2Frame_t frame;
+    uint16_t payload_length;
+    uint16_t expected_crc;
+    uint16_t actual_crc;
+    uint16_t tail_index;
+    if ((s_parser.index >= 7u) &&
+        (s_parser.candidate[1] == PROTOCOL_V2_MARK) &&
+        (s_parser.candidate[2] == PROTOCOL_V2_PHASE_BATCH_CMD))
+    {
+        payload_length = ProtocolV2_ReadU16LE(&s_parser.candidate[5]);
+        tail_index = (uint16_t)(7u + payload_length);
+        if ((payload_length > PROTOCOL_V2_PHASE_BATCH_MAX_PAYLOAD) ||
+            (s_parser.expected_size != (uint16_t)(payload_length + 10u)) ||
+            (s_parser.candidate[tail_index] != PROTOCOL_V2_TAIL))
+        {
+            s_stats.frame_error_count++;
+            ProtocolV2_ResyncCandidate();
+            return;
+        }
+        expected_crc = ProtocolV2_ReadU16LE(&s_parser.candidate[tail_index + 1u]);
+        actual_crc = ProtocolV2_CalculateCrc(s_parser.candidate, tail_index + 1u);
+        if (expected_crc != actual_crc)
+        {
+            s_stats.crc_error_count++;
+            ProtocolV2_ResyncCandidate();
+            return;
+        }
+        ProtocolV2_QueuePhaseBatch(s_parser.candidate, s_parser.expected_size);
+        s_stats.valid_frame_count++;
+        s_parser.index = 0u;
+        s_parser.expected_size = 0u;
+        return;
+    }
     if (s_parser.expected_size == PROTOCOL_V2_FRAME_SIZE)
     {
         if (s_parser.candidate[21] != PROTOCOL_V2_TAIL)
@@ -155,12 +228,14 @@ void ProtocolV2_Init(void)
     s_v2_head = 0u;
     s_v2_tail = 0u;
     s_v2_count = 0u;
+    s_phase_batch_ready = 0u;
     ProtocolV2_ClearBytes((uint8_t *)&s_stats, (uint16_t)sizeof(s_stats));
 }
 
 /** 向非阻塞流解析器输入一个 USART 接收字节。 */
 void ProtocolV2_InputByte(uint8_t byte)
 {
+    uint16_t payload_length;
     if (s_parser.index == 0u)
     {
         if (byte == PROTOCOL_V2_HEAD)
@@ -171,7 +246,7 @@ void ProtocolV2_InputByte(uint8_t byte)
         return;
     }
 
-    if (s_parser.index >= PROTOCOL_V2_FRAME_SIZE)
+    if (s_parser.index >= PROTOCOL_V2_PHASE_BATCH_MAX_FRAME_SIZE)
     {
         s_stats.frame_error_count++;
         s_parser.index = 0u;
@@ -184,6 +259,20 @@ void ProtocolV2_InputByte(uint8_t byte)
         s_parser.expected_size = (byte == PROTOCOL_V2_MARK) ?
                                      PROTOCOL_V2_FRAME_SIZE :
                                      PROTOCOL_V1_FRAME_SIZE;
+    }
+    /* 0x39 的 LEN 位于固定头之后；旧 V2 仍始终按 24B 收取。 */
+    if ((s_parser.index == 7u) &&
+        (s_parser.candidate[1] == PROTOCOL_V2_MARK) &&
+        (s_parser.candidate[2] == PROTOCOL_V2_PHASE_BATCH_CMD))
+    {
+        payload_length = ProtocolV2_ReadU16LE(&s_parser.candidate[5]);
+        if (payload_length > PROTOCOL_V2_PHASE_BATCH_MAX_PAYLOAD)
+        {
+            s_stats.frame_error_count++;
+            ProtocolV2_ResyncCandidate();
+            return;
+        }
+        s_parser.expected_size = (uint16_t)(payload_length + 10u);
     }
     if ((s_parser.expected_size != 0u) &&
         (s_parser.index >= s_parser.expected_size))
@@ -216,6 +305,18 @@ uint8_t ProtocolV2_TakeFrame(ProtocolV2Frame_t *frame)
     *frame = s_v2_queue[s_v2_head];
     s_v2_head = (uint8_t)((s_v2_head + 1u) % PROTOCOL_V2_QUEUE_SIZE);
     s_v2_count--;
+    return 1u;
+}
+
+/** 取出独立保存的 0x39 变长请求；旧 V2 队列不受影响。 */
+uint8_t ProtocolV2_TakePhaseBatchFrame(ProtocolV2PhaseBatchFrame_t *frame)
+{
+    if ((frame == 0) || !s_phase_batch_ready)
+    {
+        return 0u;
+    }
+    *frame = s_phase_batch_queue;
+    s_phase_batch_ready = 0u;
     return 1u;
 }
 

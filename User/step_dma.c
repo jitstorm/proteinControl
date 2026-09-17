@@ -1,5 +1,7 @@
 #include "step_dma.h"
 #include "robot_arm_driver.h"
+#include "robot_arm_config.h"
+#include "robot_arm_protocol.h"
 #include "shift_register.h"
 #include "DELAY.h"
 
@@ -33,8 +35,11 @@
  *
  * 这样 CPU 负担很轻：每 CHUNK_STEPS 步才进一次中断。
  */
-#define CHUNK_EDGES 256u /* 必须是偶数 */
-#define CHUNK_STEPS (CHUNK_EDGES / 2u)
+#define CHUNK_STEPS 32u
+#define CHUNK_EDGES (CHUNK_STEPS * 2u) /* 每一步输出高、低两个 BSRR 边沿。 */
+
+/* Phase 的协议 0Hz 必须先在 RobotArm 主导轴层完成边界映射；此处仅防止错误直调产生 0 ARR。 */
+#define PHASE_TIMER_MIN_FREQUENCY 1u
 
 /* TIM5 计数时钟（一般 72MHz） */
 static uint32_t s_tim5_clk = 72000000u;
@@ -102,6 +107,8 @@ typedef struct
     uint32_t v_peak;      /* 实际峰值速度（可能 < f_max，三角形时） */
     uint32_t accel_steps; /* 加速段步数：从 f_start 加速到 v_peak */
     uint32_t decel_steps; /* 减速段步数：从 v_peak 减速到 0 */
+    uint32_t f_end;
+    uint8_t phase_profile;
 } TrapProfile;
 
 /* 主循环通过只读接口审计完成原因，ISR 更新字段必须保持可见。 */
@@ -209,6 +216,26 @@ static uint32_t trap_get_f(uint32_t step_index)
 
     if (total == 0u)
         return 1u;
+
+    if (s_trap.phase_profile)
+    {
+        uint64_t start_squared = (uint64_t)s_trap.f_start * s_trap.f_start;
+        uint64_t end_squared = (uint64_t)s_trap.f_end * s_trap.f_end;
+        if (done >= total)
+        {
+            return s_trap.f_end;
+        }
+        if (end_squared >= start_squared)
+        {
+            v2 = start_squared + ((end_squared - start_squared) * done) / total;
+        }
+        else
+        {
+            v2 = start_squared - ((start_squared - end_squared) * done) / total;
+        }
+        v = isqrt_u64(v2);
+        return (v < 1u) ? 1u : v;
+    }
 
     remain = (total > done) ? (total - done) : 0u;
 
@@ -551,6 +578,7 @@ void stepdma_pb11_move_trap(uint32_t steps, uint32_t f_start, uint32_t f_max, ui
     s_trap.f_start = f_start;
     s_trap.f_max = f_max;
     s_trap.accel = accel;
+    s_trap.phase_profile = 0u;
 
     /* 计算实际峰值速度 v_peak（考虑末端到 0） */
     f02 = (uint64_t)f_start * (uint64_t)f_start;
@@ -559,6 +587,10 @@ void stepdma_pb11_move_trap(uint32_t steps, uint32_t f_start, uint32_t f_max, ui
 
     if (vpeak > f_max)
         vpeak = f_max;
+    /* 极短位移无法在保持起步速度后再完整减速，峰值不得低于 f_start，
+     * 否则后续无符号减法会把 accel_steps 计算成错误的大数。 */
+    if (vpeak < f_start)
+        vpeak = f_start;
     if (vpeak < 1u)
         vpeak = 1u;
 
@@ -586,6 +618,38 @@ void stepdma_pb11_move_trap(uint32_t steps, uint32_t f_start, uint32_t f_max, ui
     s_mode = MODE_TRAP;
 
     dma_start_edges((uint16_t)chunk_edges);
+}
+
+/**
+ * 按一个规划 Phase 输出 PB11（Y 轴）脉冲。
+ *
+ * 起止频率已经由上层在主导轴层完成边界映射并按距离比例换算；本函数不再把每轴
+ * 低频抬到 500Hz。误传 0 时仅兜底为 1Hz，避免产生非法 ARR。
+ */
+void stepdma_pb11_move_phase(uint32_t steps, uint32_t f_start, uint32_t f_end)
+{
+    uint32_t frequency;
+    uint32_t chunk_steps;
+    if (steps == 0u)
+    {
+        return;
+    }
+    if (f_start == 0u) f_start = PHASE_TIMER_MIN_FREQUENCY;
+    if (f_end == 0u) f_end = PHASE_TIMER_MIN_FREQUENCY;
+    if (f_start > 50000u) f_start = 50000u;
+    if (f_end > 50000u) f_end = 50000u;
+    s_trap.steps_total = steps;
+    s_trap.steps_done = 0u;
+    s_trap.f_start = f_start;
+    s_trap.f_end = f_end;
+    s_trap.phase_profile = 1u;
+    frequency = trap_get_f(0u);
+    s_cur_f = frequency;
+    tim5_set_edge_freq(2u * frequency);
+    chunk_steps = (steps > CHUNK_STEPS) ? CHUNK_STEPS : steps;
+    s_running = 1u;
+    s_mode = MODE_TRAP;
+    dma_start_edges((uint16_t)(chunk_steps * 2u));
 }
 
 /* =========================
@@ -699,6 +763,9 @@ void DMA2_Channel2_IRQHandler(void)
 
             if (vpeak > s_trap.f_max)
                 vpeak = s_trap.f_max;
+            /* pending 续接同样不能让峰值低于实际续接起步速度。 */
+            if (vpeak < s_trap.f_start)
+                vpeak = s_trap.f_start;
             if (vpeak < 1u)
                 vpeak = 1u;
 
@@ -776,6 +843,7 @@ void DMA2_Channel2_IRQHandler(void)
         if (s_trap.steps_done >= s_trap.steps_total)
         {
             stepdma_pb11_stop();
+            RobotArmProtocol_OnPhaseAxisDmaCompleted(ROBOT_AXIS_Y);
             return;
         }
 
@@ -817,7 +885,7 @@ void DMA2_Channel2_IRQHandler(void)
 #define STEPPER2_MIN_FREQUENCY 1u
 #define STEPPER2_MAX_FREQUENCY 50000u
 #define STEPPER2_START_FREQUENCY 500u
-#define STEPPER2_ACCELERATION 100000u
+#define STEPPER2_ACCELERATION ROBOT_ARM_X_ACCELERATION
 
 /* TIM6 计数时钟（一般 72MHz） */
 static uint32_t s10_tim6_clk = 72000000u;
@@ -827,6 +895,8 @@ static volatile uint32_t s10_cur_f = 0;
 static volatile uint8_t s10_running = 0;
 static volatile uint32_t s10_completed_steps = 0u;
 static volatile uint32_t s10_remaining_steps = 0u;
+/* 已写入 Q4 的实际 DIR1 电平；连续同方向 Phase 不重复触发 595 写入。 */
+static int8_t s10_direction_level = -1;
 
 typedef struct
 {
@@ -867,6 +937,8 @@ typedef struct
     uint32_t v_peak;
     uint32_t accel_steps;
     uint32_t decel_steps;
+    uint32_t f_end;
+    uint8_t phase_profile;
 } TrapProfile10;
 
 static TrapProfile10 s10_trap;
@@ -900,6 +972,26 @@ static uint32_t trap10_get_f(uint32_t step_index)
 
     if (total == 0u)
         return 1u;
+
+    if (s10_trap.phase_profile)
+    {
+        uint64_t start_squared = (uint64_t)s10_trap.f_start * s10_trap.f_start;
+        uint64_t end_squared = (uint64_t)s10_trap.f_end * s10_trap.f_end;
+        if (done >= total)
+        {
+            return s10_trap.f_end;
+        }
+        if (end_squared >= start_squared)
+        {
+            v2 = start_squared + ((end_squared - start_squared) * done) / total;
+        }
+        else
+        {
+            v2 = start_squared - ((start_squared - end_squared) * done) / total;
+        }
+        v = isqrt_u64(v2);
+        return (v < 1u) ? 1u : v;
+    }
 
     remain = (total > done) ? (total - done) : 0u;
 
@@ -1147,6 +1239,7 @@ void stepdma_pb10_move_trap(uint32_t steps, uint32_t f_start, uint32_t f_max, ui
     s10_trap.f_start = f_start;
     s10_trap.f_max = f_max;
     s10_trap.accel = accel;
+    s10_trap.phase_profile = 0u;
 
     f02 = (uint64_t)f_start * (uint64_t)f_start;
     vpeak2 = (2ull * (uint64_t)accel * (uint64_t)steps + f02) / 2ull;
@@ -1154,6 +1247,9 @@ void stepdma_pb10_move_trap(uint32_t steps, uint32_t f_start, uint32_t f_max, ui
 
     if (vpeak > f_max)
         vpeak = f_max;
+    /* 32 step 以下的极短位移也必须保留合法的三角形 profile。 */
+    if (vpeak < f_start)
+        vpeak = f_start;
     if (vpeak < 1u)
         vpeak = 1u;
 
@@ -1180,6 +1276,40 @@ void stepdma_pb10_move_trap(uint32_t steps, uint32_t f_start, uint32_t f_max, ui
     s10_mode = MODE10_TRAP;
 
     dma10_start_edges((uint16_t)chunk_edges);
+}
+
+/**
+ * 按一个规划 Phase 输出 PB10（X 轴）脉冲，末端频率由 f_end 决定。
+ *
+ * 起止频率已在主导轴层映射并缩放，60Hz 等合法短轴频率必须原样进入 TIM6；误传
+ * 0 时仅兜底为 1Hz，避免产生非法 ARR。
+ */
+void stepdma_pb10_move_phase(uint32_t steps, uint32_t f_start, uint32_t f_end)
+{
+    uint32_t frequency;
+    uint32_t chunk_steps;
+    if (steps == 0u)
+    {
+        return;
+    }
+    if (f_start == 0u) f_start = PHASE_TIMER_MIN_FREQUENCY;
+    if (f_end == 0u) f_end = PHASE_TIMER_MIN_FREQUENCY;
+    if (f_start > STEPPER2_MAX_FREQUENCY) f_start = STEPPER2_MAX_FREQUENCY;
+    if (f_end > STEPPER2_MAX_FREQUENCY) f_end = STEPPER2_MAX_FREQUENCY;
+    s10_trap.steps_total = steps;
+    s10_trap.steps_done = 0u;
+    s10_completed_steps = 0u;
+    s10_remaining_steps = steps;
+    s10_trap.f_start = f_start;
+    s10_trap.f_end = f_end;
+    s10_trap.phase_profile = 1u;
+    frequency = trap10_get_f(0u);
+    s10_cur_f = frequency;
+    tim6_set_edge_freq(2u * frequency);
+    chunk_steps = (steps > CHUNK_STEPS) ? CHUNK_STEPS : steps;
+    s10_running = 1u;
+    s10_mode = MODE10_TRAP;
+    dma10_start_edges((uint16_t)(chunk_steps * 2u));
 }
 
 void stepdma_pb10_request_trap(uint32_t steps, uint32_t f_start, uint32_t f_max, uint32_t accel)
@@ -1314,6 +1444,7 @@ void DMA2_Channel3_IRQHandler(void)
         {
 
             stepdma_pb10_stop();
+            RobotArmProtocol_OnPhaseAxisDmaCompleted(ROBOT_AXIS_X);
             return;
         }
 
@@ -1349,6 +1480,10 @@ void Stepper2_SetDirection(uint8_t direction)
     {
         return;
     }
+    if (s10_direction_level == (int8_t)(direction ? 1u : 0u))
+    {
+        return;
+    }
 
     /* 实际 PU1（X 轴）的方向使用 U86 DIR1(Q4)，仅修改 HC595Data[1] 的该位。 */
     if (direction)
@@ -1360,6 +1495,7 @@ void Stepper2_SetDirection(uint8_t direction)
         HC595Data[STEPPER2_DIR_595_INDEX] &= (uint8_t)~STEPPER2_DIR_MASK;
     }
     ShiftRegister_WriteAll(HC595Data);
+    s10_direction_level = (int8_t)(direction ? 1u : 0u);
 }
 
 /** 启动实际 PU1 的梯形加减速运动，运行中重复启动返回 0。 */
@@ -1387,6 +1523,32 @@ uint8_t Stepper2_Start(uint8_t direction, uint32_t steps, uint32_t target_freque
     return 1u;
 }
 
+/**
+ * 启动实际 PU1（X 轴）的 Phase 起止频率动作。
+ *
+ * 方向与普通动作采用同一 74HC595 DIR1 映射；仅替换 PB10/TIM6/DMA 的速度曲线，
+ * 不建立第二套坐标或限位路径。
+ */
+uint8_t Stepper2_StartPhase(uint8_t direction, uint32_t steps,
+                             uint32_t start_frequency, uint32_t end_frequency)
+{
+    uint8_t direction_changed;
+    if (steps == 0u || stepdma_pb10_is_running())
+    {
+        return 0u;
+    }
+    direction_changed = (s10_direction_level != (int8_t)(direction ? 1u : 0u)) ? 1u : 0u;
+    stepdma_pb10_stop();
+    Stepper2_SetDirection(direction);
+    /* 同一 Batch 已在首条建立 DIR1，续条不重复等待方向建立时间。 */
+    if (direction_changed)
+    {
+        Delay_us(2u);
+    }
+    stepdma_pb10_move_phase(steps, start_frequency, end_frequency);
+    return stepdma_pb10_is_running();
+}
+
 /** 立即停止第二轴，并将 PB10 保持为低电平。 */
 void Stepper2_Stop(void)
 {
@@ -1412,7 +1574,7 @@ uint32_t Stepper2_GetRemainingSteps(void)
 }
 
 /* PU3 独立 DMA 步进状态；PB13 由 BSRR 写入，不占用任何定时器复用输出。 */
-#define PU3_CHUNK_STEPS 128u
+#define PU3_CHUNK_STEPS 32u
 #define PU3_CHUNK_EDGES (PU3_CHUNK_STEPS * 2u)
 #define PU3_DIR_595_INDEX 1u
 #define PU3_DIR_595_MASK (1u << 6)
@@ -1424,6 +1586,19 @@ typedef enum
     PU3_ACCEL_CRUISE,
     PU3_ACCEL_DOWN
 } PU3_AccelState;
+
+/** PU3 的梯形/三角形速度 profile，字段语义与 PB10/PB11 保持一致。 */
+typedef struct
+{
+    uint32_t steps_total;
+    uint32_t f_start;
+    uint32_t f_max;
+    uint32_t accel;
+    uint32_t v_peak;
+    uint32_t accel_steps;
+    uint32_t decel_steps;
+} PU3_TrapProfile;
+
 typedef struct
 {
     volatile uint8_t running;
@@ -1439,16 +1614,130 @@ typedef struct
     uint32_t acceleration;
 } PU3_State;
 static volatile PU3_State s_pu3;
+static volatile PU3_TrapProfile s_pu3_trap;
 static uint32_t s_pu3_edges[PU3_CHUNK_EDGES];
+/* 已写入 Q6 的实际 DIR3 电平；连续同方向 Phase 不重复触发 595 写入。 */
+static int8_t s_pu3_direction_level = -1;
 
 /* 只修改 DIR3 的 Q6，确保第二片 595 其余输出不被覆盖。 */
 static void PU3_SetDirection(uint8_t direction)
 {
+    if (s_pu3_direction_level == (int8_t)(direction ? 1u : 0u))
+    {
+        return;
+    }
     if (direction)
         HC595Data[PU3_DIR_595_INDEX] |= (uint8_t)PU3_DIR_595_MASK;
     else
         HC595Data[PU3_DIR_595_INDEX] &= (uint8_t)~PU3_DIR_595_MASK;
     ShiftRegister_WriteAll(HC595Data);
+    s_pu3_direction_level = (int8_t)(direction ? 1u : 0u);
+}
+
+/**
+ * 按 PU3 已完成步数计算下一段实际速度。
+ *
+ * 使用与 X/Y 相同的整数匀加速公式；短距离由峰值速度自动形成三角形，
+ * 最后一段根据剩余步数减速，不能直接跳回起步速度。
+ *
+ * @param steps_done 已完成的 STEP 上升沿数量。
+ * @return 下一段速度，单位为 steps/s，至少为 1。
+ */
+static uint32_t PU3_GetTrapFrequency(uint32_t steps_done)
+{
+    uint32_t remaining;
+    uint32_t speed;
+    uint64_t speed_squared;
+
+    if (s_pu3_trap.steps_total == 0u)
+    {
+        return 1u;
+    }
+
+    remaining = (s_pu3_trap.steps_total > steps_done) ?
+                    (s_pu3_trap.steps_total - steps_done) : 0u;
+    if (steps_done < s_pu3_trap.accel_steps)
+    {
+        speed_squared = (uint64_t)s_pu3_trap.f_start *
+                            (uint64_t)s_pu3_trap.f_start +
+                        2ull * (uint64_t)s_pu3_trap.accel *
+                            (uint64_t)steps_done;
+        speed = isqrt_u64(speed_squared);
+        if (speed > s_pu3_trap.v_peak)
+        {
+            speed = s_pu3_trap.v_peak;
+        }
+        return (speed < 1u) ? 1u : speed;
+    }
+
+    if (remaining <= s_pu3_trap.decel_steps)
+    {
+        speed_squared = 2ull * (uint64_t)s_pu3_trap.accel *
+                        (uint64_t)remaining;
+        speed = isqrt_u64(speed_squared);
+        if ((remaining > 0u) && (speed < 1u))
+        {
+            speed = 1u;
+        }
+        return (speed > s_pu3_trap.v_peak) ? s_pu3_trap.v_peak : speed;
+    }
+
+    return s_pu3_trap.v_peak;
+}
+
+/**
+ * 根据本次 PU3 总步数建立梯形或三角形速度 profile。
+ *
+ * 峰值速度同时满足从起步速度加速及在终点前减至零的距离约束，
+ * 因而短距离不会强行跑到请求的目标速度。
+ *
+ * @param steps 本次运动总 STEP 上升沿数量。
+ * @param start_frequency 起步速度，单位为 steps/s。
+ * @param maximum_frequency 目标速度上限，单位为 steps/s。
+ * @param acceleration 加速度，单位为 steps/s^2。
+ */
+static void PU3_BuildTrapProfile(uint32_t steps,
+                                 uint32_t start_frequency,
+                                 uint32_t maximum_frequency,
+                                 uint32_t acceleration)
+{
+    uint64_t start_squared;
+    uint64_t peak_squared;
+    uint32_t peak_speed;
+
+    s_pu3_trap.steps_total = steps;
+    s_pu3_trap.f_start = start_frequency;
+    s_pu3_trap.f_max = maximum_frequency;
+    s_pu3_trap.accel = acceleration;
+
+    start_squared = (uint64_t)start_frequency * (uint64_t)start_frequency;
+    peak_squared = (2ull * (uint64_t)acceleration * (uint64_t)steps +
+                    start_squared) / 2ull;
+    peak_speed = isqrt_u64(peak_squared);
+    if (peak_speed > maximum_frequency)
+    {
+        peak_speed = maximum_frequency;
+    }
+    /* 峰值低于起步速度会导致 accel_steps 的无符号减法下溢。 */
+    if (peak_speed < start_frequency)
+    {
+        peak_speed = start_frequency;
+    }
+    if (peak_speed < 1u)
+    {
+        peak_speed = 1u;
+    }
+    s_pu3_trap.v_peak = peak_speed;
+    s_pu3_trap.accel_steps = (uint32_t)(
+        ((uint64_t)peak_speed * (uint64_t)peak_speed - start_squared) /
+        (2ull * (uint64_t)acceleration));
+    s_pu3_trap.decel_steps = (uint32_t)(
+        ((uint64_t)peak_speed * (uint64_t)peak_speed) /
+        (2ull * (uint64_t)acceleration));
+    if (s_pu3_trap.decel_steps < 1u)
+    {
+        s_pu3_trap.decel_steps = 1u;
+    }
 }
 
 static void PU3_SetEdgeFrequency(uint32_t edge_frequency)
@@ -1570,12 +1859,14 @@ uint8_t PU3_Stepper_Start(uint32_t steps, uint8_t direction, uint32_t start_freq
     s_pu3.remaining_steps = steps;
     s_pu3.completed_steps = 0u;
     s_pu3.start_speed = start_frequency;
-    s_pu3.current_speed = start_frequency;
     s_pu3.target_speed = maximum_frequency;
     s_pu3.acceleration = acceleration;
+    PU3_BuildTrapProfile(steps, start_frequency, maximum_frequency,
+                         acceleration);
+    s_pu3.current_speed = PU3_GetTrapFrequency(0u);
     s_pu3.accel_state = PU3_ACCEL_UP;
     GPIO_ResetBits(PU3_STEP_GPIO, PU3_STEP_PIN);
-    PU3_SetEdgeFrequency(start_frequency * 2u);
+    PU3_SetEdgeFrequency(s_pu3.current_speed * 2u);
     s_pu3.running = 1u;
     chunk = (steps > PU3_CHUNK_STEPS) ? PU3_CHUNK_STEPS : steps;
     PU3_LoadChunk(chunk);
@@ -1614,17 +1905,21 @@ void DMA2_Channel4_5_IRQHandler(void)
     if (s_pu3.remaining_steps == 0u)
     {
         PU3_Stepper_Stop();
+        RobotArmProtocol_OnPhaseAxisDmaCompleted(ROBOT_AXIS_Z);
         return;
     }
-    /* 每段仅更新一次速度，无等待和逐 GPIO 翻转；末段按剩余距离减速。 */
-    if (s_pu3.remaining_steps <= PU3_CHUNK_STEPS)
+    /* 每完成实际装载的 32 step（末段可能更短）后，按剩余距离刷新梯形速度。 */
+    s_pu3.current_speed = PU3_GetTrapFrequency(s_pu3.completed_steps);
+    if (s_pu3.completed_steps < s_pu3_trap.accel_steps)
+    {
+        s_pu3.accel_state = PU3_ACCEL_UP;
+    }
+    else if (s_pu3.remaining_steps <= s_pu3_trap.decel_steps)
     {
         s_pu3.accel_state = PU3_ACCEL_DOWN;
-        s_pu3.current_speed = s_pu3.start_speed;
     }
-    else if (s_pu3.current_speed < s_pu3.target_speed)
+    else
     {
-        s_pu3.current_speed = s_pu3.target_speed;
         s_pu3.accel_state = PU3_ACCEL_CRUISE;
     }
     PU3_SetEdgeFrequency(s_pu3.current_speed * 2u);

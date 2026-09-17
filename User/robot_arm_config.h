@@ -23,7 +23,7 @@
 #define ROBOT_ARM_X_MAX_TRAVEL 30000
 #define ROBOT_ARM_Y_MAX_TRAVEL 30000
 #define ROBOT_ARM_Z_MAX_TRAVEL 30000
-#elif defined(ROBOT_ARM_LOGIC_TEST)
+#elif defined(ROBOT_ARM_LOGIC_TEST) && !defined(ROBOT_ARM_PHASE_FREQUENCY_TEST)
 #define ROBOT_ARM_X_MAX_TRAVEL 1000
 #define ROBOT_ARM_Y_MAX_TRAVEL 1000
 #define ROBOT_ARM_Z_MAX_TRAVEL 1000
@@ -104,6 +104,20 @@
 #define ROBOT_ARM_X_DEFAULT_SPEED 1000u
 #define ROBOT_ARM_Y_DEFAULT_SPEED 1000u
 #define ROBOT_ARM_Z_DEFAULT_SPEED 1000u
+
+/*
+ * Phase 协议的 f0/f1=0 是“从静止起步/最终停下”的边界语义，并非可写入 ARR 的
+ * 真实频率。执行 XY Phase 时先把主导轴的 0 映射到该安全边界频率，再按距离比例
+ * 换算从轴；因此短轴可以合法低于 500 steps/s，不能逐轴强制抬到该值。
+ * 普通 MOVE 与 XYZ_SYNC 仍通过驱动层原有的 500 steps/s 起步策略，不读取此宏。
+ */
+#define ROBOT_ARM_PHASE_BOUNDARY_FREQUENCY 500u
+
+/* 三轴 DMA 步进的第一版加速度，单位为 steps/s^2。
+ * X 保持现有偏柔和参数；Y/Z 降低原有冲击，并由各自梯形 profile 使用。 */
+#define ROBOT_ARM_X_ACCELERATION 9000u
+#define ROBOT_ARM_Y_ACCELERATION 9000u
+#define ROBOT_ARM_Z_ACCELERATION 2000u
 
 /* Android 的 0x34 速度字段是 uint16；PU1/PB10、PU2/PB11、PU3/PB13 的最终上限
  * 统一限制为协议可表达的 65535 steps/s，仍由各底层 DMA 驱动执行既有加减速控制。 */

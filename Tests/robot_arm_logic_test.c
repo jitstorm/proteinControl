@@ -13,6 +13,8 @@ static int8_t s_direction[ROBOT_AXIS_COUNT];
 static uint32_t s_start_count[ROBOT_AXIS_COUNT];
 static uint32_t s_stop_count[ROBOT_AXIS_COUNT];
 static uint32_t s_last_start_speed[ROBOT_AXIS_COUNT];
+static uint32_t s_last_phase_start[ROBOT_AXIS_COUNT];
+static uint32_t s_last_phase_end[ROBOT_AXIS_COUNT];
 static uint8_t s_start_enters_busy[ROBOT_AXIS_COUNT] = {1u, 1u, 1u};
 static int s_test_failure;
 uint8_t g_robot_arm_logic_test_pose_safety_blocked;
@@ -45,6 +47,23 @@ uint8_t RobotArmDriver_Start(RobotAxisId_t axis, int8_t direction,
         /* 模拟底层错误返回成功，但实际没有进入运行态。 */
         return 1u;
     }
+    s_busy[axis] = 1u;
+    s_completed[axis] = 0u;
+    s_remaining[axis] = steps;
+    return 1u;
+}
+
+/** 模拟 X/Y Phase 专用 DMA 启动，并保存比例缩放后的边界频率。 */
+uint8_t RobotArmDriver_StartPhase(RobotAxisId_t axis, int8_t direction,
+                                  uint32_t steps, uint32_t start_frequency,
+                                  uint32_t end_frequency)
+{
+    if ((axis == ROBOT_AXIS_Z) || s_busy[axis] || (steps == 0u)) return 0u;
+    s_direction[axis] = direction;
+    s_last_phase_start[axis] = start_frequency;
+    s_last_phase_end[axis] = end_frequency;
+    s_start_count[axis]++;
+    if (!s_start_enters_busy[axis]) return 1u;
     s_busy[axis] = 1u;
     s_completed[axis] = 0u;
     s_remaining[axis] = steps;
@@ -359,7 +378,15 @@ int main(void)
     RobotArm_Stop();
     TEST_CHECK(RobotArm_GetState() == ROBOT_ARM_IDLE);
     TestSensorSnapshot(0u, 0u, 0u);
+    x_starts = s_start_count[ROBOT_AXIS_X];
+    y_starts = s_start_count[ROBOT_AXIS_Y];
+    z_starts = s_start_count[ROBOT_AXIS_Z];
     TEST_CHECK(RobotArm_Home() == ROBOT_ARM_OK);
+    /* CMD=30 的首轮轮询必须同时启动 X/S1、Y/S2、Z/S3，而不是等待 Z 完成后串行切轴。 */
+    RobotArm_Task();
+    TEST_CHECK(s_start_count[ROBOT_AXIS_X] == x_starts + 1u);
+    TEST_CHECK(s_start_count[ROBOT_AXIS_Y] == y_starts + 1u);
+    TEST_CHECK(s_start_count[ROBOT_AXIS_Z] == z_starts + 1u);
     TestFinishHomeAllAxis(ROBOT_AXIS_Z);
     TestFinishHomeAllAxis(ROBOT_AXIS_Y);
     TestFinishHomeAllAxis(ROBOT_AXIS_X);
@@ -472,6 +499,186 @@ int main(void)
     TestDriverComplete(ROBOT_AXIS_Y);
     RobotArm_Task();
     TEST_CHECK(RobotArm_GetState() == ROBOT_ARM_IDLE);
+
+    /* Phase 的 X/Y 频率按主导轴距离缩放，0Hz 只保留为协议起步语义并交由 DMA 安全低速处理。 */
+    {
+        RobotArmPhase_t phase;
+        phase.delta_x = 201;
+        phase.delta_y = 667;
+        phase.delta_z = 0;
+        phase.f0 = 0u;
+        phase.f1 = 20000u;
+        phase.z_speed = 0u;
+        phase.flags = ROBOT_ARM_PHASE_FLAG_XY_ENABLE;
+        x_starts = s_start_count[ROBOT_AXIS_X];
+        y_starts = s_start_count[ROBOT_AXIS_Y];
+        z_starts = s_start_count[ROBOT_AXIS_Z];
+        TEST_CHECK(RobotArm_StartPhase(&phase) == ROBOT_ARM_OK);
+        RobotArm_Task();
+        TEST_CHECK(s_start_count[ROBOT_AXIS_X] == x_starts + 1u);
+        TEST_CHECK(s_start_count[ROBOT_AXIS_Y] == y_starts + 1u);
+        TEST_CHECK(s_start_count[ROBOT_AXIS_Z] == z_starts);
+        TEST_CHECK(s_last_phase_start[ROBOT_AXIS_X] == 150u);
+        TEST_CHECK(s_last_phase_end[ROBOT_AXIS_X] == 6026u);
+        TEST_CHECK(s_last_phase_start[ROBOT_AXIS_Y] == 500u);
+        TEST_CHECK(s_last_phase_end[ROBOT_AXIS_Y] == 20000u);
+        TestDriverComplete(ROBOT_AXIS_X);
+        TestDriverComplete(ROBOT_AXIS_Y);
+        RobotArm_Task();
+        TEST_CHECK(RobotArm_GetState() == ROBOT_ARM_IDLE);
+    }
+
+    /* XY-only Phase 即使 Z 当前逻辑坐标为 0 且 S3 未触发，也不得把未启用的 Z 误入补充找零。 */
+    {
+        RobotArmPhase_t phase;
+        TestSetPose(100, 100, 0);
+        phase.delta_x = 201;
+        phase.delta_y = 667;
+        phase.delta_z = 0;
+        phase.f0 = 500u;
+        phase.f1 = 2000u;
+        phase.z_speed = 0u;
+        phase.flags = ROBOT_ARM_PHASE_FLAG_XY_ENABLE;
+        z_starts = s_start_count[ROBOT_AXIS_Z];
+        TEST_CHECK(RobotArm_StartPhase(&phase) == ROBOT_ARM_OK);
+        RobotArm_Task();
+        TEST_CHECK(s_start_count[ROBOT_AXIS_Z] == z_starts && s_busy[ROBOT_AXIS_Z] == 0u);
+        TestDriverComplete(ROBOT_AXIS_X);
+        TestDriverComplete(ROBOT_AXIS_Y);
+        RobotArm_Task();
+        TEST_CHECK(RobotArm_GetState() == ROBOT_ARM_IDLE &&
+                   s_start_count[ROBOT_AXIS_Z] == z_starts &&
+                   s_busy[ROBOT_AXIS_Z] == 0u);
+    }
+
+    /* XY_ENABLE 不代表两个轴都实际参与；X 无位移且坐标为 0 时不得误入 X Home。 */
+    {
+        RobotArmPhase_t phase;
+        TestSetPose(0, 100, 0);
+        phase.delta_x = 0;
+        phase.delta_y = 201;
+        phase.delta_z = 0;
+        phase.f0 = 500u;
+        phase.f1 = 2000u;
+        phase.z_speed = 0u;
+        phase.flags = ROBOT_ARM_PHASE_FLAG_XY_ENABLE;
+        x_starts = s_start_count[ROBOT_AXIS_X];
+        z_starts = s_start_count[ROBOT_AXIS_Z];
+        TEST_CHECK(RobotArm_StartPhase(&phase) == ROBOT_ARM_OK);
+        RobotArm_Task();
+        TEST_CHECK(s_start_count[ROBOT_AXIS_X] == x_starts &&
+                   s_start_count[ROBOT_AXIS_Z] == z_starts);
+        TestDriverComplete(ROBOT_AXIS_Y);
+        RobotArm_Task();
+        TEST_CHECK(RobotArm_GetState() == ROBOT_ARM_IDLE &&
+                   s_busy[ROBOT_AXIS_X] == 0u && s_busy[ROBOT_AXIS_Z] == 0u);
+    }
+
+    /* Y 无位移且坐标为 0 时同样不得误入 Y Home。 */
+    {
+        RobotArmPhase_t phase;
+        TestSetPose(100, 0, 0);
+        phase.delta_x = 201;
+        phase.delta_y = 0;
+        phase.delta_z = 0;
+        phase.f0 = 500u;
+        phase.f1 = 2000u;
+        phase.z_speed = 0u;
+        phase.flags = ROBOT_ARM_PHASE_FLAG_XY_ENABLE;
+        y_starts = s_start_count[ROBOT_AXIS_Y];
+        z_starts = s_start_count[ROBOT_AXIS_Z];
+        TEST_CHECK(RobotArm_StartPhase(&phase) == ROBOT_ARM_OK);
+        RobotArm_Task();
+        TEST_CHECK(s_start_count[ROBOT_AXIS_Y] == y_starts &&
+                   s_start_count[ROBOT_AXIS_Z] == z_starts);
+        TestDriverComplete(ROBOT_AXIS_X);
+        RobotArm_Task();
+        TEST_CHECK(RobotArm_GetState() == ROBOT_ARM_IDLE &&
+                   s_busy[ROBOT_AXIS_Y] == 0u && s_busy[ROBOT_AXIS_Z] == 0u);
+    }
+
+#ifdef ROBOT_ARM_PHASE_FREQUENCY_TEST
+    /* 真实比例样例：Y 主导时，主导轴先映射 0→500，再把 X 缩放为约 60Hz。 */
+    {
+        RobotArmPhase_t phase;
+        phase.delta_x = 201;
+        phase.delta_y = 1667;
+        phase.delta_z = 0;
+        phase.f0 = 0u;
+        phase.f1 = 20000u;
+        phase.z_speed = 0u;
+        phase.flags = ROBOT_ARM_PHASE_FLAG_XY_ENABLE;
+        TEST_CHECK(RobotArm_StartPhase(&phase) == ROBOT_ARM_OK);
+        RobotArm_Task();
+        TEST_CHECK(s_last_phase_start[ROBOT_AXIS_X] == 60u);
+        TEST_CHECK(s_last_phase_end[ROBOT_AXIS_X] == 2411u);
+        TEST_CHECK(s_last_phase_start[ROBOT_AXIS_Y] == 500u);
+        TEST_CHECK(s_last_phase_end[ROBOT_AXIS_Y] == 20000u);
+        TestDriverComplete(ROBOT_AXIS_X);
+        TestDriverComplete(ROBOT_AXIS_Y);
+        RobotArm_Task();
+    }
+
+    /* 互换主导轴后，X 必须保持 500Hz 起步，Y 才是约 60Hz 的短轴。 */
+    {
+        RobotArmPhase_t phase;
+        phase.delta_x = 1667;
+        phase.delta_y = 201;
+        phase.delta_z = 0;
+        phase.f0 = 0u;
+        phase.f1 = 20000u;
+        phase.z_speed = 0u;
+        phase.flags = ROBOT_ARM_PHASE_FLAG_XY_ENABLE;
+        TEST_CHECK(RobotArm_StartPhase(&phase) == ROBOT_ARM_OK);
+        RobotArm_Task();
+        TEST_CHECK(s_last_phase_start[ROBOT_AXIS_X] == 500u);
+        TEST_CHECK(s_last_phase_start[ROBOT_AXIS_Y] == 60u);
+        TestDriverComplete(ROBOT_AXIS_X);
+        TestDriverComplete(ROBOT_AXIS_Y);
+        RobotArm_Task();
+    }
+
+    /* 非零边界频率不得被旧普通 MOVE 的 500Hz 起步策略覆盖。 */
+    {
+        RobotArmPhase_t phase;
+        phase.delta_x = -201;
+        phase.delta_y = -1667;
+        phase.delta_z = 0;
+        phase.f0 = 1000u;
+        phase.f1 = 2000u;
+        phase.z_speed = 0u;
+        phase.flags = ROBOT_ARM_PHASE_FLAG_XY_ENABLE;
+        TEST_CHECK(RobotArm_StartPhase(&phase) == ROBOT_ARM_OK);
+        RobotArm_Task();
+        TEST_CHECK(s_last_phase_start[ROBOT_AXIS_X] == 120u);
+        TEST_CHECK(s_last_phase_end[ROBOT_AXIS_X] == 241u);
+        TEST_CHECK(s_last_phase_start[ROBOT_AXIS_Y] == 1000u);
+        TEST_CHECK(s_last_phase_end[ROBOT_AXIS_Y] == 2000u);
+        TestDriverComplete(ROBOT_AXIS_X);
+        TestDriverComplete(ROBOT_AXIS_Y);
+        RobotArm_Task();
+    }
+
+    /* f1=0 必须先映射主导轴停靠频率后缩放，最后仍由 DMA 在末脉冲后停止。 */
+    {
+        RobotArmPhase_t phase;
+        phase.delta_x = 201;
+        phase.delta_y = 1667;
+        phase.delta_z = 0;
+        phase.f0 = 20000u;
+        phase.f1 = 0u;
+        phase.z_speed = 0u;
+        phase.flags = ROBOT_ARM_PHASE_FLAG_XY_ENABLE;
+        TEST_CHECK(RobotArm_StartPhase(&phase) == ROBOT_ARM_OK);
+        RobotArm_Task();
+        TEST_CHECK(s_last_phase_end[ROBOT_AXIS_X] == 60u);
+        TEST_CHECK(s_last_phase_end[ROBOT_AXIS_Y] == 500u);
+        TestDriverComplete(ROBOT_AXIS_X);
+        TestDriverComplete(ROBOT_AXIS_Y);
+        RobotArm_Task();
+        TEST_CHECK(RobotArm_IsBusy() == 0u);
+    }
+#endif
 
     /* 三轴同步中，Y/Z 先完成后必须保持 XYZ_WAIT，直至最后的 X 完成。 */
     TEST_CHECK(RobotArm_MoveToWithSpeedAndMode(

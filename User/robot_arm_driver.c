@@ -1,5 +1,6 @@
 #include "robot_arm_driver.h"
 #include "robot_arm.h"
+#include "robot_arm_config.h"
 #include "robot_arm_sensor.h"
 #ifdef ROBOT_ARM_DRIVER_LOGIC_TEST
 extern uint8_t HC595Data[4];
@@ -32,7 +33,6 @@ uint32_t PU3_Stepper_GetCompletedSteps(void);
 #define ROBOT_ARM_Y_DIR_595_INDEX 1u
 #define ROBOT_ARM_Y_DIR_595_MASK (1u << 5)
 #define ROBOT_ARM_DRIVER_START_FREQUENCY 500u
-#define ROBOT_ARM_DRIVER_ACCELERATION 100000u
 
 /*
  * 三轴逻辑正方向对应的驱动器 DIR 电平。
@@ -44,6 +44,8 @@ uint32_t PU3_Stepper_GetCompletedSteps(void);
 
 /* 保存逻辑方向供 DMA 分段续传和传感器快照更新使用。 */
 static int8_t s_robot_arm_driver_direction[ROBOT_AXIS_COUNT];
+/* 已实际写入驱动器的 DIR 电平；同一 0x39 Batch 固定方向时禁止重复移位写入。 */
+static int8_t s_robot_arm_driver_dir_level[ROBOT_AXIS_COUNT] = {-1, -1, -1};
 
 /**
  * 将 RobotArm 的逻辑正负方向转换为驱动器实际 DIR 电平。
@@ -71,6 +73,10 @@ static uint8_t RobotArmDriver_GetDirectionLevel(int8_t direction,
  */
 static void RobotArmDriver_SetPb11Direction(uint8_t direction_level)
 {
+    if (s_robot_arm_driver_dir_level[ROBOT_AXIS_Y] == (int8_t)direction_level)
+    {
+        return;
+    }
     if (direction_level)
     {
         HC595Data[ROBOT_ARM_Y_DIR_595_INDEX] |= (uint8_t)ROBOT_ARM_Y_DIR_595_MASK;
@@ -80,6 +86,7 @@ static void RobotArmDriver_SetPb11Direction(uint8_t direction_level)
         HC595Data[ROBOT_ARM_Y_DIR_595_INDEX] &= (uint8_t)~ROBOT_ARM_Y_DIR_595_MASK;
     }
     ShiftRegister_WriteAll(HC595Data);
+    s_robot_arm_driver_dir_level[ROBOT_AXIS_Y] = (int8_t)direction_level;
 }
 
 /**
@@ -95,7 +102,7 @@ static void RobotArmDriver_SetPb11Direction(uint8_t direction_level)
  * @return 底层驱动成功进入运行状态时返回 1；轴忙、参数无效或驱动未运行时返回 0。
  */
 uint8_t RobotArmDriver_Start(RobotAxisId_t axis, int8_t direction,
-                             uint32_t steps, uint32_t speed)
+                              uint32_t steps, uint32_t speed)
 {
     uint8_t start_result;
     if ((axis >= ROBOT_AXIS_COUNT) || (steps == 0u) || RobotArmDriver_IsBusy(axis))
@@ -123,7 +130,7 @@ uint8_t RobotArmDriver_Start(RobotAxisId_t axis, int8_t direction,
         RobotArmDriver_SetPb11Direction(RobotArmDriver_GetDirectionLevel(
             direction, ROBOT_ARM_Y_POSITIVE_DIR_LEVEL));
         stepdma_pb11_request_trap(steps, ROBOT_ARM_DRIVER_START_FREQUENCY,
-                                  speed, ROBOT_ARM_DRIVER_ACCELERATION);
+                                  speed, ROBOT_ARM_Y_ACCELERATION);
         return stepdma_pb11_is_running();
     case ROBOT_AXIS_Z:
         /* Z 轴沿用 PB13/TIM7/DMA2 通道4，PU3 内部负责 DIR3。 */
@@ -131,11 +138,44 @@ uint8_t RobotArmDriver_Start(RobotAxisId_t axis, int8_t direction,
             steps, RobotArmDriver_GetDirectionLevel(
                        direction, ROBOT_ARM_Z_POSITIVE_DIR_LEVEL),
             ROBOT_ARM_DRIVER_START_FREQUENCY, speed,
-            ROBOT_ARM_DRIVER_ACCELERATION);
+            ROBOT_ARM_Z_ACCELERATION);
         return (start_result && PU3_Stepper_IsRunning()) ? 1u : 0u;
     default:
         return 0u;
     }
+}
+
+/**
+ * 按规划 Phase 的本轴起止频率启动 X/Y DMA。
+ *
+ * 两个频率均已由上层用 XY 主导轴比例换算。0Hz 是通信层静止边界，底层 DMA 入口
+ * 会替换为可生成 ARR 的最小频率；Z 不允许进入该接口，防止误把 XY 频率施加给 Z。
+ */
+uint8_t RobotArmDriver_StartPhase(RobotAxisId_t axis, int8_t direction,
+                                  uint32_t steps, uint32_t start_frequency,
+                                  uint32_t end_frequency)
+{
+    if ((steps == 0u) || RobotArmDriver_IsBusy(axis))
+    {
+        return 0u;
+    }
+    if (axis == ROBOT_AXIS_X)
+    {
+        s_robot_arm_driver_direction[axis] = direction;
+        return Stepper2_StartPhase(
+            RobotArmDriver_GetDirectionLevel(
+                direction, ROBOT_ARM_X_POSITIVE_DIR_LEVEL), steps,
+            start_frequency, end_frequency);
+    }
+    if (axis == ROBOT_AXIS_Y)
+    {
+        s_robot_arm_driver_direction[axis] = direction;
+        RobotArmDriver_SetPb11Direction(RobotArmDriver_GetDirectionLevel(
+            direction, ROBOT_ARM_Y_POSITIVE_DIR_LEVEL));
+        stepdma_pb11_move_phase(steps, start_frequency, end_frequency);
+        return stepdma_pb11_is_running();
+    }
+    return 0u;
 }
 
 /** 停止指定逻辑轴的既有 DMA 步进驱动。 */

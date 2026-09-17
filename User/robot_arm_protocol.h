@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include "protocol_v2.h"
+#include "robot_arm_driver.h"
 
 typedef enum
 {
@@ -15,6 +16,8 @@ typedef enum
     ROBOT_ARM_CMD_STOP = 0x36,
     ROBOT_ARM_CMD_CLEAR_ERROR = 0x37,
     ROBOT_ARM_CMD_STATUS = 0x38,
+    /** 仅请求线使用 LEN 的批量相位命令；回复仍沿用固定 24B V2。 */
+    ROBOT_ARM_CMD_PHASE_BATCH = 0x39,
     ROBOT_ARM_CMD_ACK = 0x70,
     ROBOT_ARM_CMD_EVENT = 0x71,
     ROBOT_ARM_CMD_STATUS_RSP = 0x72
@@ -84,12 +87,21 @@ void RobotArmProtocol_Init(RobotArmProtocolTx_t tx_callback);
 /**
  * 分发一帧已经通过 CRC 校验的 RobotArm V2 请求。
  *
- * 对 0x38 的 page0～page3 只发送对应查询的 0x72；异步动作终态仍只保存于 RAM，
+ * 对 0x38 的 page0～page4 只发送对应查询的 0x72；异步动作终态仍只保存于 RAM，
  * 不会在没有 Android 请求时主动发送 0x71。动作请求的 ACK 仅表示接受结果。
  *
  * @param request 已被 V2 解析器完成 CRC 校验的固定帧请求。
  */
 void RobotArmProtocol_HandleFrame(const ProtocolV2Frame_t *request);
+/**
+ * 分发已完成变长帧校验的 0x39 批量相位请求。
+ *
+ * 仅在全部 Phase 字段通过校验时原子提交并启动首条；相同 SEQ 只重发 ACK，不能
+ * 重复启动。运动完成仍沿用既有 Page3 终态关联原始 CMD/SEQ。
+ *
+ * @param request 已通过长度、尾字节和 CRC 校验的变长请求。
+ */
+void RobotArmProtocol_HandlePhaseBatch(const ProtocolV2PhaseBatchFrame_t *request);
 /**
  * 轮询异步 RobotArm 操作并保存最终 0x71 结果，不主动发送串口。
  *
@@ -97,6 +109,15 @@ void RobotArmProtocol_HandleFrame(const ProtocolV2Frame_t *request);
  * Android 主动查询机制读取；该版本尚未增加查询命令。
  */
 void RobotArmProtocol_Task(void);
+/**
+ * 记录 0x39 当前 Phase 某轴已经完成最后一个 DMA chunk，并在全部参与轴完成时直接续启下一条。
+ *
+ * 此接口仅由 STEP DMA 的 TC 中断在轴已安全停止后调用。它不会发送 ACK 或终态；STOP、
+ * LIMIT 和故障保留既有状态机处理，只有同一 Batch 的正常完成才允许进入下一条 Phase。
+ *
+ * @param axis 已输出当前 Phase 全部 STEP 上升沿的实际机械轴。
+ */
+void RobotArmProtocol_OnPhaseAxisDmaCompleted(RobotAxisId_t axis);
 /**
  * 查询发送队列是否至少能可靠保存一个命令可能产生的 ACK。
  *

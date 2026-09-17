@@ -151,6 +151,7 @@ static void task_uart_frames(void)
     uint8_t count = 0u;
     uint8_t byte_count = 0u;
     ProtocolV2Frame_t v2_frame;
+    ProtocolV2PhaseBatchFrame_t phase_batch_frame;
 
     /* 每轮只消费有限字节；半帧状态保留到下一次主循环继续。 */
     while ((byte_count < MAIN_LOOP_RX_BYTE_LIMIT) && UART1GetByte(&byte))
@@ -164,6 +165,15 @@ static void task_uart_frames(void)
            ProtocolV2_TakeV1Frame(frame))
     {
         parse_frame(frame);
+        count++;
+    }
+
+    count = 0u;
+    while ((count < MAIN_LOOP_PROCESS_LIMIT) &&
+           RobotArmProtocol_CanAcceptRequest() &&
+           ProtocolV2_TakePhaseBatchFrame(&phase_batch_frame))
+    {
+        RobotArmProtocol_HandlePhaseBatch(&phase_batch_frame);
         count++;
     }
 

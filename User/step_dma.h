@@ -26,6 +26,17 @@ void stepdma_pb11_move_steps(uint32_t steps, uint32_t fstep_hz);
  * 注意：末端会逐渐减到非常低，然后我们“跑完最后一步就关定时器”，实现 0 速度停止。
  */
 void stepdma_pb11_move_trap(uint32_t steps, uint32_t f_start, uint32_t f_max, uint32_t accel);
+/**
+ * 按一个 Phase 的起止频率输出 PB11（Y 轴）脉冲。
+ *
+ * 保留 TIM5/DMA2 通道2路径；协议边界 0Hz 已由上层主导轴映射并缩放。本层保留
+ * 60Hz 等合法短轴频率；误传 0 仅兜底为 1Hz，最后一个脉冲后关闭 DMA/Timer。
+ *
+ * @param steps 需要输出的 Y 轴 STEP 上升沿数量。
+ * @param f_start 起始频率，单位 steps/s。
+ * @param f_end 结束频率，单位 steps/s。
+ */
+void stepdma_pb11_move_phase(uint32_t steps, uint32_t f_start, uint32_t f_end);
 void stepdma_pb11_request_trap(uint32_t steps, uint32_t f_start, uint32_t f_max, uint32_t accel);
 
 /* 立即停止（关 TIM5 + DMA，PB11 拉低） */
@@ -43,6 +54,17 @@ void stepdma_pb10_stop(void);
 uint8_t stepdma_pb10_is_running(void);
 void stepdma_pb10_move_steps(uint32_t steps, uint32_t fstep_hz);
 void stepdma_pb10_move_trap(uint32_t steps, uint32_t f_start, uint32_t f_max, uint32_t accel);
+/**
+ * 按一个 Phase 的起止频率输出 PB10（X 轴）脉冲。
+ *
+ * 保留 TIM6/DMA2 通道3路径；协议边界 0Hz 已由上层主导轴映射并缩放。本层保留
+ * 60Hz 等合法短轴频率；误传 0 仅兜底为 1Hz，最后一个脉冲后关闭 DMA/Timer。
+ *
+ * @param steps 需要输出的 X 轴 STEP 上升沿数量。
+ * @param f_start 起始频率，单位 steps/s。
+ * @param f_end 结束频率，单位 steps/s。
+ */
+void stepdma_pb10_move_phase(uint32_t steps, uint32_t f_start, uint32_t f_end);
 void stepdma_pb10_request_trap(uint32_t steps, uint32_t f_start, uint32_t f_max, uint32_t accel);
 
 /** 初始化实际 PU1：PB10 STEP、TIM6 和 DMA2 通道3。 */
@@ -51,6 +73,20 @@ void Stepper2_Init(void);
 void Stepper2_SetDirection(uint8_t direction);
 /** 启动实际 PU1 的梯形加减速运动，运行中重复启动返回 0。 */
 uint8_t Stepper2_Start(uint8_t direction, uint32_t steps, uint32_t target_frequency);
+/**
+ * 启动实际 PU1（PB10/X 轴）的 Phase 频率运动。
+ *
+ * 建立 DIR1 后装载 TIM6/DMA2 通道3；正在运行或 steps 为 0 时拒绝，防止覆盖
+ * 仍在输出的脉冲序列。
+ *
+ * @param direction 已转换为实际 DIR1 电平的方向值。
+ * @param steps 需要输出的 STEP 上升沿数量。
+ * @param start_frequency 起始频率，单位 steps/s。
+ * @param end_frequency 结束频率，单位 steps/s。
+ * @return DMA 已开始输出返回 1，否则返回 0。
+ */
+uint8_t Stepper2_StartPhase(uint8_t direction, uint32_t steps,
+                            uint32_t start_frequency, uint32_t end_frequency);
 /** 立即停止第二轴，并将 PB10 保持为低电平。 */
 void Stepper2_Stop(void);
 /** 查询第二轴是否正在运行。 */
