@@ -8,6 +8,33 @@ int main(void)
 {
     uint32_t starts;
     RobotArmStatus_t status;
+    /* 0x01 是唯一允许未知坐标直接找零的 MOVE_TO 模式；0x00 仍不得绕过坐标保护。 */
+    RobotArm_Init();
+    TestSensorSnapshot(0u, 0u, 0u);
+    TEST_CHECK(RobotArm_MoveToWithSpeedAndMode(0, 0, 0, 800u, 600u, 400u,
+        ROBOT_MOVE_MOTION_SEQUENTIAL) == ROBOT_ARM_ERR_POSITION_UNKNOWN);
+    TEST_CHECK(RobotArm_MoveToWithSpeedAndMode(0, 0, 0, 800u, 600u, 400u,
+        ROBOT_MOVE_MOTION_XYZ_SYNC) == ROBOT_ARM_OK);
+    RobotArm_Task(); RobotArm_Task();
+    TEST_CHECK(s_busy[ROBOT_AXIS_X] && s_busy[ROBOT_AXIS_Y] &&
+               s_busy[ROBOT_AXIS_Z]);
+    TEST_CHECK(s_remaining[ROBOT_AXIS_X] == 5000u &&
+               s_remaining[ROBOT_AXIS_Y] == 5000u &&
+               s_remaining[ROBOT_AXIS_Z] == 5000u);
+    TestSensorSnapshot(1u, 1u, 1u);
+    RobotArm_Task();
+    TEST_CHECK(!RobotArm_IsBusy() && RobotArm_IsHomed(ROBOT_AXIS_X) &&
+               RobotArm_IsHomed(ROBOT_AXIS_Y) && RobotArm_IsHomed(ROBOT_AXIS_Z));
+    /* 0x01 只让 X/Y 按到位时间配速；Z 的低速不能再拖慢两个旋转轴。 */
+    TestResetAndHomeAll();
+    TestSetPose(0, 0, 0);
+    TEST_CHECK(RobotArm_MoveToWithSpeedAndMode(1000, 100, 1000,
+        10000u, 10000u, 100u, ROBOT_MOVE_MOTION_XYZ_SYNC) == ROBOT_ARM_OK);
+    RobotArm_Task();
+    TEST_CHECK(s_last_start_speed[ROBOT_AXIS_X] == 10000u &&
+               s_last_start_speed[ROBOT_AXIS_Y] == 1000u &&
+               s_last_start_speed[ROBOT_AXIS_Z] == 100u);
+    RobotArm_Stop();
     TestResetAndHomeAll();
     TestSetPose(20000, 15000, 30000);
     /* 提前触发 Home 不能截断 20000 个负向脉冲，也不能提前提交坐标。 */

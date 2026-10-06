@@ -1,5 +1,9 @@
 #include <stdint.h>
 #include "robot_arm.h"
+/* 该回归从未 Home 的上电状态验证 V2 拒绝逻辑，不能继承固件现场调试的假定已 Home。 */
+#ifndef ROBOT_ARM_DEBUG_ASSUME_HOME
+#define ROBOT_ARM_DEBUG_ASSUME_HOME 0u
+#endif
 #include "robot_arm_config.h"
 #include "robot_arm_sensor.h"
 
@@ -13,6 +17,9 @@ static int8_t s_direction[ROBOT_AXIS_COUNT];
 static uint32_t s_start_count[ROBOT_AXIS_COUNT];
 static uint32_t s_stop_count[ROBOT_AXIS_COUNT];
 static uint32_t s_last_start_speed[ROBOT_AXIS_COUNT];
+static uint32_t s_last_start_acceleration[ROBOT_AXIS_COUNT];
+static uint32_t s_last_home_slow_speed[ROBOT_AXIS_COUNT];
+static uint32_t s_last_home_slow_zone[ROBOT_AXIS_COUNT];
 static uint32_t s_last_phase_start[ROBOT_AXIS_COUNT];
 static uint32_t s_last_phase_end[ROBOT_AXIS_COUNT];
 static uint8_t s_start_enters_busy[ROBOT_AXIS_COUNT] = {1u, 1u, 1u};
@@ -47,6 +54,42 @@ uint8_t RobotArmDriver_Start(RobotAxisId_t axis, int8_t direction,
         /* 模拟底层错误返回成功，但实际没有进入运行态。 */
         return 1u;
     }
+    s_busy[axis] = 1u;
+    s_completed[axis] = 0u;
+    s_remaining[axis] = steps;
+    return 1u;
+}
+
+/** 模拟携带加速度的 Home 驱动启动，并记录实际下传到轴的参数。 */
+uint8_t RobotArmDriver_StartWithAcceleration(
+    RobotAxisId_t axis, int8_t direction, uint32_t steps, uint32_t speed,
+    uint32_t acceleration)
+{
+    if (s_busy[axis] || (steps == 0u) || (acceleration == 0u)) return 0u;
+    s_direction[axis] = direction;
+    s_last_start_speed[axis] = speed;
+    s_last_start_acceleration[axis] = acceleration;
+    s_start_count[axis]++;
+    if (!s_start_enters_busy[axis]) return 1u;
+    s_busy[axis] = 1u;
+    s_completed[axis] = 0u;
+    s_remaining[axis] = steps;
+    return 1u;
+}
+
+/** 模拟连续 Home 末段轮廓，记录高速和低速参数但不复刻 DMA 细节。 */
+uint8_t RobotArmDriver_StartHomeApproach(
+    RobotAxisId_t axis, int8_t direction, uint32_t steps, uint32_t fast_speed,
+    uint32_t slow_speed, uint32_t slow_zone_steps, uint32_t acceleration)
+{
+    if (s_busy[axis] || (steps == 0u) || (slow_speed == 0u) ||
+        (acceleration == 0u)) return 0u;
+    s_direction[axis] = direction;
+    s_last_start_speed[axis] = fast_speed;
+    s_last_home_slow_speed[axis] = slow_speed;
+    s_last_home_slow_zone[axis] = slow_zone_steps;
+    s_last_start_acceleration[axis] = acceleration;
+    s_start_count[axis]++;
     s_busy[axis] = 1u;
     s_completed[axis] = 0u;
     s_remaining[axis] = steps;
@@ -333,14 +376,90 @@ int main(void)
     RobotAxisId_t axis;
     for (axis = ROBOT_AXIS_X; axis < ROBOT_AXIS_COUNT; axis++)
     {
+        uint32_t expected_acceleration = (axis == ROBOT_AXIS_Z) ?
+                                             ROBOT_ARM_Z_HOME_DEFAULT_ACCELERATION :
+                                             ((axis == ROBOT_AXIS_Y) ?
+                                                  ROBOT_ARM_Y_HOME_DEFAULT_ACCELERATION :
+                                                  ROBOT_ARM_X_HOME_DEFAULT_ACCELERATION);
         TestSensorSnapshot(0u, 0u, 0u);
-        TEST_CHECK(RobotArm_HomeAxisWithSpeed(axis, 500u) == ROBOT_ARM_OK);
+        TEST_CHECK(RobotArm_HomeAxisWithSpeedAndAcceleration(
+            axis, 500u, 321u) == ROBOT_ARM_OK);
         RobotArm_Task();
         TEST_CHECK(s_start_count[axis] == 1u);
         TEST_CHECK(s_last_start_speed[axis] == 500u);
+        TEST_CHECK(s_last_start_acceleration[axis] == 321u);
         TEST_CHECK(s_direction[axis] == -1);
         RobotArm_Stop();
+
+        /* 协议加速度为 0 时必须使用本轴默认值，不能传出 0 或沿用上一轴请求。 */
+        TestSensorSnapshot(0u, 0u, 0u);
+        TEST_CHECK(RobotArm_HomeAxisWithSpeedAndAcceleration(
+            axis, 500u, 0u) == ROBOT_ARM_OK);
+        RobotArm_Task();
+        TEST_CHECK(s_last_start_acceleration[axis] == expected_acceleration);
+        RobotArm_Stop();
     }
+    return s_test_failure;
+}
+#elif defined(ROBOT_ARM_HOME_SLOW_APPROACH_TEST)
+/** 验证 0x31 已知距离低速接近、未知搜索和传感器最高优先级。 */
+int main(void)
+{
+    RobotArmStatus_t status;
+    uint32_t stops;
+
+    /* 回归原第 481 行语义：逻辑测试必须从坐标未知的上电状态开始。 */
+    RobotArm_Init();
+    TestSensorSnapshot(0u, 0u, 0u);
+    TEST_CHECK(RobotArm_MoveTo(10, 20, 30) == ROBOT_ARM_ERR_POSITION_UNKNOWN);
+    TestResetAndHomeAll();
+    /* 长距离：请求参数进入连续 DMA Home 轮廓，末段配置和加速度必须原样下传。 */
+    TEST_CHECK(RobotArm_MoveX(20000, 100u) == ROBOT_ARM_OK);
+    TestDriverComplete(ROBOT_AXIS_X); RobotArm_Task();
+    TestSensorSnapshot(0u, 0u, 0u);
+    TEST_CHECK(RobotArm_HomeAxisWithSpeedAndAcceleration(ROBOT_AXIS_X, 9000u, 9000u) == ROBOT_ARM_OK);
+    RobotArm_Task();
+    TEST_CHECK(s_last_start_speed[ROBOT_AXIS_X] == 9000u);
+    TEST_CHECK(s_last_home_slow_speed[ROBOT_AXIS_X] == ROBOT_ARM_X_HOME_SLOW_SPEED);
+    TEST_CHECK(s_last_home_slow_zone[ROBOT_AXIS_X] == ROBOT_ARM_X_HOME_SLOW_ZONE_STEPS);
+    TEST_CHECK(s_last_start_acceleration[ROBOT_AXIS_X] == 9000u);
+    stops = s_stop_count[ROBOT_AXIS_X];
+    TestSensorSnapshot(1u, 0u, 0u);
+    TEST_CHECK(s_stop_count[ROBOT_AXIS_X] == stops + 1u);
+    TEST_CHECK(RobotArm_GetX() == 0 && RobotArm_IsHomed(ROBOT_AXIS_X));
+
+    /* 短距离一开始即为末段轮廓；底层上限必须是 slowSpeed 而不是 9000。 */
+    TestSensorSnapshot(0u, 0u, 0u);
+    TEST_CHECK(RobotArm_MoveX(900, 100u) == ROBOT_ARM_OK);
+    TestDriverComplete(ROBOT_AXIS_X); RobotArm_Task();
+    TEST_CHECK(RobotArm_HomeAxisWithSpeedAndAcceleration(ROBOT_AXIS_X, 9000u, 4000u) == ROBOT_ARM_OK);
+    RobotArm_Task();
+    TEST_CHECK(s_last_home_slow_speed[ROBOT_AXIS_X] == ROBOT_ARM_X_HOME_SLOW_SPEED);
+    TEST_CHECK(s_last_start_acceleration[ROBOT_AXIS_X] == 4000u);
+    TestSensorSnapshot(1u, 0u, 0u);
+
+    /* 已到理论零点而未命中时只能低速额外搜索，不能重新使用 homeSpeed。 */
+    TestSensorSnapshot(0u, 0u, 0u);
+    TEST_CHECK(RobotArm_MoveX(2000, 100u) == ROBOT_ARM_OK);
+    TestDriverComplete(ROBOT_AXIS_X); RobotArm_Task();
+    TEST_CHECK(RobotArm_HomeAxisWithSpeedAndAcceleration(ROBOT_AXIS_X, 9000u, 9000u) == ROBOT_ARM_OK);
+    RobotArm_Task();
+    TestDriverComplete(ROBOT_AXIS_X); RobotArm_Task();
+    RobotArm_GetStatus(&status);
+    TEST_CHECK(status.home_state == ROBOT_HOME_EXTRA_SEARCH);
+    TEST_CHECK(s_last_start_speed[ROBOT_AXIS_X] == ROBOT_ARM_X_HOME_SLOW_SPEED);
+    TestSensorSnapshot(1u, 0u, 0u);
+    TEST_CHECK(RobotArm_IsHomed(ROBOT_AXIS_X));
+
+    /* current=0 且 S1 未触发没有可信距离，首段直接低速未知搜索。 */
+    TestSensorSnapshot(0u, 0u, 0u);
+    TEST_CHECK(RobotArm_HomeAxisWithSpeedAndAcceleration(ROBOT_AXIS_X, 9000u, 0u) == ROBOT_ARM_OK);
+    RobotArm_Task();
+    RobotArm_GetStatus(&status);
+    TEST_CHECK(status.home_state == ROBOT_HOME_UNKNOWN_SEARCH);
+    TEST_CHECK(s_last_start_speed[ROBOT_AXIS_X] == ROBOT_ARM_X_HOME_SLOW_SPEED);
+    TEST_CHECK(s_last_start_acceleration[ROBOT_AXIS_X] == ROBOT_ARM_X_HOME_DEFAULT_ACCELERATION);
+    TestSensorSnapshot(1u, 0u, 0u);
     return s_test_failure;
 }
 #elif defined(ROBOT_ARM_SAFE_DISABLED_TEST)
@@ -850,7 +969,11 @@ int main(void)
     TEST_CHECK(RobotArm_ClearError() == ROBOT_ARM_OK);
     TestHomeAxis(ROBOT_AXIS_Y, 0u);
     TestSensorSnapshot(0u, 0u, 0u);
-    TEST_CHECK(RobotArm_MoveTo(0, 0, 1) == ROBOT_ARM_OK);
+    /* 先建立 Z=1 的可信坐标，再验证向 S3/零点的负向 MOVE_TO 被即时完成。 */
+    TEST_CHECK(RobotArm_MoveZ(1, 100u) == ROBOT_ARM_OK);
+    TestDriverComplete(ROBOT_AXIS_Z);
+    RobotArm_Task();
+    TEST_CHECK(RobotArm_MoveTo(0, 0, 0) == ROBOT_ARM_OK);
     RobotArm_Task();
     RobotArm_Task();
     RobotArm_Task();
