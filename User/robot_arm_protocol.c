@@ -457,7 +457,7 @@ static void RobotArmProtocol_SendStatus(const ProtocolV2Frame_t *request)
     }
     /* 所有合法 STATUS 页均已填充 DATA，随后统一编码为固定 24B 帧。 */
     s_stats.status_build_count++;
-    if (RobotArmProtocol_Queue(ROBOT_ARM_CMD_STATUS_RSP, request->seq, data,
+    if (RobotArmProtocol_Queue(ROBOT_ARM_CMD_STATUS_RSP, request->seq, data,    
                                ROBOT_PROTOCOL_TX_STATUS, request->cmd))
     {
         RobotArmProtocol_FlushTx();
@@ -531,6 +531,7 @@ void RobotArmProtocol_HandleFrame(const ProtocolV2Frame_t *request)
     uint8_t ack_queued;
     int32_t value;
     uint16_t speed;
+    uint16_t acceleration;
 
     if (request == 0)
     {
@@ -608,7 +609,10 @@ void RobotArmProtocol_HandleFrame(const ProtocolV2Frame_t *request)
                                      ROBOT_ARM_ERR_CONFIG);
             return;
         }
-        result = RobotArm_HomeAxisWithSpeed((RobotAxisId_t)axis, speed);
+        /* D3～D4=0 明确表示使用本轴默认加速度；速度字段仍必须由 Android 提供。 */
+        acceleration = ProtocolV2_ReadU16LE(&request->data[3]);
+        result = RobotArm_HomeAxisWithSpeedAndAcceleration(
+            (RobotAxisId_t)axis, speed, acceleration);
         break;
     case ROBOT_ARM_CMD_MOVE_AXIS_ABS:
         axis = request->data[0];

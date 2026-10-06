@@ -15,6 +15,40 @@ typedef enum
 uint8_t RobotArmDriver_Start(RobotAxisId_t axis, int8_t direction,
                               uint32_t steps, uint32_t speed);
 /**
+ * 使用本次请求的加速度启动指定逻辑轴的 DMA 步进驱动。
+ *
+ * 仅由单轴 Home 使用，使 0x31 的加速度字段实际控制 PB10/PB11/PB13 对应的
+ * X/Y/Z 机械轴；普通移动仍应调用 RobotArmDriver_Start 保持各轴默认配置。
+ *
+ * @param axis 要启动的 X、Y 或 Z 机械轴。
+ * @param direction 逻辑正负运动方向。
+ * @param steps 本次需要输出的 STEP 上升沿数量。
+ * @param speed 目标速度，单位 steps/s。
+ * @param acceleration 本次加速度，单位 steps/s^2，必须大于 0。
+ * @return 底层驱动真实进入运行态时返回 1；参数无效、轴忙或启动失败返回 0。
+ */
+uint8_t RobotArmDriver_StartWithAcceleration(
+    RobotAxisId_t axis, int8_t direction, uint32_t steps, uint32_t speed,
+    uint32_t acceleration);
+/**
+ * 启动单轴 Home 的已知距离接近轮廓。
+ *
+ * 底层 DMA 在同一条脉冲序列中完成起步、快速段、按 acceleration 平滑降至
+ * slow_speed，以及最后 slow_zone_steps 的低速保持；不能用停机重启代替降速。
+ *
+ * @param axis 实际 X/Y/Z 机械轴。
+ * @param direction 指向对应 Home 传感器的逻辑负方向。
+ * @param steps 当前可信坐标到理论零点的 STEP 数。
+ * @param fast_speed Home 前段最高速度，单位 steps/s。
+ * @param slow_speed 末段接近传感器的速度，单位 steps/s。
+ * @param slow_zone_steps 理论零点前保持低速的距离，单位 STEP。
+ * @param acceleration 本次 Home 加减速率，单位 steps/s^2。
+ * @return DMA 已开始输出 STEP 时返回 1，否则返回 0。
+ */
+uint8_t RobotArmDriver_StartHomeApproach(
+    RobotAxisId_t axis, int8_t direction, uint32_t steps, uint32_t fast_speed,
+    uint32_t slow_speed, uint32_t slow_zone_steps, uint32_t acceleration);
+/**
  * 按本 Phase 的起止频率启动 X/Y 轴。
  *
  * 该接口仅用于已经由机械臂管理层完成坐标、限位和传感器校验的 XY Phase；Z 继续

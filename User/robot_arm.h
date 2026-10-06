@@ -87,6 +87,12 @@ typedef enum
     ROBOT_HOME_SEEK_FAST,
     ROBOT_HOME_BACKOFF_AFTER_TRIGGER,
     ROBOT_HOME_SEEK_SLOW,
+    /** 已知坐标的高速、平滑减速和末段低速连续轮廓正在朝理论零点运行。 */
+    ROBOT_HOME_SEEK_KNOWN,
+    /** 已到理论零点但未命中传感器，正以末段低速继续有限搜索。 */
+    ROBOT_HOME_EXTRA_SEARCH,
+    /** 软件坐标为零但传感器未触发，坐标不可用，正以末段低速有限搜索。 */
+    ROBOT_HOME_UNKNOWN_SEARCH,
     ROBOT_HOME_DONE,
     ROBOT_HOME_ERROR
 } RobotHomeState_t;
@@ -108,12 +114,12 @@ typedef enum
     ROBOT_MOVE_TO_XYZ_WAIT
 } RobotMoveToState_t;
 
-/** MOVE_TO 的关节运动方式；同步只保证关节尽量同时到达，不是末端直线插补。 */
+/** MOVE_TO 的关节运动方式；同步只保证 X/Y 尽量同时到达，Z 保持独立速度，不是末端直线插补。 */
 typedef enum
 {
     /** 沿既有 X→Y→Z 顺序逐轴运动，供全部旧路径和默认调用使用。 */
     ROBOT_MOVE_MOTION_SEQUENTIAL = 0u,
-    /** 根据关节距离配速同步到位，再对目标为零的轴按需找零；全部结束才完成请求。 */
+    /** X/Y 根据关节距离配速同步到位，Z 保持请求速度但同时启动；目标为零的轴即使坐标无效或恰为零，也必须继续向负方向搜索直到 S1/S2/S3 实际触发。 */
     ROBOT_MOVE_MOTION_XYZ_SYNC = 1u
 } RobotMoveMotionMode_t;
 
@@ -262,8 +268,8 @@ RobotArmResult_t RobotArm_MoveToWithSpeed(int32_t x, int32_t y, int32_t z,
 /**
  * 以指定关节运动方式启动普通目标位置任务。
  *
- * SEQUENTIAL 保留 X→Y→Z 旧路径；XYZ_SYNC 只在每轴安全检查通过后按距离和最大速度
- * 降低较短轴速度并同时启动。它不是笛卡尔直线插补，现场使用前仍须完成短距离实机验证。
+ * SEQUENTIAL 保留 X→Y→Z 旧路径；XYZ_SYNC 只按 X/Y 距离和最大速度降低较短旋转轴
+ * 的速度，Z 保持 z_speed 同时启动但不参与到达时间配速。它不是笛卡尔直线插补，现场使用前仍须完成短距离实机验证。
  *
  * @param x X 轴目标绝对逻辑坐标，单位为步数。
  * @param y Y 轴目标绝对逻辑坐标，单位为步数。
@@ -271,7 +277,7 @@ RobotArmResult_t RobotArm_MoveToWithSpeed(int32_t x, int32_t y, int32_t z,
  * @param x_speed X 轴最大速度，单位为 steps/s；0 表示使用既有默认速度。
  * @param y_speed Y 轴最大速度，单位为 steps/s；0 表示使用既有默认速度。
  * @param z_speed Z 轴最大速度，单位为 steps/s；0 表示使用既有默认速度。
- * @param motion_mode SEQUENTIAL 顺序移动；XYZ_SYNC 完整同步到位后对零目标轴按需找零，超时则失败。
+ * @param motion_mode SEQUENTIAL 顺序移动；XYZ_SYNC 对零目标允许从未知坐标直接搜索，均以传感器命中为完成条件。
  * @return 已受理返回 ROBOT_ARM_OK；坐标、限位、传感器、速度或驱动检查失败时返回错误码。
  */
 RobotArmResult_t RobotArm_MoveToWithSpeedAndMode(
@@ -318,6 +324,21 @@ RobotArmResult_t RobotArm_HomeAxis(RobotAxisId_t axis);
  */
 RobotArmResult_t RobotArm_HomeAxisWithSpeed(RobotAxisId_t axis,
                                             uint16_t home_speed);
+/**
+ * 用 Android 指定的速度和加速度启动单轴 Home。
+ *
+ * 速度和加速度仅作用于未触发 S1/S2/S3 时的第一次快速寻零；传感器初始 Active
+ * 时不会输出电机脉冲。加速度为 0 时使用对应机械轴的 MCU 默认加速度，不能把
+ * 0 直接交给底层 DMA。当前版本不执行反向脱离或二次慢速寻零。
+ *
+ * @param axis 需要置零的实际机械轴。
+ * @param home_speed 第一次快速寻零速度，单位 steps/s，必须为 1～65535。
+ * @param home_acceleration 第一次快速寻零加速度，单位 steps/s^2；0 使用该轴默认值。
+ * @return 已受理返回 ROBOT_ARM_OK；速度非法、配置缺失、传感器异常或驱动无法启动时
+ * 返回对应错误。返回 OK 不代表机械动作已经完成。
+ */
+RobotArmResult_t RobotArm_HomeAxisWithSpeedAndAcceleration(
+    RobotAxisId_t axis, uint16_t home_speed, uint16_t home_acceleration);
 /**
  * 在 HC165 新快照到达时按 S1/S2/S3 的物理零点语义处理三轴。
  *

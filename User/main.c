@@ -24,6 +24,8 @@
 #define MAIN_LOOP_PROCESS_LIMIT 8u
 #define MAIN_LOOP_RX_BYTE_LIMIT 64u
 #define MAIN_LOOP_SLOW_THRESHOLD_MS 100u
+#define HEATER_MOTOR_ID 17u
+#define HEATER_OVERTEMPERATURE_C 80.0f
 
 typedef enum
 {
@@ -68,6 +70,26 @@ static uint8_t last_inputData[SHIFT_REGISTER_INPUT_COUNT];
 static uint8_t inputData_inited;
 static uint32_t last_temperature_report_ms;
 static uint32_t last_single_motor_task_ms;
+
+/**
+ * 在热电偶达到加热安全上限时关闭 MT17 加热开关。
+ *
+ * 该保护仅在 MT17 仍由单向电机控制器标记为运行时执行，避免反复刷新
+ * 74HC595 输出；通过统一立即停止入口同时取消该加热开关可能遗留的定时或
+ * 传感器任务，防止任务状态在下一轮重新驱动实际加热输出。
+ *
+ * @param temp_c 本次 MAX31855 热电偶采样的温度，单位为摄氏度。
+ */
+
+static void task_heater_overtemperature_protection(float temp_c)
+{
+    /* 温度达到 80°C 时必须断开 MT17 加热输出，避免继续加热造成超温。 */
+    if (temp_c >= HEATER_OVERTEMPERATURE_C &&
+        g_single_motors[HEATER_MOTOR_ID - 1u].running)
+    {
+        SingleMotor_Immediate(HEATER_MOTOR_ID, 0u);
+    }
+}
 
 /**
  * 标记即将执行的主循环任务。
@@ -119,7 +141,8 @@ static void task_temperature_report(void)
     last_temperature_report_ms = now;
     temp = MAX31855_GetTemperature();
     temperature = (uint16_t)temp;
-    send_temperature_frame(0x21);
+    task_heater_overtemperature_protection(temp);
+    // send_temperature_frame(0x21);
 }
 
 /**
@@ -231,15 +254,15 @@ static void task_input_change_report(void)
         return;
     }
 
-    for (index = 0u; index < SHIFT_REGISTER_INPUT_COUNT; index++)
-    {
-        if (last_inputData[index] != inputData[index])
-        {
-            /* 两片 74HC165 的任一输入变化均上报当前完整快照。 */
-            send_165Data();
-            break;
-        }
-    }
+    // for (index = 0u; index < SHIFT_REGISTER_INPUT_COUNT; index++)
+    // {
+    //     if (last_inputData[index] != inputData[index])
+    //     {
+    //         /* 两片 74HC165 的任一输入变化均上报当前完整快照。 */
+    //         send_165Data();
+    //         break;
+    //     }
+    // }
 
     for (index = 0u; index < SHIFT_REGISTER_INPUT_COUNT; index++)
     {
@@ -363,7 +386,7 @@ int main(void)
     SPI_GPIO_Init();
     SPI1_InitOnce();
     Timer2_Init();
-    // MAX31855_Init();
+    MAX31855_Init();
     MixerPwm_Init();
     TIM4_10us_Init();
     stepdma_pb11_init(72000000);
@@ -398,8 +421,7 @@ int main(void)
         Main_DebugBeginStage(MAIN_STAGE_PROTOCOL);
         task_protocol_commands();
         (void)Main_DebugEndStage();
-        /* 0x00 为低优先级主动上报；USART 发送入口忙时会返回失败，本次上报可跳过。 */
-        // task_temperature_report();
+        task_temperature_report();
         // task_step_done_report();
         Main_DebugBeginStage(MAIN_STAGE_INPUT_SCAN);
         task_165_input_scan();

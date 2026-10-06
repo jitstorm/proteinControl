@@ -587,7 +587,7 @@ void send_temperature_frame(uint8_t cmd)
         dbg_temperature_report_skipped_count++;
         dbg_temperature_report_last_skip_reason = rs485_tx_last_failure_reason;
     }
-    send_frame_event(cmd, data);
+    // send_frame_event(cmd, data);
 }
 // 模拟器测试用
 // void send_temperature_frame(uint8_t cmd)

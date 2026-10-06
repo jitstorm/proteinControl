@@ -5,7 +5,14 @@
 
 /* 临时调试时假定三轴已完成 Home；关闭后恢复上电必须先正式 Home 的流程。 */
 #ifndef ROBOT_ARM_DEBUG_ASSUME_HOME
+#if defined(ROBOT_ARM_LOGIC_TEST)
+/* 逻辑回归必须从未建立坐标的上电状态开始，不能继承现场调试的假定 Home。 */
+#define ROBOT_ARM_DEBUG_ASSUME_HOME 0u
+#else
+/* 生产上电后必须等待 S1/S2/S3 实际触发后才建立零点，不能仅因软件坐标初值为 0
+ * 就允许普通 MOVE 或 Phase 误认为机构已经回零。 */
 #define ROBOT_ARM_DEBUG_ASSUME_HOME 1u
+#endif
 #endif
 
 /* HC165 采集层已经按位取反；以下逻辑电平仍需通过板端传感器测试确认。 */
@@ -18,7 +25,7 @@
  * 下列值必须由实际机械标定填写，单位为步数；未知时保持 0 会安全地拒绝一切
  * 正方向目标，绝不能猜测生产坐标或回退到已取消的 S4 硬限位。
  */
-#if defined(ROBOT_ARM_POST_HOME_TEST)
+#if defined(ROBOT_ARM_POST_HOME_TEST) || defined(ROBOT_ARM_HOME_SLOW_APPROACH_TEST)
 /* 仅扩大补充找零回归的模拟行程，验证 20000 步下发；生产标定不变。 */
 #define ROBOT_ARM_X_MAX_TRAVEL 30000
 #define ROBOT_ARM_Y_MAX_TRAVEL 30000
@@ -45,7 +52,7 @@
 #define ROBOT_ARM_Z_HOME_DIRECTION (-1)
 
 /* 逻辑测试使用短行程；固件默认仍保持禁用，防止未知距离的自动运动。 */
-#if defined(ROBOT_ARM_LOGIC_TEST) && !defined(ROBOT_ARM_HOME_CONFIG_REJECT_TEST)
+#if (defined(ROBOT_ARM_LOGIC_TEST) && !defined(ROBOT_ARM_HOME_CONFIG_REJECT_TEST)) || defined(ROBOT_ARM_HOME_SLOW_APPROACH_TEST)
 #define ROBOT_ARM_X_HOME_ENABLED 1u
 #define ROBOT_ARM_Y_HOME_ENABLED 1u
 #define ROBOT_ARM_Z_HOME_ENABLED 1u
@@ -66,8 +73,7 @@
 #define ROBOT_ARM_HOME_FAST_SPEED_Y 100u
 #define ROBOT_ARM_HOME_FAST_SPEED_Z 100u
 #endif
-/* 当前生产 Home 仅执行一次快速寻零；保留以下旧配置以便未来恢复双阶段流程，
- * 反向脱离和二次慢速寻零当前不得读取或使用。 */
+/* 旧双阶段退让/复找配置仍未启用；0x31 的末段低速由下方每轴独立宏控制。 */
 #define ROBOT_ARM_HOME_SLOW_SPEED 20u
 #define ROBOT_ARM_HOME_BACKOFF_STEPS 10u
 #else
@@ -115,9 +121,26 @@
 
 /* 三轴 DMA 步进的第一版加速度，单位为 steps/s^2。
  * X 保持现有偏柔和参数；Y/Z 降低原有冲击，并由各自梯形 profile 使用。 */
-#define ROBOT_ARM_X_ACCELERATION 9000u
-#define ROBOT_ARM_Y_ACCELERATION 9000u
+#define ROBOT_ARM_X_ACCELERATION 50000u
+#define ROBOT_ARM_Y_ACCELERATION 50000u
 #define ROBOT_ARM_Z_ACCELERATION 2000u
+
+/* 单轴 Home 的加速度默认沿用对应轴普通运动的安全标定值。0x31 可按次覆盖，
+ * 但传入 0 必须明确回退此处默认值，不能把 0 直接交给 DMA。 */
+#define ROBOT_ARM_X_HOME_DEFAULT_ACCELERATION ROBOT_ARM_X_ACCELERATION
+#define ROBOT_ARM_Y_HOME_DEFAULT_ACCELERATION ROBOT_ARM_Y_ACCELERATION
+#define ROBOT_ARM_Z_HOME_DEFAULT_ACCELERATION ROBOT_ARM_Z_ACCELERATION
+
+/* 单轴 Home 已知软件坐标时的末段低速配置。距离理论零点仍有此范围时应已降至
+ * 对应速度；S1/S2/S3 才是唯一的真实完成依据，不能用这些步数直接置零。 */
+#define ROBOT_ARM_X_HOME_SLOW_ZONE_STEPS 1500u
+#define ROBOT_ARM_Y_HOME_SLOW_ZONE_STEPS 1500u
+#define ROBOT_ARM_Z_HOME_SLOW_ZONE_STEPS 1000u
+#define ROBOT_ARM_X_HOME_SLOW_SPEED 7000u
+#define ROBOT_ARM_Y_HOME_SLOW_SPEED 7000u
+#define ROBOT_ARM_Z_HOME_SLOW_SPEED 2000u
+/* 已走到理论零点仍未命中传感器时的低速额外搜索上限，单位为 STEP。 */
+#define ROBOT_ARM_HOME_EXTRA_SEARCH_STEPS 20000u
 
 /* Android 的 0x34 速度字段是 uint16；PU1/PB10、PU2/PB11、PU3/PB13 的最终上限
  * 统一限制为协议可表达的 65535 steps/s，仍由各底层 DMA 驱动执行既有加减速控制。 */

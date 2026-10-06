@@ -63,11 +63,18 @@ void MixerPwm_Init(void)
     GPIO_Init(GPIOB, &gpio);
     GPIO_ResetBits(GPIOB, GPIO_Pin_1);
 
-    /* TIM3 默认映射下 CH3 位于 PB0，AF 推挽输出由硬件产生 PWM。 */
+    /*
+     * PB0 是驱动器 PWMIN。切换为 TIM3_CH3 复用输出前，先以普通推挽输出
+     * 强制拉低，避免 MCU 上电或定时器尚未完成 CCR3=0 锁存时保留旧高电平。
+     */
+    GPIO_ResetBits(GPIOB, GPIO_Pin_0);
     gpio.GPIO_Pin = GPIO_Pin_0;
-    gpio.GPIO_Mode = GPIO_Mode_AF_PP;
+    gpio.GPIO_Speed = GPIO_Speed_50MHz;
+    gpio.GPIO_Mode = GPIO_Mode_Out_PP;
     GPIO_Init(GPIOB, &gpio);
+    GPIO_ResetBits(GPIOB, GPIO_Pin_0);
 
+    /* TIM3 默认映射下 CH3 位于 PB0；仅在 PWM0 已锁存后切换为 AF 推挽输出。 */
     /* 72 MHz / ((0 + 1) * (3599 + 1)) = 20 kHz。 */
     time_base.TIM_Prescaler = 0u;
     time_base.TIM_Period = MIXER_PWM_PERIOD;
@@ -83,6 +90,17 @@ void MixerPwm_Init(void)
     TIM_OC3Init(TIM3, &output_compare);
     TIM_OC3PreloadConfig(TIM3, TIM_OCPreload_Enable);
     TIM_ARRPreloadConfig(TIM3, ENABLE);
+
+    /*
+     * 在启动 TIM3 计数前，主动把 PWM0 写入 CCR3 并产生一次更新事件。
+     * 这样 PB0（TIM3_CH3）会立即锁存为低电平的 0% PWM，不能仅依赖
+     * 定时器复位值或等待首个周期溢出，避免上电阶段出现短暂的非零输出。
+     */
+    TIM_SetCompare3(TIM3, 0u);
+    TIM_GenerateEvent(TIM3, TIM_EventSource_Update);
+
+    gpio.GPIO_Mode = GPIO_Mode_AF_PP;
+    GPIO_Init(GPIOB, &gpio);
 
     /* TIM3 仅承担 CH3 PWM，不启用 Update IRQ 或 TIM3 NVIC。 */
     TIM_ITConfig(TIM3, TIM_IT_Update, DISABLE);

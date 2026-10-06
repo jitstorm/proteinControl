@@ -109,6 +109,8 @@ typedef struct
     uint32_t decel_steps; /* 减速段步数：从 v_peak 减速到 0 */
     uint32_t f_end;
     uint8_t phase_profile;
+    uint8_t home_approach;
+    uint32_t slow_zone_steps;
 } TrapProfile;
 
 /* 主循环通过只读接口审计完成原因，ISR 更新字段必须保持可见。 */
@@ -238,6 +240,25 @@ static uint32_t trap_get_f(uint32_t step_index)
     }
 
     remain = (total > done) ? (total - done) : 0u;
+
+    /* Home 接近轮廓在末段保持低速，而不是普通 MOVE 在终点减到 0。 */
+    if (s_trap.home_approach)
+    {
+        if ((remain <= s_trap.slow_zone_steps) &&
+            (done >= s_trap.accel_steps))
+        {
+            return s_trap.f_end;
+        }
+        if ((remain > s_trap.slow_zone_steps) &&
+            (remain <= (s_trap.slow_zone_steps + s_trap.decel_steps)))
+        {
+            v2 = (uint64_t)s_trap.f_end * (uint64_t)s_trap.f_end +
+                 2ull * (uint64_t)s_trap.accel *
+                     (uint64_t)(remain - s_trap.slow_zone_steps);
+            v = isqrt_u64(v2);
+            return (v > s_trap.v_peak) ? s_trap.v_peak : v;
+        }
+    }
 
     /* 加速段 */
     if (done < s_trap.accel_steps)
@@ -579,6 +600,8 @@ void stepdma_pb11_move_trap(uint32_t steps, uint32_t f_start, uint32_t f_max, ui
     s_trap.f_max = f_max;
     s_trap.accel = accel;
     s_trap.phase_profile = 0u;
+    s_trap.home_approach = 0u;
+    s_trap.slow_zone_steps = 0u;
 
     /* 计算实际峰值速度 v_peak（考虑末端到 0） */
     f02 = (uint64_t)f_start * (uint64_t)f_start;
@@ -617,6 +640,56 @@ void stepdma_pb11_move_trap(uint32_t steps, uint32_t f_start, uint32_t f_max, ui
     s_running = 1;
     s_mode = MODE_TRAP;
 
+    dma_start_edges((uint16_t)chunk_edges);
+}
+
+/**
+ * 在一条连续 PB11 DMA 脉冲序列中执行 Home 的快速、减速和末段低速接近。
+ *
+ * 减速距离按 v² 差和 acceleration 计算；实际开始距离取该距离加 slow_zone，
+ * 因而进入最后低速区时已接近 f_slow，不能等到最后再突变 TIM5 周期。
+ */
+void stepdma_pb11_move_home_approach(uint32_t steps, uint32_t f_start,
+                                     uint32_t f_fast, uint32_t f_slow,
+                                     uint32_t slow_zone_steps, uint32_t accel)
+{
+    uint64_t start2, end2, peak2;
+    uint32_t peak, f, remain_steps, chunk_steps, chunk_edges;
+    if (steps == 0u) return;
+    if (f_start < 1u) f_start = 1u;
+    if (f_slow < f_start) f_slow = f_start;
+    if (f_fast < f_slow) f_fast = f_slow;
+    if (accel < 1u) accel = 1u;
+    if (slow_zone_steps > steps) slow_zone_steps = steps;
+    start2 = (uint64_t)f_start * f_start;
+    end2 = (uint64_t)f_slow * f_slow;
+    /* 低速区不参与加减速距离，峰值由其余已知距离决定。 */
+    peak2 = (2ull * (uint64_t)accel * (uint64_t)(steps - slow_zone_steps) +
+             start2 + end2) / 2ull;
+    peak = isqrt_u64(peak2);
+    if (peak > f_fast) peak = f_fast;
+    if (peak < f_slow) peak = f_slow;
+    if (peak < f_start) peak = f_start;
+    s_trap.steps_total = steps;
+    s_trap.steps_done = 0u;
+    s_trap.f_start = f_start;
+    s_trap.f_max = f_fast;
+    s_trap.f_end = f_slow;
+    s_trap.accel = accel;
+    s_trap.v_peak = peak;
+    s_trap.accel_steps = (uint32_t)(((uint64_t)peak * peak - start2) / (2ull * accel));
+    s_trap.decel_steps = (uint32_t)(((uint64_t)peak * peak - end2) / (2ull * accel));
+    s_trap.slow_zone_steps = slow_zone_steps;
+    s_trap.phase_profile = 0u;
+    s_trap.home_approach = 1u;
+    f = trap_get_f(0u);
+    s_cur_f = f;
+    tim5_set_edge_freq(2u * f);
+    remain_steps = steps;
+    chunk_steps = (remain_steps > CHUNK_STEPS) ? CHUNK_STEPS : remain_steps;
+    chunk_edges = chunk_steps * 2u;
+    s_running = 1u;
+    s_mode = MODE_TRAP;
     dma_start_edges((uint16_t)chunk_edges);
 }
 
@@ -939,6 +1012,8 @@ typedef struct
     uint32_t decel_steps;
     uint32_t f_end;
     uint8_t phase_profile;
+    uint8_t home_approach;
+    uint32_t slow_zone_steps;
 } TrapProfile10;
 
 static TrapProfile10 s10_trap;
@@ -994,6 +1069,21 @@ static uint32_t trap10_get_f(uint32_t step_index)
     }
 
     remain = (total > done) ? (total - done) : 0u;
+
+    if (s10_trap.home_approach)
+    {
+        if ((remain <= s10_trap.slow_zone_steps) &&
+            (done >= s10_trap.accel_steps)) return s10_trap.f_end;
+        if ((remain > s10_trap.slow_zone_steps) &&
+            (remain <= (s10_trap.slow_zone_steps + s10_trap.decel_steps)))
+        {
+            v2 = (uint64_t)s10_trap.f_end * (uint64_t)s10_trap.f_end +
+                 2ull * (uint64_t)s10_trap.accel *
+                     (uint64_t)(remain - s10_trap.slow_zone_steps);
+            v = isqrt_u64(v2);
+            return (v > s10_trap.v_peak) ? s10_trap.v_peak : v;
+        }
+    }
 
     if (done < s10_trap.accel_steps)
     {
@@ -1240,6 +1330,8 @@ void stepdma_pb10_move_trap(uint32_t steps, uint32_t f_start, uint32_t f_max, ui
     s10_trap.f_max = f_max;
     s10_trap.accel = accel;
     s10_trap.phase_profile = 0u;
+    s10_trap.home_approach = 0u;
+    s10_trap.slow_zone_steps = 0u;
 
     f02 = (uint64_t)f_start * (uint64_t)f_start;
     vpeak2 = (2ull * (uint64_t)accel * (uint64_t)steps + f02) / 2ull;
@@ -1275,6 +1367,51 @@ void stepdma_pb10_move_trap(uint32_t steps, uint32_t f_start, uint32_t f_max, ui
     s10_running = 1;
     s10_mode = MODE10_TRAP;
 
+    dma10_start_edges((uint16_t)chunk_edges);
+}
+
+/** PB10/X 轴的连续 Home 接近轮廓，公式和 PB11 保持一致。 */
+void stepdma_pb10_move_home_approach(uint32_t steps, uint32_t f_start,
+                                     uint32_t f_fast, uint32_t f_slow,
+                                     uint32_t slow_zone_steps, uint32_t accel)
+{
+    uint64_t start2, end2, peak2;
+    uint32_t peak, f, chunk_steps, chunk_edges;
+    if (steps == 0u) return;
+    if (f_start < 1u) f_start = 1u;
+    if (f_slow < f_start) f_slow = f_start;
+    if (f_fast < f_slow) f_fast = f_slow;
+    if (accel < 1u) accel = 1u;
+    if (slow_zone_steps > steps) slow_zone_steps = steps;
+    start2 = (uint64_t)f_start * f_start;
+    end2 = (uint64_t)f_slow * f_slow;
+    peak2 = (2ull * (uint64_t)accel * (uint64_t)(steps - slow_zone_steps) +
+             start2 + end2) / 2ull;
+    peak = isqrt_u64(peak2);
+    if (peak > f_fast) peak = f_fast;
+    if (peak < f_slow) peak = f_slow;
+    if (peak < f_start) peak = f_start;
+    s10_trap.steps_total = steps;
+    s10_trap.steps_done = 0u;
+    s10_completed_steps = 0u;
+    s10_remaining_steps = steps;
+    s10_trap.f_start = f_start;
+    s10_trap.f_max = f_fast;
+    s10_trap.f_end = f_slow;
+    s10_trap.accel = accel;
+    s10_trap.v_peak = peak;
+    s10_trap.accel_steps = (uint32_t)(((uint64_t)peak * peak - start2) / (2ull * accel));
+    s10_trap.decel_steps = (uint32_t)(((uint64_t)peak * peak - end2) / (2ull * accel));
+    s10_trap.slow_zone_steps = slow_zone_steps;
+    s10_trap.phase_profile = 0u;
+    s10_trap.home_approach = 1u;
+    f = trap10_get_f(0u);
+    s10_cur_f = f;
+    tim6_set_edge_freq(2u * f);
+    chunk_steps = (steps > CHUNK_STEPS) ? CHUNK_STEPS : steps;
+    chunk_edges = chunk_steps * 2u;
+    s10_running = 1u;
+    s10_mode = MODE10_TRAP;
     dma10_start_edges((uint16_t)chunk_edges);
 }
 
@@ -1498,8 +1635,38 @@ void Stepper2_SetDirection(uint8_t direction)
     s10_direction_level = (int8_t)(direction ? 1u : 0u);
 }
 
-/** 启动实际 PU1 的梯形加减速运动，运行中重复启动返回 0。 */
+/**
+ * 使用 X 轴默认加速度启动实际 PU1（PB10）梯形运动。
+ *
+ * 普通 X 轴移动通过该入口保持既有默认加速度；需要单独指定 Home 加速度时必须
+ * 改用 Stepper2_StartWithAcceleration，避免协议参数被此默认值覆盖。
+ *
+ * @param direction 已转换为实际 DIR1 电平的方向值。
+ * @param steps 需要输出的 STEP 上升沿数量。
+ * @param target_frequency 目标速度，单位 steps/s。
+ * @return DMA 已开始输出返回 1；零步数或驱动忙返回 0。
+ */
 uint8_t Stepper2_Start(uint8_t direction, uint32_t steps, uint32_t target_frequency)
+{
+    return Stepper2_StartWithAcceleration(
+        direction, steps, target_frequency, STEPPER2_ACCELERATION);
+}
+
+/**
+ * 使用调用方给定的加速度启动实际 PU1（PB10/X 轴）梯形运动。
+ *
+ * 单轴 Home 通过该入口把协议中的加速度交给 TIM6/DMA2 通道3；普通移动由
+ * Stepper2_Start 传入 X 轴默认值，因此两类动作互不改变对方的速度曲线。
+ *
+ * @param direction 已写入 DIR1 的方向电平。
+ * @param steps 需要输出的 STEP 上升沿数量。
+ * @param target_frequency 目标速度，单位 steps/s。
+ * @param acceleration 本次加速度，单位 steps/s^2。
+ * @return 成功装载 DMA 并开始运动返回 1；零步数或驱动忙返回 0。
+ */
+uint8_t Stepper2_StartWithAcceleration(uint8_t direction, uint32_t steps,
+                                       uint32_t target_frequency,
+                                       uint32_t acceleration)
 {
     if (steps == 0u || stepdma_pb10_is_running())
     {
@@ -1513,13 +1680,17 @@ uint8_t Stepper2_Start(uint8_t direction, uint32_t steps, uint32_t target_freque
     {
         target_frequency = STEPPER2_MAX_FREQUENCY;
     }
+    if (acceleration < 1u)
+    {
+        acceleration = 1u;
+    }
 
     /* 方向建立后再装载 DMA，避免首个 STEP 上升沿过早到达驱动器。 */
     stepdma_pb10_stop();
     Stepper2_SetDirection(direction);
     Delay_us(2u);
     stepdma_pb10_move_trap(steps, STEPPER2_START_FREQUENCY,
-                           target_frequency, STEPPER2_ACCELERATION);
+                           target_frequency, acceleration);
     return 1u;
 }
 
@@ -1597,6 +1768,9 @@ typedef struct
     uint32_t v_peak;
     uint32_t accel_steps;
     uint32_t decel_steps;
+    uint32_t f_end;
+    uint32_t slow_zone_steps;
+    uint8_t home_approach;
 } PU3_TrapProfile;
 
 typedef struct
@@ -1656,6 +1830,24 @@ static uint32_t PU3_GetTrapFrequency(uint32_t steps_done)
 
     remaining = (s_pu3_trap.steps_total > steps_done) ?
                     (s_pu3_trap.steps_total - steps_done) : 0u;
+    if (s_pu3_trap.home_approach)
+    {
+        if ((remaining <= s_pu3_trap.slow_zone_steps) &&
+            (steps_done >= s_pu3_trap.accel_steps))
+        {
+            return s_pu3_trap.f_end;
+        }
+        if ((remaining > s_pu3_trap.slow_zone_steps) &&
+            (remaining <= (s_pu3_trap.slow_zone_steps +
+                           s_pu3_trap.decel_steps)))
+        {
+            speed_squared = (uint64_t)s_pu3_trap.f_end * s_pu3_trap.f_end +
+                            2ull * (uint64_t)s_pu3_trap.accel *
+                                (remaining - s_pu3_trap.slow_zone_steps);
+            speed = isqrt_u64(speed_squared);
+            return (speed > s_pu3_trap.v_peak) ? s_pu3_trap.v_peak : speed;
+        }
+    }
     if (steps_done < s_pu3_trap.accel_steps)
     {
         speed_squared = (uint64_t)s_pu3_trap.f_start *
@@ -1709,6 +1901,8 @@ static void PU3_BuildTrapProfile(uint32_t steps,
     s_pu3_trap.f_start = start_frequency;
     s_pu3_trap.f_max = maximum_frequency;
     s_pu3_trap.accel = acceleration;
+    s_pu3_trap.home_approach = 0u;
+    s_pu3_trap.slow_zone_steps = 0u;
 
     start_squared = (uint64_t)start_frequency * (uint64_t)start_frequency;
     peak_squared = (2ull * (uint64_t)acceleration * (uint64_t)steps +
@@ -1738,6 +1932,38 @@ static void PU3_BuildTrapProfile(uint32_t steps,
     {
         s_pu3_trap.decel_steps = 1u;
     }
+}
+
+/** 在 PB13/TIM7/DMA2 通道4上建立连续的 Home 末段低速轮廓。 */
+static void PU3_BuildHomeApproachProfile(uint32_t steps, uint32_t start_frequency,
+                                         uint32_t fast_frequency,
+                                         uint32_t slow_frequency,
+                                         uint32_t slow_zone_steps,
+                                         uint32_t acceleration)
+{
+    uint64_t start2, end2, peak2;
+    uint32_t peak;
+    if (slow_zone_steps > steps) slow_zone_steps = steps;
+    start2 = (uint64_t)start_frequency * start_frequency;
+    end2 = (uint64_t)slow_frequency * slow_frequency;
+    peak2 = (2ull * (uint64_t)acceleration * (steps - slow_zone_steps) +
+             start2 + end2) / 2ull;
+    peak = isqrt_u64(peak2);
+    if (peak > fast_frequency) peak = fast_frequency;
+    if (peak < slow_frequency) peak = slow_frequency;
+    if (peak < start_frequency) peak = start_frequency;
+    s_pu3_trap.steps_total = steps;
+    s_pu3_trap.f_start = start_frequency;
+    s_pu3_trap.f_max = fast_frequency;
+    s_pu3_trap.f_end = slow_frequency;
+    s_pu3_trap.accel = acceleration;
+    s_pu3_trap.v_peak = peak;
+    s_pu3_trap.accel_steps = (uint32_t)((((uint64_t)peak * peak) - start2) /
+                                         (2ull * acceleration));
+    s_pu3_trap.decel_steps = (uint32_t)((((uint64_t)peak * peak) - end2) /
+                                         (2ull * acceleration));
+    s_pu3_trap.slow_zone_steps = slow_zone_steps;
+    s_pu3_trap.home_approach = 1u;
 }
 
 static void PU3_SetEdgeFrequency(uint32_t edge_frequency)
@@ -1863,6 +2089,41 @@ uint8_t PU3_Stepper_Start(uint32_t steps, uint8_t direction, uint32_t start_freq
     s_pu3.acceleration = acceleration;
     PU3_BuildTrapProfile(steps, start_frequency, maximum_frequency,
                          acceleration);
+    s_pu3.current_speed = PU3_GetTrapFrequency(0u);
+    s_pu3.accel_state = PU3_ACCEL_UP;
+    GPIO_ResetBits(PU3_STEP_GPIO, PU3_STEP_PIN);
+    PU3_SetEdgeFrequency(s_pu3.current_speed * 2u);
+    s_pu3.running = 1u;
+    chunk = (steps > PU3_CHUNK_STEPS) ? PU3_CHUNK_STEPS : steps;
+    PU3_LoadChunk(chunk);
+    return 1u;
+}
+
+/** 启动 Z 轴已知距离 Home，最后 slow_zone_steps 保持低速等待 S3。 */
+uint8_t PU3_Stepper_StartHomeApproach(uint32_t steps, uint8_t direction,
+                                      uint32_t start_frequency,
+                                      uint32_t fast_frequency,
+                                      uint32_t slow_frequency,
+                                      uint32_t slow_zone_steps,
+                                      uint32_t acceleration)
+{
+    uint32_t chunk;
+    if ((steps == 0u) || s_pu3.running) return 0u;
+    if (start_frequency < 1u) start_frequency = 1u;
+    if (slow_frequency < start_frequency) slow_frequency = start_frequency;
+    if (fast_frequency < slow_frequency) fast_frequency = slow_frequency;
+    if (acceleration < 1u) acceleration = 1u;
+    PU3_Stepper_Stop();
+    s_pu3.direction = direction ? 1u : 0u;
+    PU3_SetDirection(s_pu3.direction);
+    s_pu3.total_steps = steps;
+    s_pu3.remaining_steps = steps;
+    s_pu3.completed_steps = 0u;
+    s_pu3.start_speed = start_frequency;
+    s_pu3.target_speed = fast_frequency;
+    s_pu3.acceleration = acceleration;
+    PU3_BuildHomeApproachProfile(steps, start_frequency, fast_frequency,
+                                 slow_frequency, slow_zone_steps, acceleration);
     s_pu3.current_speed = PU3_GetTrapFrequency(0u);
     s_pu3.accel_state = PU3_ACCEL_UP;
     GPIO_ResetBits(PU3_STEP_GPIO, PU3_STEP_PIN);

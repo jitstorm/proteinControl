@@ -7,12 +7,21 @@ extern uint8_t HC595Data[4];
 void ShiftRegister_WriteAll(uint8_t *data);
 void stepdma_pb11_request_trap(uint32_t steps, uint32_t start,
                               uint32_t maximum, uint32_t acceleration);
+void stepdma_pb11_move_home_approach(uint32_t steps, uint32_t start,
+                                     uint32_t fast, uint32_t slow,
+                                     uint32_t slow_zone, uint32_t acceleration);
 void stepdma_pb11_stop(void);
 uint8_t stepdma_pb11_is_running(void);
 uint32_t stepdma_pb11_get_remaining_steps(void);
 uint32_t stepdma_pb11_get_completed_steps(void);
 uint8_t Stepper2_Start(uint8_t direction, uint32_t steps,
                        uint32_t target_frequency);
+uint8_t Stepper2_StartWithAcceleration(uint8_t direction, uint32_t steps,
+                                       uint32_t target_frequency,
+                                       uint32_t acceleration);
+void stepdma_pb10_move_home_approach(uint32_t steps, uint32_t start,
+                                     uint32_t fast, uint32_t slow,
+                                     uint32_t slow_zone, uint32_t acceleration);
 void Stepper2_Stop(void);
 uint8_t Stepper2_IsBusy(void);
 uint32_t Stepper2_GetRemainingSteps(void);
@@ -21,6 +30,10 @@ uint8_t PU3_Stepper_Start(uint32_t steps, uint8_t direction,
                           uint32_t start_frequency,
                           uint32_t maximum_frequency,
                           uint32_t acceleration);
+uint8_t PU3_Stepper_StartHomeApproach(uint32_t steps, uint8_t direction,
+                                      uint32_t start, uint32_t fast,
+                                      uint32_t slow, uint32_t slow_zone,
+                                      uint32_t acceleration);
 void PU3_Stepper_Stop(void);
 uint8_t PU3_Stepper_IsRunning(void);
 uint32_t PU3_Stepper_GetRemainingSteps(void);
@@ -104,8 +117,38 @@ static void RobotArmDriver_SetPb11Direction(uint8_t direction_level)
 uint8_t RobotArmDriver_Start(RobotAxisId_t axis, int8_t direction,
                               uint32_t steps, uint32_t speed)
 {
+    static const uint32_t default_acceleration[ROBOT_AXIS_COUNT] = {
+        ROBOT_ARM_X_ACCELERATION,
+        ROBOT_ARM_Y_ACCELERATION,
+        ROBOT_ARM_Z_ACCELERATION};
+    if (axis >= ROBOT_AXIS_COUNT)
+    {
+        return 0u;
+    }
+    return RobotArmDriver_StartWithAcceleration(
+        axis, direction, steps, speed, default_acceleration[axis]);
+}
+
+/**
+ * 使用调用方给定的加速度启动指定逻辑轴。
+ *
+ * 单轴 Home 的请求加速度必须在此处分发到 X 的 PB10、Y 的 PB11 或 Z 的 PB13
+ * DMA 入口；不得仅保存协议字段而仍使用固定加速度。
+ *
+ * @param axis 要启动的实际机械轴。
+ * @param direction 逻辑正负运动方向。
+ * @param steps 需要输出的 STEP 上升沿数量。
+ * @param speed 目标速度，单位 steps/s。
+ * @param acceleration 本次加速度，单位 steps/s^2。
+ * @return 驱动已真实进入运行态返回 1，否则返回 0。
+ */
+uint8_t RobotArmDriver_StartWithAcceleration(
+    RobotAxisId_t axis, int8_t direction, uint32_t steps, uint32_t speed,
+    uint32_t acceleration)
+{
     uint8_t start_result;
-    if ((axis >= ROBOT_AXIS_COUNT) || (steps == 0u) || RobotArmDriver_IsBusy(axis))
+    if ((axis >= ROBOT_AXIS_COUNT) || (steps == 0u) || (acceleration == 0u) ||
+        RobotArmDriver_IsBusy(axis))
     {
         return 0u;
     }
@@ -121,16 +164,17 @@ uint8_t RobotArmDriver_Start(RobotAxisId_t axis, int8_t direction,
     {
     case ROBOT_AXIS_X:
         /* X 轴使用实际 PB10/TIM6/DMA2 通道3，Stepper2 内部负责 DIR1(Q4)。 */
-        start_result = Stepper2_Start(
+        start_result = Stepper2_StartWithAcceleration(
             RobotArmDriver_GetDirectionLevel(
-                direction, ROBOT_ARM_X_POSITIVE_DIR_LEVEL), steps, speed);
+                direction, ROBOT_ARM_X_POSITIVE_DIR_LEVEL), steps, speed,
+            acceleration);
         return (start_result && Stepper2_IsBusy()) ? 1u : 0u;
     case ROBOT_AXIS_Y:
         /* Y 轴使用实际 PB11/TIM5/DMA2 通道2，仅在此处翻译 DIR2(Q5)。 */
         RobotArmDriver_SetPb11Direction(RobotArmDriver_GetDirectionLevel(
             direction, ROBOT_ARM_Y_POSITIVE_DIR_LEVEL));
         stepdma_pb11_request_trap(steps, ROBOT_ARM_DRIVER_START_FREQUENCY,
-                                  speed, ROBOT_ARM_Y_ACCELERATION);
+                                  speed, acceleration);
         return stepdma_pb11_is_running();
     case ROBOT_AXIS_Z:
         /* Z 轴沿用 PB13/TIM7/DMA2 通道4，PU3 内部负责 DIR3。 */
@@ -138,8 +182,53 @@ uint8_t RobotArmDriver_Start(RobotAxisId_t axis, int8_t direction,
             steps, RobotArmDriver_GetDirectionLevel(
                        direction, ROBOT_ARM_Z_POSITIVE_DIR_LEVEL),
             ROBOT_ARM_DRIVER_START_FREQUENCY, speed,
-            ROBOT_ARM_Z_ACCELERATION);
+            acceleration);
         return (start_result && PU3_Stepper_IsRunning()) ? 1u : 0u;
+    default:
+        return 0u;
+    }
+}
+
+/**
+ * 使用单条 DMA 速度轮廓执行已知距离的 Home 接近动作。
+ *
+ * 此接口仅服务 0x31 单轴 Home：PB10/PB11/PB13 分别在自己的 DMA/Timer 链路中
+ * 保持连续脉冲，并在理论零点前的配置区域以低速接近 S1/S2/S3。传感器的即时
+ * 停机仍由 RobotArm_OnSensorSnapshotUpdated() 统一处理。
+ */
+uint8_t RobotArmDriver_StartHomeApproach(
+    RobotAxisId_t axis, int8_t direction, uint32_t steps, uint32_t fast_speed,
+    uint32_t slow_speed, uint32_t slow_zone_steps, uint32_t acceleration)
+{
+    if ((axis >= ROBOT_AXIS_COUNT) || (steps == 0u) || (slow_speed == 0u) ||
+        (acceleration == 0u) || RobotArmDriver_IsBusy(axis))
+    {
+        return 0u;
+        
+    }
+    s_robot_arm_driver_direction[axis] = direction;
+    switch (axis)
+    {
+    case ROBOT_AXIS_X:
+        Stepper2_SetDirection(RobotArmDriver_GetDirectionLevel(
+            direction, ROBOT_ARM_X_POSITIVE_DIR_LEVEL));
+        stepdma_pb10_move_home_approach(steps, ROBOT_ARM_DRIVER_START_FREQUENCY,
+                                        fast_speed, slow_speed, slow_zone_steps,
+                                        acceleration);
+        return stepdma_pb10_is_running();
+    case ROBOT_AXIS_Y:
+        RobotArmDriver_SetPb11Direction(RobotArmDriver_GetDirectionLevel(
+            direction, ROBOT_ARM_Y_POSITIVE_DIR_LEVEL));
+        stepdma_pb11_move_home_approach(steps, ROBOT_ARM_DRIVER_START_FREQUENCY,
+                                        fast_speed, slow_speed, slow_zone_steps,
+                                        acceleration);
+        return stepdma_pb11_is_running();
+    case ROBOT_AXIS_Z:
+        return PU3_Stepper_StartHomeApproach(
+            steps, RobotArmDriver_GetDirectionLevel(
+                       direction, ROBOT_ARM_Z_POSITIVE_DIR_LEVEL),
+            ROBOT_ARM_DRIVER_START_FREQUENCY, fast_speed, slow_speed,
+            slow_zone_steps, acceleration);
     default:
         return 0u;
     }

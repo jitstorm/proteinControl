@@ -38,6 +38,9 @@ void stepdma_pb11_move_trap(uint32_t steps, uint32_t f_start, uint32_t f_max, ui
  */
 void stepdma_pb11_move_phase(uint32_t steps, uint32_t f_start, uint32_t f_end);
 void stepdma_pb11_request_trap(uint32_t steps, uint32_t f_start, uint32_t f_max, uint32_t accel);
+/** 连续执行 Y/PB11 Home 的高速、平滑减速和末段低速，不改变普通 MOVE 轮廓。 */
+void stepdma_pb11_move_home_approach(uint32_t steps, uint32_t f_start, uint32_t f_fast,
+                                     uint32_t f_slow, uint32_t slow_zone_steps, uint32_t accel);
 
 /* 立即停止（关 TIM5 + DMA，PB11 拉低） */
 void stepdma_pb11_stop(void);
@@ -66,6 +69,9 @@ void stepdma_pb10_move_trap(uint32_t steps, uint32_t f_start, uint32_t f_max, ui
  */
 void stepdma_pb10_move_phase(uint32_t steps, uint32_t f_start, uint32_t f_end);
 void stepdma_pb10_request_trap(uint32_t steps, uint32_t f_start, uint32_t f_max, uint32_t accel);
+/** 连续执行 X/PB10 Home 的高速、平滑减速和末段低速，不改变普通 MOVE 轮廓。 */
+void stepdma_pb10_move_home_approach(uint32_t steps, uint32_t f_start, uint32_t f_fast,
+                                     uint32_t f_slow, uint32_t slow_zone_steps, uint32_t accel);
 
 /** 初始化实际 PU1：PB10 STEP、TIM6 和 DMA2 通道3。 */
 void Stepper2_Init(void);
@@ -73,6 +79,21 @@ void Stepper2_Init(void);
 void Stepper2_SetDirection(uint8_t direction);
 /** 启动实际 PU1 的梯形加减速运动，运行中重复启动返回 0。 */
 uint8_t Stepper2_Start(uint8_t direction, uint32_t steps, uint32_t target_frequency);
+/**
+ * 使用调用方指定的加速度启动实际 PU1（PB10/X 轴）梯形运动。
+ *
+ * 单轴 Home 需要把 Android 请求中的加速度真正传入 TIM6/DMA2 通道3；普通移动
+ * 继续通过 Stepper2_Start 使用 X 轴默认加速度，避免改变既有动作曲线。
+ *
+ * @param direction 已转换为实际 DIR1 电平的方向值。
+ * @param steps 需要输出的 STEP 上升沿数量。
+ * @param target_frequency 目标速度，单位 steps/s。
+ * @param acceleration 加速度，单位 steps/s^2；0 时由本函数兜底为 1。
+ * @return DMA 已开始输出返回 1，否则返回 0。
+ */
+uint8_t Stepper2_StartWithAcceleration(uint8_t direction, uint32_t steps,
+                                       uint32_t target_frequency,
+                                       uint32_t acceleration);
 /**
  * 启动实际 PU1（PB10/X 轴）的 Phase 频率运动。
  *
@@ -110,6 +131,11 @@ uint8_t PU3_Stepper_Start(uint32_t steps, uint8_t direction,
                           uint32_t start_frequency,
                           uint32_t maximum_frequency,
                           uint32_t acceleration);
+/** 连续执行 Z/PB13 Home 的高速、平滑减速和末段低速，S3 仍可随时停机。 */
+uint8_t PU3_Stepper_StartHomeApproach(uint32_t steps, uint8_t direction,
+                                      uint32_t start_frequency, uint32_t fast_frequency,
+                                      uint32_t slow_frequency, uint32_t slow_zone_steps,
+                                      uint32_t acceleration);
 /** 停止 PU3，并将 PB13 保持为低电平。 */
 void PU3_Stepper_Stop(void);
 /** 查询 PU3 是否正在输出 DMA 步进脉冲。 */
