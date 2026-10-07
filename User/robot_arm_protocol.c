@@ -84,7 +84,7 @@ static uint8_t s_last_phase_seq_valid;
 static uint16_t s_last_phase_seq;
 
 /**
- * 校验一个 Batch 内每根实际轴的非零位移方向是否固定。
+ * 校验一个 Batch 内每根实际轴由绝对目标推导出的非零位移方向是否固定。
  *
  * 同向连续 Phase 才能避免边界重新换向；若同一轴正负混用，必须在尚未输出 STEP 前拒绝，
  * 不能在运行中依赖 DIR 重写修正。
@@ -97,24 +97,48 @@ static uint8_t RobotArmProtocol_HasFixedBatchDirections(
     const RobotArmPhase_t *phase, uint8_t count)
 {
     int8_t direction[ROBOT_AXIS_COUNT] = {0, 0, 0};
+    int32_t current[ROBOT_AXIS_COUNT];
     uint8_t index;
     uint8_t axis;
-    int32_t delta;
+    int32_t target;
+    int64_t delta;
     int8_t next_direction;
 
+    current[ROBOT_AXIS_X] = RobotArm_GetX();
+    current[ROBOT_AXIS_Y] = RobotArm_GetY();
+    current[ROBOT_AXIS_Z] = RobotArm_GetZ();
     for (index = 0u; index < count; index++)
     {
+        if (((phase[index].flags & ROBOT_ARM_PHASE_FLAG_XY_ENABLE) &&
+             phase[index].target_x == current[ROBOT_AXIS_X] &&
+             phase[index].target_y == current[ROBOT_AXIS_Y]) ||
+            ((phase[index].flags & ROBOT_ARM_PHASE_FLAG_Z_ENABLE) &&
+             phase[index].target_z == current[ROBOT_AXIS_Z]))
+        {
+            return 0u;
+        }
         for (axis = 0u; axis < ROBOT_AXIS_COUNT; axis++)
         {
-            delta = (axis == ROBOT_AXIS_X) ? phase[index].delta_x :
-                    ((axis == ROBOT_AXIS_Y) ? phase[index].delta_y :
-                                                phase[index].delta_z);
+            target = (axis == ROBOT_AXIS_X) ? phase[index].target_x :
+                     ((axis == ROBOT_AXIS_Y) ? phase[index].target_y :
+                                               phase[index].target_z);
+            if (((axis != ROBOT_AXIS_Z) &&
+                 !(phase[index].flags & ROBOT_ARM_PHASE_FLAG_XY_ENABLE)) ||
+                ((axis == ROBOT_AXIS_Z) &&
+                 !(phase[index].flags & ROBOT_ARM_PHASE_FLAG_Z_ENABLE)))
+            {
+                if (target != current[axis])
+                    return 0u;
+                continue;
+            }
+            delta = (int64_t)target - current[axis];
             if (delta == 0)
                 continue;
             next_direction = (delta > 0) ? 1 : -1;
             if ((direction[axis] != 0) && (direction[axis] != next_direction))
                 return 0u;
             direction[axis] = next_direction;
+            current[axis] = target;
         }
     }
     return 1u;
@@ -124,11 +148,14 @@ static uint8_t RobotArmProtocol_HasFixedBatchDirections(
 static uint8_t RobotArmProtocol_GetPhaseAxisMask(const RobotArmPhase_t *phase)
 {
     uint8_t mask = 0u;
-    if ((phase->flags & ROBOT_ARM_PHASE_FLAG_XY_ENABLE) && phase->delta_x != 0)
+    if ((phase->flags & ROBOT_ARM_PHASE_FLAG_XY_ENABLE) &&
+        phase->target_x != RobotArm_GetX())
         mask |= (uint8_t)(1u << ROBOT_AXIS_X);
-    if ((phase->flags & ROBOT_ARM_PHASE_FLAG_XY_ENABLE) && phase->delta_y != 0)
+    if ((phase->flags & ROBOT_ARM_PHASE_FLAG_XY_ENABLE) &&
+        phase->target_y != RobotArm_GetY())
         mask |= (uint8_t)(1u << ROBOT_AXIS_Y);
-    if ((phase->flags & ROBOT_ARM_PHASE_FLAG_Z_ENABLE) && phase->delta_z != 0)
+    if ((phase->flags & ROBOT_ARM_PHASE_FLAG_Z_ENABLE) &&
+        phase->target_z != RobotArm_GetZ())
         mask |= (uint8_t)(1u << ROBOT_AXIS_Z);
     return mask;
 }
@@ -793,28 +820,25 @@ void RobotArmProtocol_HandlePhaseBatch(const ProtocolV2PhaseBatchFrame_t *reques
     {
         offset = (uint16_t)(PROTOCOL_V2_PHASE_BATCH_HEADER_SIZE +
                             (uint16_t)index * PROTOCOL_V2_PHASE_SIZE);
-        decoded[index].delta_x = ProtocolV2_ReadI24LE(&request->payload[offset]);
-        decoded[index].delta_y = ProtocolV2_ReadI24LE(&request->payload[offset + 3u]);
-        decoded[index].delta_z = ProtocolV2_ReadI24LE(&request->payload[offset + 6u]);
-        decoded[index].f0 = ProtocolV2_ReadU16LE(&request->payload[offset + 9u]);
-        decoded[index].f1 = ProtocolV2_ReadU16LE(&request->payload[offset + 11u]);
-        decoded[index].z_speed = ProtocolV2_ReadU16LE(&request->payload[offset + 13u]);
-        decoded[index].flags = request->payload[offset + 15u];
+        decoded[index].target_x = ProtocolV2_ReadI24LE(&request->payload[offset]);
+        decoded[index].target_y = ProtocolV2_ReadI24LE(&request->payload[offset + 3u]);
+        decoded[index].target_z = ProtocolV2_ReadI24LE(&request->payload[offset + 6u]);
+        decoded[index].x_f0 = ProtocolV2_ReadU16LE(&request->payload[offset + 9u]);
+        decoded[index].x_f1 = ProtocolV2_ReadU16LE(&request->payload[offset + 11u]);
+        decoded[index].y_f0 = ProtocolV2_ReadU16LE(&request->payload[offset + 13u]);
+        decoded[index].y_f1 = ProtocolV2_ReadU16LE(&request->payload[offset + 15u]);
+        decoded[index].z_speed = ProtocolV2_ReadU16LE(&request->payload[offset + 17u]);
+        decoded[index].flags = request->payload[offset + 19u];
         if (((decoded[index].flags & (ROBOT_ARM_PHASE_FLAG_XY_ENABLE |
                                       ROBOT_ARM_PHASE_FLAG_Z_ENABLE)) == 0u) ||
             ((decoded[index].flags & (uint8_t)~(ROBOT_ARM_PHASE_FLAG_XY_ENABLE |
                 ROBOT_ARM_PHASE_FLAG_Z_ENABLE | ROBOT_ARM_PHASE_FLAG_SYNC_END |
                 ROBOT_ARM_PHASE_FLAG_STOP_AT_END)) != 0u) ||
-            ((decoded[index].flags & ROBOT_ARM_PHASE_FLAG_XY_ENABLE) &&
-             decoded[index].delta_x == 0 && decoded[index].delta_y == 0) ||
-            (!(decoded[index].flags & ROBOT_ARM_PHASE_FLAG_XY_ENABLE) &&
-             (decoded[index].delta_x != 0 || decoded[index].delta_y != 0)) ||
             ((decoded[index].flags & ROBOT_ARM_PHASE_FLAG_Z_ENABLE) &&
-             (decoded[index].delta_z == 0 || decoded[index].z_speed == 0u)) ||
-            (!(decoded[index].flags & ROBOT_ARM_PHASE_FLAG_Z_ENABLE) &&
-             decoded[index].delta_z != 0) ||
+             decoded[index].z_speed == 0u) ||
             ((decoded[index].flags & ROBOT_ARM_PHASE_FLAG_XY_ENABLE) &&
-             (decoded[index].f0 > 50000u || decoded[index].f1 > 50000u)))
+             (decoded[index].x_f0 > 50000u || decoded[index].x_f1 > 50000u ||
+              decoded[index].y_f0 > 50000u || decoded[index].y_f1 > 50000u)))
         {
             RobotArmProtocol_SendAck(ROBOT_ARM_CMD_PHASE_BATCH, request->seq,
                                      ROBOT_ARM_ACK_REJECTED, ROBOT_ARM_ERR_CONFIG);
@@ -858,6 +882,100 @@ void RobotArmProtocol_HandlePhaseBatch(const ProtocolV2PhaseBatchFrame_t *reques
     }
     s_last_phase_seq_valid = 1u;
     s_last_phase_seq = request->seq;
+}
+
+/**
+ * 校验并启动 0x40 的 XYZ 独立错峰移动。
+ *
+ * 基础 19 字节之外为可选 TLV 扩展；当前固件不解释扩展，但完整 TLV 必须边界正确。
+ * 未识别的非关键 TAG 被跳过，TAG 高位为 1 的未知关键扩展会拒绝，避免调用方以为
+ * MCU 已执行它不支持的安全语义。
+ *
+ * @param request 已通过单字节 LEN、尾字节和 CRC 校验的原始请求。
+ */
+void RobotArmProtocol_HandleDelayedMove(const ProtocolV2DelayedMoveFrame_t *request)
+{
+    uint8_t offset;
+    uint8_t tag;
+    uint8_t value_length;
+    RobotArmResult_t result;
+    ProtocolV2Frame_t active_request;
+    uint8_t ack_queued;
+
+    if (request == 0)
+    {
+        return;
+    }
+    if (s_active.valid)
+    {
+        RobotArmProtocol_SendAck(ROBOT_ARM_CMD_MOVE_TO_DELAYED, request->seq,
+                                 ROBOT_ARM_ACK_REJECTED, ROBOT_ARM_ERR_BUSY);
+        return;
+    }
+    if ((request->length < PROTOCOL_V2_DELAYED_MOVE_MIN_PAYLOAD) ||
+        (request->payload[15] != 0u))
+    {
+        RobotArmProtocol_SendAck(ROBOT_ARM_CMD_MOVE_TO_DELAYED, request->seq,
+                                 ROBOT_ARM_ACK_REJECTED, ROBOT_ARM_ERR_CONFIG);
+        return;
+    }
+    offset = PROTOCOL_V2_DELAYED_MOVE_MIN_PAYLOAD;
+    while (offset < request->length)
+    {
+        if ((uint16_t)offset + 2u > request->length)
+        {
+            RobotArmProtocol_SendAck(ROBOT_ARM_CMD_MOVE_TO_DELAYED, request->seq,
+                                     ROBOT_ARM_ACK_REJECTED, ROBOT_ARM_ERR_CONFIG);
+            return;
+        }
+        tag = request->payload[offset++];
+        value_length = request->payload[offset++];
+        if ((tag == 0u) || ((uint16_t)offset + value_length > request->length) ||
+            ((tag & 0x80u) != 0u))
+        {
+            RobotArmProtocol_SendAck(ROBOT_ARM_CMD_MOVE_TO_DELAYED, request->seq,
+                                     ROBOT_ARM_ACK_REJECTED, ROBOT_ARM_ERR_CONFIG);
+            return;
+        }
+        offset = (uint8_t)(offset + value_length);
+    }
+    if ((ProtocolV2_ReadU16LE(&request->payload[9]) == 0u) ||
+        (ProtocolV2_ReadU16LE(&request->payload[11]) == 0u) ||
+        (ProtocolV2_ReadU16LE(&request->payload[13]) == 0u))
+    {
+        RobotArmProtocol_SendAck(ROBOT_ARM_CMD_MOVE_TO_DELAYED, request->seq,
+                                 ROBOT_ARM_ACK_REJECTED, ROBOT_ARM_ERR_CONFIG);
+        return;
+    }
+    result = RobotArm_MoveToWithDelayedStart(
+        ProtocolV2_ReadI24LE(&request->payload[0]),
+        ProtocolV2_ReadI24LE(&request->payload[3]),
+        ProtocolV2_ReadI24LE(&request->payload[6]),
+        ProtocolV2_ReadU16LE(&request->payload[9]),
+        ProtocolV2_ReadU16LE(&request->payload[11]),
+        ProtocolV2_ReadU16LE(&request->payload[13]),
+        request->payload[16], request->payload[17], request->payload[18]);
+    active_request.cmd = ROBOT_ARM_CMD_MOVE_TO_DELAYED;
+    active_request.seq = request->seq;
+    ack_queued = RobotArmProtocol_SendAck(active_request.cmd, active_request.seq,
+                                          (result == ROBOT_ARM_OK) ?
+                                              ROBOT_ARM_ACK_ACCEPTED : ROBOT_ARM_ACK_REJECTED,
+                                          (uint8_t)result);
+    if (result != ROBOT_ARM_OK)
+    {
+        return;
+    }
+    RobotArmProtocol_BindActive(&active_request, 0xFFu);
+    if (!ack_queued)
+    {
+        s_pending_active_ack.valid = 1u;
+        s_pending_active_ack.request_cmd = active_request.cmd;
+        s_pending_active_ack.seq = active_request.seq;
+    }
+    if (!RobotArm_IsBusy())
+    {
+        RobotArmProtocol_ProduceTerminal(ROBOT_ARM_EVENT_COMPLETED, ROBOT_ARM_OK);
+    }
 }
 
 /**

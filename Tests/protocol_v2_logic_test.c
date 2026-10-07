@@ -85,6 +85,31 @@ static uint16_t TestBuildPhaseBatch(uint8_t *raw, uint16_t seq,
     return frame_length;
 }
 
+/** 构造单字节 LEN 的 0x40 错峰移动帧，尾部可附加一个非关键 TLV。 */
+static uint16_t TestBuildDelayedMove(uint8_t *raw, uint16_t seq, uint8_t extension)
+{
+    uint8_t payload_length = extension ? 22u : 19u;
+    uint16_t frame_length = (uint16_t)payload_length + 9u;
+    uint16_t crc;
+    uint8_t index;
+    raw[0] = PROTOCOL_V2_HEAD;
+    raw[1] = PROTOCOL_V2_MARK;
+    raw[2] = PROTOCOL_V2_DELAYED_MOVE_CMD;
+    ProtocolV2_WriteU16LE(&raw[3], seq);
+    raw[5] = payload_length;
+    for (index = 0u; index < 19u; index++) raw[6u + index] = index;
+    if (extension)
+    {
+        raw[25] = 0x01u;
+        raw[26] = 1u;
+        raw[27] = 0xA5u;
+    }
+    raw[frame_length - 3u] = PROTOCOL_V2_TAIL;
+    crc = ProtocolV2_CalculateCrc(raw, frame_length - 2u);
+    ProtocolV2_WriteU16LE(&raw[frame_length - 2u], crc);
+    return frame_length;
+}
+
 static void TestExpectV2(uint8_t cmd, uint16_t seq)
 {
     ProtocolV2Frame_t frame;
@@ -102,12 +127,14 @@ int main(void)
     uint8_t v1_out[PROTOCOL_V1_FRAME_SIZE];
     uint8_t stream[PROTOCOL_V2_FRAME_SIZE + 1u];
     uint8_t phase_raw[PROTOCOL_V2_PHASE_BATCH_MAX_FRAME_SIZE];
+    uint8_t delayed_raw[PROTOCOL_V2_DELAYED_MOVE_MAX_PAYLOAD + 9u];
     uint8_t crc_vector[9] = {'1','2','3','4','5','6','7','8','9'};
     ProtocolV2Frame_t frame;
     ProtocolV2Stats_t stats;
     uint8_t index;
     uint16_t phase_length;
     ProtocolV2PhaseBatchFrame_t phase_frame;
+    ProtocolV2DelayedMoveFrame_t delayed_frame;
 
     TEST_CHECK(ProtocolV2_CalculateCrc(crc_vector, 9u) == 0x29B1u);
     TestBuildFrame(raw, 0x30u, 105u);
@@ -130,6 +157,19 @@ int main(void)
     ProtocolV2_Init();
     TestFeed(phase_raw, phase_length);
     TEST_CHECK(ProtocolV2_TakePhaseBatchFrame(&phase_frame) == 0u);
+
+    /* 0x40：单字节 LEN 决定整帧长度，并允许基础区后的扩展字节原样交给业务层。 */
+    phase_length = TestBuildDelayedMove(delayed_raw, 80u, 1u);
+    ProtocolV2_Init();
+    TestFeed(delayed_raw, phase_length);
+    TEST_CHECK(ProtocolV2_TakeFrame(&frame) == 0u);
+    TEST_CHECK(ProtocolV2_TakeDelayedMoveFrame(&delayed_frame) == 1u);
+    TEST_CHECK(delayed_frame.seq == 80u && delayed_frame.length == 22u);
+    TEST_CHECK(delayed_frame.payload[18] == 18u && delayed_frame.payload[19] == 0x01u);
+    delayed_raw[phase_length - 1u] ^= 0x01u;
+    ProtocolV2_Init();
+    TestFeed(delayed_raw, phase_length);
+    TEST_CHECK(ProtocolV2_TakeDelayedMoveFrame(&delayed_frame) == 0u);
     phase_raw[phase_length - 1u] ^= 0x01u;
     ProtocolV2_WriteU16LE(&phase_raw[5], 261u);
     ProtocolV2_Init();

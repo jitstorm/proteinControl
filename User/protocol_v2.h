@@ -7,8 +7,11 @@
 #define PROTOCOL_V2_FRAME_SIZE 24u
 #define PROTOCOL_V2_DATA_SIZE 16u
 #define PROTOCOL_V2_PHASE_BATCH_CMD 0x39u
+#define PROTOCOL_V2_DELAYED_MOVE_CMD 0x40u
+#define PROTOCOL_V2_DELAYED_MOVE_MIN_PAYLOAD 19u
+#define PROTOCOL_V2_DELAYED_MOVE_MAX_PAYLOAD 255u
 #define PROTOCOL_V2_PHASE_BATCH_MAX_PHASES 16u
-#define PROTOCOL_V2_PHASE_SIZE 16u
+#define PROTOCOL_V2_PHASE_SIZE 20u
 #define PROTOCOL_V2_PHASE_BATCH_HEADER_SIZE 4u
 #define PROTOCOL_V2_PHASE_BATCH_MAX_PAYLOAD \
     (PROTOCOL_V2_PHASE_BATCH_HEADER_SIZE + \
@@ -39,6 +42,19 @@ typedef struct
     uint8_t payload[PROTOCOL_V2_PHASE_BATCH_MAX_PAYLOAD];
 } ProtocolV2PhaseBatchFrame_t;
 
+/**
+ * 0x40 独立错峰移动的已校验变长载荷。
+ *
+ * LEN 只有一个字节，前 19 字节是 XYZ 绝对目标、逐轴速度和 100ms 延时；其余字节
+ * 是可扩展 TLV 区。解析器只负责完整帧校验，业务层决定已知扩展的语义。
+ */
+typedef struct
+{
+    uint16_t seq;
+    uint8_t length;
+    uint8_t payload[PROTOCOL_V2_DELAYED_MOVE_MAX_PAYLOAD];
+} ProtocolV2DelayedMoveFrame_t;
+
 typedef struct
 {
     uint32_t valid_frame_count;
@@ -67,6 +83,13 @@ uint8_t ProtocolV2_TakeFrame(ProtocolV2Frame_t *frame);
  * @return 成功取出一帧返回 1；无帧或输出指针为空返回 0。
  */
 uint8_t ProtocolV2_TakePhaseBatchFrame(ProtocolV2PhaseBatchFrame_t *frame);
+/**
+ * 取出一帧已完成 LEN、尾字节和 CRC 校验的 0x40 错峰移动请求。
+ *
+ * @param frame 输出原始变长请求；调用方继续校验基础字段和 TLV 扩展。
+ * @return 成功取出一帧返回 1；队列为空或输出指针无效时返回 0。
+ */
+uint8_t ProtocolV2_TakeDelayedMoveFrame(ProtocolV2DelayedMoveFrame_t *frame);
 /** 将 V2 逻辑帧编码为固定 24B 线格式。 */
 void ProtocolV2_Encode(const ProtocolV2Frame_t *frame, uint8_t *raw_frame);
 /** 校验并解码固定 24B 线格式。 */

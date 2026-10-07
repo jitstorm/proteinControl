@@ -112,9 +112,9 @@
 #define ROBOT_ARM_Z_DEFAULT_SPEED 1000u
 
 /*
- * Phase 协议的 f0/f1=0 是“从静止起步/最终停下”的边界语义，并非可写入 ARR 的
- * 真实频率。执行 XY Phase 时先把主导轴的 0 映射到该安全边界频率，再按距离比例
- * 换算从轴；因此短轴可以合法低于 500 steps/s，不能逐轴强制抬到该值。
+ * Phase 协议的 xF0/xF1/yF0/yF1=0 是“从静止起步/最终停下”的边界语义，并非可写入 ARR 的
+ * 真实频率。执行 XY Phase 时分别把 X/Y 的 0 映射到该安全边界频率；不能让 DMA
+ * 直接收到 0，也不能再按两轴距离缩放频率。
  * 普通 MOVE 与 XYZ_SYNC 仍通过驱动层原有的 500 steps/s 起步策略，不读取此宏。
  */
 #define ROBOT_ARM_PHASE_BOUNDARY_FREQUENCY 500u

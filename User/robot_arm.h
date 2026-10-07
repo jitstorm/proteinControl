@@ -37,22 +37,26 @@ typedef enum
 /**
  * 批量 Phase 的一条已解码运动记录。
  *
- * delta 为相对逻辑坐标、单位为实际 STEP 脉冲；f0/f1 只描述 XY 主导轴的边界频率，
- * 执行层会按 X/Y 距离比例分别换算，Z 始终使用独立 z_speed。
+ * target 为绝对逻辑坐标、单位为实际 STEP 脉冲；X/Y 各自携带起止频率，
+ * 不按两轴位移比例换算，Z 始终使用独立 z_speed。
  */
 typedef struct
 {
-    /** X 轴本 Phase 的相对脉冲数，正负号决定实际方向。 */
-    int32_t delta_x;
-    /** Y 轴本 Phase 的相对脉冲数，正负号决定实际方向。 */
-    int32_t delta_y;
-    /** Z 轴本 Phase 的相对脉冲数；未启用 Z 时必须为 0。 */
-    int32_t delta_z;
-    /** XY 主导轴起始频率，单位 steps/s；0 表示协议层起步语义。 */
-    uint16_t f0;
-    /** XY 主导轴结束频率，单位 steps/s；0 表示协议层停下语义。 */
-    uint16_t f1;
-    /** Z 轴独立运行速度，单位 steps/s；不参与 XY 的 f0/f1 缩放。 */
+    /** X 轴本 Phase 的绝对目标逻辑坐标；未启用 XY 时必须等于当前 X 坐标。 */
+    int32_t target_x;
+    /** Y 轴本 Phase 的绝对目标逻辑坐标；未启用 XY 时必须等于当前 Y 坐标。 */
+    int32_t target_y;
+    /** Z 轴本 Phase 的绝对目标逻辑坐标；未启用 Z 时必须等于当前 Z 坐标。 */
+    int32_t target_z;
+    /** X 轴起始频率，单位 steps/s；0 表示协议层起步语义。 */
+    uint16_t x_f0;
+    /** X 轴结束频率，单位 steps/s；0 表示协议层停止语义。 */
+    uint16_t x_f1;
+    /** Y 轴起始频率，单位 steps/s；0 表示协议层起步语义。 */
+    uint16_t y_f0;
+    /** Y 轴结束频率，单位 steps/s；0 表示协议层停止语义。 */
+    uint16_t y_f1;
+    /** Z 轴独立运行速度，单位 steps/s；不参与 X/Y 起止频率规划。 */
     uint16_t z_speed;
     /** XY/Z 启用及边界控制标志，未知位必须在协议层拒绝。 */
     uint8_t flags;
@@ -111,15 +115,17 @@ typedef enum
     /** 在同步模式下连续启动所有需要运动的轴，启动失败时立即停止已经启动的轴。 */
     ROBOT_MOVE_TO_XYZ_START,
     /** 等待同步位移及零目标轴按需补零全部完成；补零以 Home 命中为准，任一轴异常停止其余运动轴。 */
-    ROBOT_MOVE_TO_XYZ_WAIT
+    ROBOT_MOVE_TO_XYZ_WAIT,
+    /** 等待 0x40 各轴延时到期并分别启动，再收集全部实际轴的完成终态。 */
+    ROBOT_MOVE_TO_DELAYED_WAIT
 } RobotMoveToState_t;
 
-/** MOVE_TO 的关节运动方式；同步只保证 X/Y 尽量同时到达，Z 保持独立速度，不是末端直线插补。 */
+/** MOVE_TO 的关节运动方式；XYZ_SYNC 仅表示三轴并发启动，每轴保留请求速度，不是末端直线插补。 */
 typedef enum
 {
     /** 沿既有 X→Y→Z 顺序逐轴运动，供全部旧路径和默认调用使用。 */
     ROBOT_MOVE_MOTION_SEQUENTIAL = 0u,
-    /** X/Y 根据关节距离配速同步到位，Z 保持请求速度但同时启动；目标为零的轴即使坐标无效或恰为零，也必须继续向负方向搜索直到 S1/S2/S3 实际触发。 */
+    /** 三轴按各自请求速度并发启动；目标为零的轴即使坐标无效或恰为零，也必须继续向负方向搜索直到 S1/S2/S3 实际触发。 */
     ROBOT_MOVE_MOTION_XYZ_SYNC = 1u
 } RobotMoveMotionMode_t;
 
@@ -223,9 +229,9 @@ void RobotArm_Init(void);
 /** 在主循环中推进 Home、单轴和 MoveTo 状态机。 */
 void RobotArm_Task(void);
 /**
- * 启动一条已校验的 Phase；XY 使用按主导轴比例换算的 f0/f1，Z 保持 z_speed。
+ * 启动一条已校验的 Phase；X/Y 各自使用请求的起止频率，Z 保持 z_speed。
  *
- * @param phase 本次相对位移、XY 主导轴 f0/f1、Z 独立速度及启用轴标志。
+ * @param phase 本次绝对目标坐标、X/Y 各自起止频率、Z 独立速度及启用轴标志。
  * @return 仅受理成功时返回 OK；坐标、限位、传感器、速度或驱动条件不满足时返回错误。
  */
 RobotArmResult_t RobotArm_StartPhase(const RobotArmPhase_t *phase);
@@ -268,8 +274,8 @@ RobotArmResult_t RobotArm_MoveToWithSpeed(int32_t x, int32_t y, int32_t z,
 /**
  * 以指定关节运动方式启动普通目标位置任务。
  *
- * SEQUENTIAL 保留 X→Y→Z 旧路径；XYZ_SYNC 只按 X/Y 距离和最大速度降低较短旋转轴
- * 的速度，Z 保持 z_speed 同时启动但不参与到达时间配速。它不是笛卡尔直线插补，现场使用前仍须完成短距离实机验证。
+ * SEQUENTIAL 保留 X→Y→Z 旧路径；XYZ_SYNC 会并发启动有位移的轴，但严格保留 x_speed、
+ * y_speed、z_speed，不再按距离降低较短轴的速度。它不是笛卡尔直线插补，现场使用前仍须完成短距离实机验证。
  *
  * @param x X 轴目标绝对逻辑坐标，单位为步数。
  * @param y Y 轴目标绝对逻辑坐标，单位为步数。
@@ -283,6 +289,27 @@ RobotArmResult_t RobotArm_MoveToWithSpeed(int32_t x, int32_t y, int32_t z,
 RobotArmResult_t RobotArm_MoveToWithSpeedAndMode(
     int32_t x, int32_t y, int32_t z, uint16_t x_speed, uint16_t y_speed,
     uint16_t z_speed, RobotMoveMotionMode_t motion_mode);
+/**
+ * 启动一次 XYZ 绝对目标的独立错峰移动。
+ *
+ * 三个延时都相对同一受理时刻计算；到期轴立即按自身速度启动，不等待其他轴完成，
+ * 也不做 X/Y 同步配速。STOP、故障或超时会取消尚未启动的轴计划。
+ *
+ * @param x X 轴目标绝对逻辑坐标，单位为步数。
+ * @param y Y 轴目标绝对逻辑坐标，单位为步数。
+ * @param z Z 轴目标绝对逻辑坐标，单位为步数。
+ * @param x_speed X 轴速度，单位为 steps/s，必须非 0。
+ * @param y_speed Y 轴速度，单位为 steps/s，必须非 0。
+ * @param z_speed Z 轴速度，单位为 steps/s，必须非 0。
+ * @param x_delay_100ms X 轴延时单位数，每单位 100ms。
+ * @param y_delay_100ms Y 轴延时单位数，每单位 100ms。
+ * @param z_delay_100ms Z 轴延时单位数，每单位 100ms。
+ * @return 已受理返回 ROBOT_ARM_OK；坐标、安全、传感器或状态前置条件失败时返回错误码。
+ */
+RobotArmResult_t RobotArm_MoveToWithDelayedStart(
+    int32_t x, int32_t y, int32_t z, uint16_t x_speed, uint16_t y_speed,
+    uint16_t z_speed, uint8_t x_delay_100ms, uint8_t y_delay_100ms,
+    uint8_t z_delay_100ms);
 /** 按“必要时抬高 Z、移动 X/Y、最后移动 Z”的安全路径接受绝对位置任务。 */
 RobotArmResult_t RobotArm_MoveToSafe(int32_t x, int32_t y, int32_t z);
 /**

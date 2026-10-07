@@ -20,6 +20,8 @@ static uint8_t s_v2_tail;
 static uint8_t s_v2_count;
 static ProtocolV2PhaseBatchFrame_t s_phase_batch_queue;
 static uint8_t s_phase_batch_ready;
+static ProtocolV2DelayedMoveFrame_t s_delayed_move_queue;
+static uint8_t s_delayed_move_ready;
 static ProtocolV2Stats_t s_stats;
 
 static void ProtocolV2_CopyBytes(uint8_t *destination,
@@ -108,6 +110,27 @@ static void ProtocolV2_QueuePhaseBatch(const uint8_t *candidate,
     (void)length;
 }
 
+/** 保存一帧已经完成线上校验的 0x40 原始载荷。 */
+static void ProtocolV2_QueueDelayedMove(const uint8_t *candidate)
+{
+    uint8_t index;
+    uint8_t payload_length;
+    if (s_delayed_move_ready)
+    {
+        s_stats.queue_overflow_count++;
+        s_stats.v2_queue_overflow_count++;
+        return;
+    }
+    payload_length = candidate[5];
+    s_delayed_move_queue.seq = ProtocolV2_ReadU16LE(&candidate[3]);
+    s_delayed_move_queue.length = payload_length;
+    for (index = 0u; index < payload_length; index++)
+    {
+        s_delayed_move_queue.payload[index] = candidate[6u + index];
+    }
+    s_delayed_move_ready = 1u;
+}
+
 static void ProtocolV2_ResyncCandidate(void)
 {
     int16_t source;
@@ -138,6 +161,13 @@ static void ProtocolV2_ResyncCandidate(void)
                     return;
                 }
                 s_parser.expected_size = (uint16_t)(length + 10u);
+            }
+            else if ((length >= 6u) &&
+                     (s_parser.candidate[1] == PROTOCOL_V2_MARK) &&
+                     (s_parser.candidate[2] == PROTOCOL_V2_DELAYED_MOVE_CMD))
+            {
+                length = s_parser.candidate[5];
+                s_parser.expected_size = (uint16_t)(length + 9u);
             }
             else
             {
@@ -188,6 +218,34 @@ static void ProtocolV2_ProcessCandidate(void)
         s_parser.expected_size = 0u;
         return;
     }
+    if ((s_parser.index >= 6u) &&
+        (s_parser.candidate[1] == PROTOCOL_V2_MARK) &&
+        (s_parser.candidate[2] == PROTOCOL_V2_DELAYED_MOVE_CMD))
+    {
+        payload_length = s_parser.candidate[5];
+        tail_index = (uint16_t)(6u + payload_length);
+        if ((payload_length < PROTOCOL_V2_DELAYED_MOVE_MIN_PAYLOAD) ||
+            (s_parser.expected_size != (uint16_t)(payload_length + 9u)) ||
+            (s_parser.candidate[tail_index] != PROTOCOL_V2_TAIL))
+        {
+            s_stats.frame_error_count++;
+            ProtocolV2_ResyncCandidate();
+            return;
+        }
+        expected_crc = ProtocolV2_ReadU16LE(&s_parser.candidate[tail_index + 1u]);
+        actual_crc = ProtocolV2_CalculateCrc(s_parser.candidate, tail_index + 1u);
+        if (expected_crc != actual_crc)
+        {
+            s_stats.crc_error_count++;
+            ProtocolV2_ResyncCandidate();
+            return;
+        }
+        ProtocolV2_QueueDelayedMove(s_parser.candidate);
+        s_stats.valid_frame_count++;
+        s_parser.index = 0u;
+        s_parser.expected_size = 0u;
+        return;
+    }
     if (s_parser.expected_size == PROTOCOL_V2_FRAME_SIZE)
     {
         if (s_parser.candidate[21] != PROTOCOL_V2_TAIL)
@@ -229,6 +287,7 @@ void ProtocolV2_Init(void)
     s_v2_tail = 0u;
     s_v2_count = 0u;
     s_phase_batch_ready = 0u;
+    s_delayed_move_ready = 0u;
     ProtocolV2_ClearBytes((uint8_t *)&s_stats, (uint16_t)sizeof(s_stats));
 }
 
@@ -260,7 +319,7 @@ void ProtocolV2_InputByte(uint8_t byte)
                                      PROTOCOL_V2_FRAME_SIZE :
                                      PROTOCOL_V1_FRAME_SIZE;
     }
-    /* 0x39 的 LEN 位于固定头之后；旧 V2 仍始终按 24B 收取。 */
+    /* 0x39 使用 uint16 LEN；0x40 使用 uint8 LEN；旧 V2 仍始终按 24B 收取。 */
     if ((s_parser.index == 7u) &&
         (s_parser.candidate[1] == PROTOCOL_V2_MARK) &&
         (s_parser.candidate[2] == PROTOCOL_V2_PHASE_BATCH_CMD))
@@ -273,6 +332,12 @@ void ProtocolV2_InputByte(uint8_t byte)
             return;
         }
         s_parser.expected_size = (uint16_t)(payload_length + 10u);
+    }
+    if ((s_parser.index == 6u) &&
+        (s_parser.candidate[1] == PROTOCOL_V2_MARK) &&
+        (s_parser.candidate[2] == PROTOCOL_V2_DELAYED_MOVE_CMD))
+    {
+        s_parser.expected_size = (uint16_t)(s_parser.candidate[5] + 9u);
     }
     if ((s_parser.expected_size != 0u) &&
         (s_parser.index >= s_parser.expected_size))
@@ -317,6 +382,18 @@ uint8_t ProtocolV2_TakePhaseBatchFrame(ProtocolV2PhaseBatchFrame_t *frame)
     }
     *frame = s_phase_batch_queue;
     s_phase_batch_ready = 0u;
+    return 1u;
+}
+
+/** 取出独立保存的 0x40 单字节 LEN 请求；不会影响既有 0x39 队列。 */
+uint8_t ProtocolV2_TakeDelayedMoveFrame(ProtocolV2DelayedMoveFrame_t *frame)
+{
+    if ((frame == 0) || !s_delayed_move_ready)
+    {
+        return 0u;
+    }
+    *frame = s_delayed_move_queue;
+    s_delayed_move_ready = 0u;
     return 1u;
 }
 

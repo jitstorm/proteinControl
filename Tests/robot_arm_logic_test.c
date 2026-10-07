@@ -609,7 +609,7 @@ int main(void)
     TEST_CHECK(s_start_count[ROBOT_AXIS_Z] == z_starts);
     TEST_CHECK(s_busy[ROBOT_AXIS_X] == 1u && s_busy[ROBOT_AXIS_Y] == 1u);
     TEST_CHECK(s_last_start_speed[ROBOT_AXIS_X] == 800u);
-    TEST_CHECK(s_last_start_speed[ROBOT_AXIS_Y] == 600u);
+    TEST_CHECK(s_last_start_speed[ROBOT_AXIS_Y] == 800u);
     TestDriverComplete(ROBOT_AXIS_X);
     RobotArm_Task();
     TEST_CHECK(RobotArm_IsBusy() == 1u);
@@ -619,14 +619,14 @@ int main(void)
     RobotArm_Task();
     TEST_CHECK(RobotArm_GetState() == ROBOT_ARM_IDLE);
 
-    /* Phase 的 X/Y 频率按主导轴距离缩放，0Hz 只保留为协议起步语义并交由 DMA 安全低速处理。 */
+    /* Phase 的 X/Y 分别使用自身频率，0Hz 只保留为协议起步语义并交由 DMA 安全低速处理。 */
     {
         RobotArmPhase_t phase;
-        phase.delta_x = 201;
-        phase.delta_y = 667;
-        phase.delta_z = 0;
-        phase.f0 = 0u;
-        phase.f1 = 20000u;
+        phase.target_x = 235;
+        phase.target_y = 710;
+        phase.target_z = 50;
+        phase.x_f0 = 0u; phase.x_f1 = 20000u;
+        phase.y_f0 = 0u; phase.y_f1 = 20000u;
         phase.z_speed = 0u;
         phase.flags = ROBOT_ARM_PHASE_FLAG_XY_ENABLE;
         x_starts = s_start_count[ROBOT_AXIS_X];
@@ -651,11 +651,11 @@ int main(void)
     {
         RobotArmPhase_t phase;
         TestSetPose(100, 100, 0);
-        phase.delta_x = 201;
-        phase.delta_y = 667;
-        phase.delta_z = 0;
-        phase.f0 = 500u;
-        phase.f1 = 2000u;
+        phase.target_x = 301;
+        phase.target_y = 767;
+        phase.target_z = 0;
+        phase.x_f0 = 500u; phase.x_f1 = 2000u;
+        phase.y_f0 = 500u; phase.y_f1 = 2000u;
         phase.z_speed = 0u;
         phase.flags = ROBOT_ARM_PHASE_FLAG_XY_ENABLE;
         z_starts = s_start_count[ROBOT_AXIS_Z];
@@ -674,11 +674,11 @@ int main(void)
     {
         RobotArmPhase_t phase;
         TestSetPose(0, 100, 0);
-        phase.delta_x = 0;
-        phase.delta_y = 201;
-        phase.delta_z = 0;
-        phase.f0 = 500u;
-        phase.f1 = 2000u;
+        phase.target_x = 0;
+        phase.target_y = 301;
+        phase.target_z = 0;
+        phase.x_f0 = 500u; phase.x_f1 = 2000u;
+        phase.y_f0 = 500u; phase.y_f1 = 2000u;
         phase.z_speed = 0u;
         phase.flags = ROBOT_ARM_PHASE_FLAG_XY_ENABLE;
         x_starts = s_start_count[ROBOT_AXIS_X];
@@ -697,11 +697,11 @@ int main(void)
     {
         RobotArmPhase_t phase;
         TestSetPose(100, 0, 0);
-        phase.delta_x = 201;
-        phase.delta_y = 0;
-        phase.delta_z = 0;
-        phase.f0 = 500u;
-        phase.f1 = 2000u;
+        phase.target_x = 301;
+        phase.target_y = 0;
+        phase.target_z = 0;
+        phase.x_f0 = 500u; phase.x_f1 = 2000u;
+        phase.y_f0 = 500u; phase.y_f1 = 2000u;
         phase.z_speed = 0u;
         phase.flags = ROBOT_ARM_PHASE_FLAG_XY_ENABLE;
         y_starts = s_start_count[ROBOT_AXIS_Y];
@@ -717,20 +717,20 @@ int main(void)
     }
 
 #ifdef ROBOT_ARM_PHASE_FREQUENCY_TEST
-    /* 真实比例样例：Y 主导时，主导轴先映射 0→500，再把 X 缩放为约 60Hz。 */
+    /* Y 位移较长时，X/Y 仍各自原样使用请求的起止频率。 */
     {
         RobotArmPhase_t phase;
-        phase.delta_x = 201;
-        phase.delta_y = 1667;
-        phase.delta_z = 0;
-        phase.f0 = 0u;
-        phase.f1 = 20000u;
+        phase.target_x = 502;
+        phase.target_y = 1667;
+        phase.target_z = 0;
+        phase.x_f0 = 0u; phase.x_f1 = 20000u;
+        phase.y_f0 = 0u; phase.y_f1 = 20000u;
         phase.z_speed = 0u;
         phase.flags = ROBOT_ARM_PHASE_FLAG_XY_ENABLE;
         TEST_CHECK(RobotArm_StartPhase(&phase) == ROBOT_ARM_OK);
         RobotArm_Task();
-        TEST_CHECK(s_last_phase_start[ROBOT_AXIS_X] == 60u);
-        TEST_CHECK(s_last_phase_end[ROBOT_AXIS_X] == 2411u);
+        TEST_CHECK(s_last_phase_start[ROBOT_AXIS_X] == 500u);
+        TEST_CHECK(s_last_phase_end[ROBOT_AXIS_X] == 20000u);
         TEST_CHECK(s_last_phase_start[ROBOT_AXIS_Y] == 500u);
         TEST_CHECK(s_last_phase_end[ROBOT_AXIS_Y] == 20000u);
         TestDriverComplete(ROBOT_AXIS_X);
@@ -738,39 +738,39 @@ int main(void)
         RobotArm_Task();
     }
 
-    /* 互换主导轴后，X 必须保持 500Hz 起步，Y 才是约 60Hz 的短轴。 */
+    /* 互换长短轴也不得改变任一轴的独立起止频率。 */
     {
         RobotArmPhase_t phase;
-        phase.delta_x = 1667;
-        phase.delta_y = 201;
-        phase.delta_z = 0;
-        phase.f0 = 0u;
-        phase.f1 = 20000u;
+        phase.target_x = 2168;
+        phase.target_y = 1868;
+        phase.target_z = 0;
+        phase.x_f0 = 0u; phase.x_f1 = 20000u;
+        phase.y_f0 = 0u; phase.y_f1 = 20000u;
         phase.z_speed = 0u;
         phase.flags = ROBOT_ARM_PHASE_FLAG_XY_ENABLE;
         TEST_CHECK(RobotArm_StartPhase(&phase) == ROBOT_ARM_OK);
         RobotArm_Task();
         TEST_CHECK(s_last_phase_start[ROBOT_AXIS_X] == 500u);
-        TEST_CHECK(s_last_phase_start[ROBOT_AXIS_Y] == 60u);
+        TEST_CHECK(s_last_phase_start[ROBOT_AXIS_Y] == 500u);
         TestDriverComplete(ROBOT_AXIS_X);
         TestDriverComplete(ROBOT_AXIS_Y);
         RobotArm_Task();
     }
 
-    /* 非零边界频率不得被旧普通 MOVE 的 500Hz 起步策略覆盖。 */
+    /* 非零边界频率必须逐轴原样进入 DMA，不能被旧普通 MOVE 的 500Hz 起步策略覆盖。 */
     {
         RobotArmPhase_t phase;
-        phase.delta_x = -201;
-        phase.delta_y = -1667;
-        phase.delta_z = 0;
-        phase.f0 = 1000u;
-        phase.f1 = 2000u;
+        phase.target_x = 1967;
+        phase.target_y = 201;
+        phase.target_z = 0;
+        phase.x_f0 = 1000u; phase.x_f1 = 2000u;
+        phase.y_f0 = 1000u; phase.y_f1 = 2000u;
         phase.z_speed = 0u;
         phase.flags = ROBOT_ARM_PHASE_FLAG_XY_ENABLE;
         TEST_CHECK(RobotArm_StartPhase(&phase) == ROBOT_ARM_OK);
         RobotArm_Task();
-        TEST_CHECK(s_last_phase_start[ROBOT_AXIS_X] == 120u);
-        TEST_CHECK(s_last_phase_end[ROBOT_AXIS_X] == 241u);
+        TEST_CHECK(s_last_phase_start[ROBOT_AXIS_X] == 1000u);
+        TEST_CHECK(s_last_phase_end[ROBOT_AXIS_X] == 2000u);
         TEST_CHECK(s_last_phase_start[ROBOT_AXIS_Y] == 1000u);
         TEST_CHECK(s_last_phase_end[ROBOT_AXIS_Y] == 2000u);
         TestDriverComplete(ROBOT_AXIS_X);
@@ -778,19 +778,19 @@ int main(void)
         RobotArm_Task();
     }
 
-    /* f1=0 必须先映射主导轴停靠频率后缩放，最后仍由 DMA 在末脉冲后停止。 */
+    /* X/Y 结束频率为 0 时分别映射为停靠频率，最后仍由 DMA 在末脉冲后停止。 */
     {
         RobotArmPhase_t phase;
-        phase.delta_x = 201;
-        phase.delta_y = 1667;
-        phase.delta_z = 0;
-        phase.f0 = 20000u;
-        phase.f1 = 0u;
+        phase.target_x = 2168;
+        phase.target_y = 1868;
+        phase.target_z = 0;
+        phase.x_f0 = 20000u; phase.x_f1 = 0u;
+        phase.y_f0 = 20000u; phase.y_f1 = 0u;
         phase.z_speed = 0u;
         phase.flags = ROBOT_ARM_PHASE_FLAG_XY_ENABLE;
         TEST_CHECK(RobotArm_StartPhase(&phase) == ROBOT_ARM_OK);
         RobotArm_Task();
-        TEST_CHECK(s_last_phase_end[ROBOT_AXIS_X] == 60u);
+        TEST_CHECK(s_last_phase_end[ROBOT_AXIS_X] == 500u);
         TEST_CHECK(s_last_phase_end[ROBOT_AXIS_Y] == 500u);
         TestDriverComplete(ROBOT_AXIS_X);
         TestDriverComplete(ROBOT_AXIS_Y);

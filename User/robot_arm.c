@@ -36,8 +36,10 @@ typedef enum
     ROBOT_POST_HOME_SEARCH
 } RobotPostHomePhase_t;
 
-/* 同步到位后每轮负向找零的最大步数；未命中可续段，总时限仍由轴 Home 配置控制。 */
+/* 并发位移完成后每轮负向找零的最大步数；未命中可续段，总时限仍由轴 Home 配置控制。 */
 #define ROBOT_ARM_POST_HOME_CHUNK_STEPS 5000u
+/** 0x40 每轴在理论零点后最多补充搜索三段，避免传感器故障时持续朝负向运动。 */
+#define ROBOT_ARM_DELAYED_HOME_MAX_CHUNKS 3u
 /* 仅由明确参与当前同步命令的轴触发“目标为零后继续找零”语义。 */
 #define ROBOT_ARM_AXIS_MASK(axis) ((uint8_t)(1u << (uint8_t)(axis)))
 #define ROBOT_ARM_AXIS_MASK_ALL ((uint8_t)((1u << ROBOT_AXIS_COUNT) - 1u))
@@ -68,9 +70,17 @@ typedef struct
     uint16_t post_home_speed[ROBOT_AXIS_COUNT];
     int32_t move_to_target[ROBOT_AXIS_COUNT];
     uint16_t move_to_speed[ROBOT_AXIS_COUNT];
+    /** 0x40 各轴相对同一受理时刻的启动延时，单位为 100ms。 */
+    uint8_t delayed_start_100ms[ROBOT_AXIS_COUNT];
+    /** 0x40 已受理时刻；延时到期只由主循环比较，绝不阻塞等待。 */
+    uint32_t delayed_start_base_ms;
+    /** 0x40 正在执行理论零点后的补充找零轴；每个 bit 对应 X/Y/Z。 */
+    uint8_t delayed_home_search_mask;
+    /** 0x40 每轴已经启动的 5000 脉冲补充搜索段数。 */
+    uint8_t delayed_home_search_count[ROBOT_AXIS_COUNT];
     /** 当前 MOVE_TO 是否由 Phase 驱动 XY 起止频率；普通 MOVE_TO 始终为 0。 */
     uint8_t phase_xy_profile;
-    /** X/Y 已按主导轴脉冲比例缩放后的起止频率，单位 steps/s。 */
+    /** X/Y 各自的 Phase 起止频率，单位 steps/s。 */
     uint32_t phase_start_frequency[ROBOT_AXIS_COUNT];
     uint32_t phase_end_frequency[ROBOT_AXIS_COUNT];
     /* 0 表示 HomeAll 使用 MCU 已标定快速速度；非零仅由 0x31 单轴 Home 设置。 */
@@ -88,6 +98,9 @@ typedef struct
 
 static RobotArm_t s_robot_arm;
 static RobotArmMoveDebug_t s_move_debug;
+
+static uint8_t RobotArm_StartDelayedHomeSearch(RobotAxisId_t axis);
+static int8_t RobotArm_TaskDelayedHomeSearch(RobotAxisId_t axis);
 
 /* RAM Watch：以下变量仅用于现场观察，不参与串口协议和运动决策。 */
 volatile uint8_t dbg_robotarm_sensor_flags;
@@ -358,10 +371,12 @@ static void RobotArm_ResetCombinedStates(void)
     s_robot_arm.home_all_active = 0u;
     s_robot_arm.home_all_pending_mask = 0u;
     s_robot_arm.home_known_distance = 0u;
+    s_robot_arm.delayed_home_search_mask = 0u;
     for (index = 0u; index < ROBOT_AXIS_COUNT; index++)
     {
         s_robot_arm.move_axis_progress[index] = ROBOT_MOVE_AXIS_NOT_REQUIRED;
         s_robot_arm.home_all_axis_state[index] = ROBOT_HOME_IDLE;
+        s_robot_arm.delayed_home_search_count[index] = 0u;
     }
 }
 
@@ -1293,10 +1308,10 @@ static RobotArmResult_t RobotArm_ValidateSyncMoveStart(void)
 }
 
 /**
- * 按距离/最大速度比例计算 XYZ_SYNC 中 X/Y 两轴的实际速度。
+ * 按距离/最大速度比例计算 Phase 中 X/Y 两轴的实际速度。
  *
- * 仅 X/Y 使用限制轴作为时间基准，避免 Z 轴因机械安全而配置的较低速度压低两个
- * 旋转轴。Z 仍和 X/Y 同时启动，但保留请求的原始速度，因此允许先于或晚于 X/Y 到达。
+ * 该换算只由 0x39 Phase 调用，不能用于普通 0x34；0x34 的每根轴必须严格使用请求速度。
+ * X/Y 使用限制轴作为时间基准，Z 保持请求的原始速度，因此允许先于或晚于 X/Y 到达。
  * 所有乘法通过 uint64_t 完成，避免 int24 距离与 uint16 速度相乘时发生 32 位溢出。
  * X/Y 距离为零时不参与计算也不会被启动。
  *
@@ -1788,6 +1803,94 @@ static void RobotArm_TaskMoveTo(void)
         }
         break;
 
+    case ROBOT_MOVE_TO_DELAYED_WAIT:
+        /* 0x40 的每轴延时共用受理时刻；到期轴立即启动，不等待其他轴完成。 */
+        for (index = 0u; index < ROBOT_AXIS_COUNT; index++)
+        {
+            if (s_robot_arm.move_axis_progress[index] != ROBOT_MOVE_AXIS_WAIT_START ||
+                (uint32_t)(millis() - s_robot_arm.delayed_start_base_ms) <
+                    (uint32_t)s_robot_arm.delayed_start_100ms[index] * 100u)
+            {
+                continue;
+            }
+            if ((s_robot_arm.move_to_target[index] == 0) &&
+                (s_robot_arm.axis[index].current_position == 0))
+            {
+                /* 理论坐标已是零时仍必须检查真实 S1/S2/S3，未命中则直接进入有限搜索。 */
+                if (!RobotArm_StartDelayedHomeSearch((RobotAxisId_t)index))
+                {
+                    return;
+                }
+                continue;
+            }
+            result = RobotArm_StartAxisMoveInternal(
+                (RobotAxisId_t)index, s_robot_arm.move_to_target[index],
+                s_robot_arm.move_to_speed[index]);
+            if (result != ROBOT_ARM_OK)
+            {
+                /* 某轴到期却无法启动时，已运行轴必须停止，未到期轴绝不能继续启动。 */
+                RobotArm_StopOtherSyncAxes((RobotAxisId_t)index);
+                RobotArm_FailCombinedMoveStart((RobotAxisId_t)index, result, 0u);
+                return;
+            }
+            s_robot_arm.move_axis_progress[index] = ROBOT_MOVE_AXIS_RUNNING;
+            s_move_debug.axis_progress[index] = ROBOT_MOVE_AXIS_RUNNING;
+        }
+        for (index = 0u; index < ROBOT_AXIS_COUNT; index++)
+        {
+            if (s_robot_arm.move_axis_progress[index] != ROBOT_MOVE_AXIS_RUNNING)
+            {
+                continue;
+            }
+            if ((s_robot_arm.delayed_home_search_mask &
+                 ROBOT_ARM_AXIS_MASK((RobotAxisId_t)index)) != 0u)
+            {
+                progress = RobotArm_TaskDelayedHomeSearch((RobotAxisId_t)index);
+            }
+            else
+            {
+                progress = RobotArm_ProcessAxisMove((RobotAxisId_t)index);
+            }
+            if (progress < 0)
+            {
+                RobotArm_StopOtherSyncAxes((RobotAxisId_t)index);
+                return;
+            }
+            if (progress > 0)
+            {
+                if ((s_robot_arm.move_to_target[index] == 0) &&
+                    !RobotArmSensor_IsTriggered(RobotArm_GetHomeSensor((RobotAxisId_t)index)))
+                {
+                    /* 理论零点的 DMA 已完整结束，但物理零点尚未确认，立即补充负向找零。 */
+                    if (!RobotArm_StartDelayedHomeSearch((RobotAxisId_t)index))
+                    {
+                        return;
+                    }
+                }
+                else
+                {
+                    s_robot_arm.move_axis_progress[index] = ROBOT_MOVE_AXIS_COMPLETED;
+                    s_move_debug.axis_progress[index] = ROBOT_MOVE_AXIS_COMPLETED;
+                }
+            }
+        }
+        all_completed = 1u;
+        for (index = 0u; index < ROBOT_AXIS_COUNT; index++)
+        {
+            if ((s_robot_arm.move_axis_progress[index] != ROBOT_MOVE_AXIS_NOT_REQUIRED) &&
+                (s_robot_arm.move_axis_progress[index] != ROBOT_MOVE_AXIS_COMPLETED))
+            {
+                all_completed = 0u;
+                break;
+            }
+        }
+        if (all_completed)
+        {
+            s_robot_arm.move_to_state = ROBOT_MOVE_TO_DONE;
+            RobotArm_TryCompleteMoveTo();
+        }
+        break;
+
     case ROBOT_MOVE_TO_DONE:
         RobotArm_TryCompleteMoveTo();
         break;
@@ -2110,13 +2213,14 @@ RobotArmResult_t RobotArm_MoveZ(int32_t target, uint32_t speed)
  * @param y_speed Y 轴最大速度，单位为 steps/s；0 表示使用既有默认速度。
  * @param z_speed Z 轴最大速度，单位为 steps/s；0 表示使用既有默认速度。
  * @param motion_mode 顺序模式保持原行为；同步模式完整到位后对零目标轴按需找零，并允许零目标从未知坐标直接搜索，总超时或搜索失败会终止请求。
- * @param post_home_axis_mask 同步零目标需要补充找零的 X/Y/Z 轴掩码；顺序模式忽略。
+ * @param post_home_axis_mask 并发零目标需要补充找零的 X/Y/Z 轴掩码；顺序模式忽略。
+ * @param apply_xy_speed_sync 保留的旧同步配速开关；当前 0x34 和 0x39 均传 0，保留请求逐轴速度。
  * @return 命令被接受时返回 ROBOT_ARM_OK；坐标、传感器、安全检查或驱动前置条件失败时返回对应错误。
  */
 static RobotArmResult_t RobotArm_StartMoveToWithSpeedAndMode(
     int32_t x, int32_t y, int32_t z, uint16_t x_speed, uint16_t y_speed,
     uint16_t z_speed, RobotMoveMotionMode_t motion_mode,
-    uint8_t post_home_axis_mask)
+    uint8_t post_home_axis_mask, uint8_t apply_xy_speed_sync)
 {
     RobotArmResult_t result;
     uint8_t index;
@@ -2174,7 +2278,7 @@ static RobotArmResult_t RobotArm_StartMoveToWithSpeedAndMode(
     {
         return result;
     }
-    /* 提前校验搜索配置；原请求速度需另存，避免短轴同步降速或零距离清零污染搜索速度。 */
+    /* 提前校验搜索配置；原请求速度需另存，避免后续 Phase 的临时缩放或零距离清零污染搜索速度。 */
     if (motion_mode == ROBOT_MOVE_MOTION_XYZ_SYNC)
     {
         if (x == 0 && (post_home_axis_mask & ROBOT_ARM_AXIS_MASK(ROBOT_AXIS_X)) != 0u) result = RobotArm_ValidateHomeConfig(ROBOT_AXIS_X,
@@ -2232,10 +2336,13 @@ static RobotArmResult_t RobotArm_StartMoveToWithSpeedAndMode(
     }
     if (motion_mode == ROBOT_MOVE_MOTION_XYZ_SYNC)
     {
-        result = RobotArm_CalculateSyncMoveSpeed();
-        if (result != ROBOT_ARM_OK)
+        if (apply_xy_speed_sync)
         {
-            return result;
+            result = RobotArm_CalculateSyncMoveSpeed();
+            if (result != ROBOT_ARM_OK)
+            {
+                return result;
+            }
         }
         s_robot_arm.move_to_state = ROBOT_MOVE_TO_XYZ_START;
         RobotArm_UpdateXyzSyncDebug();
@@ -2272,10 +2379,97 @@ RobotArmResult_t RobotArm_MoveToWithSpeed(int32_t x, int32_t y, int32_t z,
 }
 
 /**
- * 将一条 Phase 转换为既有 MOVE_TO 状态机可执行的相对目标。
+ * 为 0x40 已到理论零点但尚未命中传感器的单轴启动有限补充找零。
+ *
+ * 每段固定最多 5000 个 STEP，最多三段。传感器快照命中时会立即在
+ * RobotArm_OnSensorSnapshotUpdated 中停止 DMA 并提交物理零点；三段均未命中则
+ * 以 Home 超时失败，禁止继续向负方向搜索。
+ *
+ * @param axis 已完成理论零点普通移动、需要寻找实际 Home 传感器的机械轴。
+ * @return 已启动搜索或已经由传感器确认零点时返回 1；启动失败或搜索次数耗尽返回 0。
+ */
+static uint8_t RobotArm_StartDelayedHomeSearch(RobotAxisId_t axis)
+{
+    RobotAxis_t *robot_axis = RobotArm_GetAxis(axis);
+    if (robot_axis == 0)
+    {
+        return 0u;
+    }
+    if (RobotArmSensor_IsTriggered(RobotArm_GetHomeSensor(axis)))
+    {
+        RobotArm_CompleteAxisMoveAtHome(axis);
+        s_robot_arm.move_axis_progress[axis] = ROBOT_MOVE_AXIS_COMPLETED;
+        return 1u;
+    }
+    if (s_robot_arm.delayed_home_search_count[axis] >= ROBOT_ARM_DELAYED_HOME_MAX_CHUNKS)
+    {
+        RobotArm_FailPostMoveHome(axis, ROBOT_MOVE_END_TIMEOUT);
+        return 0u;
+    }
+    if (RobotArm_StartHomeDriver(axis, RobotArm_GetHomeDirection(axis),
+            ROBOT_ARM_POST_HOME_CHUNK_STEPS,
+            RobotArm_ResolveMoveSpeed(axis, s_robot_arm.move_to_speed[axis]),
+            RobotArm_GetConfiguredHomeAcceleration(axis)) != ROBOT_ARM_OK ||
+        !RobotArmDriver_IsBusy(axis))
+    {
+        RobotArm_FailPostMoveHome(axis, ROBOT_MOVE_END_DRIVER_ERROR);
+        return 0u;
+    }
+    s_robot_arm.delayed_home_search_count[axis]++;
+    s_robot_arm.delayed_home_search_mask |= ROBOT_ARM_AXIS_MASK(axis);
+    robot_axis->state = ROBOT_AXIS_HOMING;
+    robot_axis->position_valid = 0u;
+    robot_axis->active = 1u;
+    robot_axis->command_steps = ROBOT_ARM_POST_HOME_CHUNK_STEPS;
+    robot_axis->target_position = 0;
+    robot_axis->end_reason = ROBOT_MOVE_END_NONE;
+    s_robot_arm.move_axis_progress[axis] = ROBOT_MOVE_AXIS_RUNNING;
+    return 1u;
+}
+
+/**
+ * 推进 0x40 单轴有限补充找零，并在每段完整结束后决定续段或失败。
+ *
+ * @param axis 正在补充寻找对应 S1/S2/S3 的机械轴。
+ * @return 已完成返回 1，仍在搜索返回 0，搜索失败返回 -1。
+ */
+static int8_t RobotArm_TaskDelayedHomeSearch(RobotAxisId_t axis)
+{
+    RobotAxis_t *robot_axis = RobotArm_GetAxis(axis);
+    if (robot_axis == 0)
+    {
+        return -1;
+    }
+    if ((!robot_axis->active && robot_axis->end_reason == ROBOT_MOVE_END_COMPLETED) ||
+        RobotArmSensor_IsTriggered(RobotArm_GetHomeSensor(axis)))
+    {
+        RobotArm_CompleteAxisMoveAtHome(axis);
+        s_robot_arm.delayed_home_search_mask &= (uint8_t)~ROBOT_ARM_AXIS_MASK(axis);
+        return 1;
+    }
+    if (RobotArmDriver_IsBusy(axis))
+    {
+        return 0;
+    }
+    if ((RobotArmDriver_GetRemainingSteps(axis) != 0u) ||
+        (RobotArmDriver_GetCompletedSteps(axis) < robot_axis->command_steps))
+    {
+        RobotArm_FailPostMoveHome(axis, ROBOT_MOVE_END_DRIVER_ERROR);
+        return -1;
+    }
+    robot_axis->active = 0u;
+    if (!RobotArm_StartDelayedHomeSearch(axis))
+    {
+        return -1;
+    }
+    return (s_robot_arm.move_axis_progress[axis] == ROBOT_MOVE_AXIS_COMPLETED) ? 1 : 0;
+}
+
+/**
+ * 将一条 Phase 的绝对目标坐标转换为既有 MOVE_TO 状态机可执行的动作。
  *
  * X/Y 继续沿用现有独立 DMA、限位、完成步数与坐标提交链路，只在真正启动 DMA 时
- * 注入按主导轴距离比例缩放后的起止频率；Z 不参与该换算，保持独立 z_speed。
+ * 注入 X/Y 各自请求的起止频率；Z 不参与该频率规划，保持独立 z_speed。
  */
 RobotArmResult_t RobotArm_StartPhase(const RobotArmPhase_t *phase)
 {
@@ -2284,13 +2478,10 @@ RobotArmResult_t RobotArm_StartPhase(const RobotArmPhase_t *phase)
     int64_t target_z;
     uint32_t x_steps;
     uint32_t y_steps;
-    uint32_t master_steps;
     uint32_t x_start;
     uint32_t y_start;
     uint32_t x_end;
     uint32_t y_end;
-    uint32_t master_start;
-    uint32_t master_end;
     uint16_t x_speed;
     uint16_t y_speed;
     uint8_t post_home_axis_mask = 0u;
@@ -2309,30 +2500,34 @@ RobotArmResult_t RobotArm_StartPhase(const RobotArmPhase_t *phase)
     if (((phase->flags & (ROBOT_ARM_PHASE_FLAG_XY_ENABLE |
                           ROBOT_ARM_PHASE_FLAG_Z_ENABLE)) == 0u) ||
         ((phase->flags & ROBOT_ARM_PHASE_FLAG_XY_ENABLE) &&
-         phase->delta_x == 0 && phase->delta_y == 0) ||
+         phase->target_x == s_robot_arm.axis[ROBOT_AXIS_X].current_position &&
+         phase->target_y == s_robot_arm.axis[ROBOT_AXIS_Y].current_position) ||
         (!(phase->flags & ROBOT_ARM_PHASE_FLAG_XY_ENABLE) &&
-         (phase->delta_x != 0 || phase->delta_y != 0)) ||
+         (phase->target_x != s_robot_arm.axis[ROBOT_AXIS_X].current_position ||
+          phase->target_y != s_robot_arm.axis[ROBOT_AXIS_Y].current_position)) ||
         ((phase->flags & ROBOT_ARM_PHASE_FLAG_Z_ENABLE) &&
-         (phase->delta_z == 0 || phase->z_speed == 0u)) ||
+         (phase->target_z == s_robot_arm.axis[ROBOT_AXIS_Z].current_position ||
+          phase->z_speed == 0u)) ||
         (!(phase->flags & ROBOT_ARM_PHASE_FLAG_Z_ENABLE) &&
-         phase->delta_z != 0))
+         phase->target_z != s_robot_arm.axis[ROBOT_AXIS_Z].current_position))
     {
         return ROBOT_ARM_ERR_CONFIG;
     }
-    target_x = (int64_t)s_robot_arm.axis[ROBOT_AXIS_X].current_position + phase->delta_x;
-    target_y = (int64_t)s_robot_arm.axis[ROBOT_AXIS_Y].current_position + phase->delta_y;
-    target_z = (int64_t)s_robot_arm.axis[ROBOT_AXIS_Z].current_position + phase->delta_z;
+    target_x = phase->target_x;
+    target_y = phase->target_y;
+    target_z = phase->target_z;
     if ((target_x > 2147483647L) || (target_x < (-2147483647L - 1L)) ||
         (target_y > 2147483647L) || (target_y < (-2147483647L - 1L)) ||
         (target_z > 2147483647L) || (target_z < (-2147483647L - 1L)))
     {
         return ROBOT_ARM_ERR_CONFIG;
     }
-    x_steps = (phase->delta_x >= 0) ? (uint32_t)phase->delta_x :
-              (uint32_t)(-(int64_t)phase->delta_x);
-    y_steps = (phase->delta_y >= 0) ? (uint32_t)phase->delta_y :
-              (uint32_t)(-(int64_t)phase->delta_y);
-    master_steps = (x_steps > y_steps) ? x_steps : y_steps;
+    x_steps = (uint32_t)((target_x >= s_robot_arm.axis[ROBOT_AXIS_X].current_position) ?
+              (target_x - s_robot_arm.axis[ROBOT_AXIS_X].current_position) :
+              (s_robot_arm.axis[ROBOT_AXIS_X].current_position - target_x));
+    y_steps = (uint32_t)((target_y >= s_robot_arm.axis[ROBOT_AXIS_Y].current_position) ?
+              (target_y - s_robot_arm.axis[ROBOT_AXIS_Y].current_position) :
+              (s_robot_arm.axis[ROBOT_AXIS_Y].current_position - target_y));
     x_start = 0u;
     y_start = 0u;
     x_end = 0u;
@@ -2340,36 +2535,33 @@ RobotArmResult_t RobotArm_StartPhase(const RobotArmPhase_t *phase)
     if (phase->flags & ROBOT_ARM_PHASE_FLAG_XY_ENABLE)
     {
         /* PB10/PB11 的独立 DMA 驱动均限定 50000 steps/s，超限由协议拒绝而非静默截断。 */
-        if ((phase->f0 > 50000u) || (phase->f1 > 50000u))
+        if ((phase->x_f0 > 50000u) || (phase->x_f1 > 50000u) ||
+            (phase->y_f0 > 50000u) || (phase->y_f1 > 50000u))
         {
             return ROBOT_ARM_ERR_CONFIG;
         }
         /*
-         * 0Hz 只在主导轴协议层表示起停边界。必须先转换为主导轴可执行频率再缩放，
-         * 否则短轴的 0 会在各自 DMA 中被错误地独立抬到 500Hz，破坏 XY 比例。
+         * 0Hz 只表示对应轴的起停边界。X/Y 不再按距离缩放，各自把边界映射为
+         * 可写入 ARR 的最低安全频率，避免 0Hz 生成非法定时器周期。
          */
-        master_start = (phase->f0 == 0u) ?
-                           ROBOT_ARM_PHASE_BOUNDARY_FREQUENCY : phase->f0;
-        master_end = (phase->f1 == 0u) ?
-                         ROBOT_ARM_PHASE_BOUNDARY_FREQUENCY : phase->f1;
-        /* Phase 单轴位移可达 I24；先提升到 64 位，避免 50000*85899 以上发生 32 位回绕。 */
-        x_start = (uint32_t)(((uint64_t)master_start * x_steps) / master_steps);
-        y_start = (uint32_t)(((uint64_t)master_start * y_steps) / master_steps);
-        x_end = (uint32_t)(((uint64_t)master_end * x_steps) / master_steps);
-        y_end = (uint32_t)(((uint64_t)master_end * y_steps) / master_steps);
+        x_start = (phase->x_f0 == 0u) ? ROBOT_ARM_PHASE_BOUNDARY_FREQUENCY : phase->x_f0;
+        x_end = (phase->x_f1 == 0u) ? ROBOT_ARM_PHASE_BOUNDARY_FREQUENCY : phase->x_f1;
+        y_start = (phase->y_f0 == 0u) ? ROBOT_ARM_PHASE_BOUNDARY_FREQUENCY : phase->y_f0;
+        y_end = (phase->y_f1 == 0u) ? ROBOT_ARM_PHASE_BOUNDARY_FREQUENCY : phase->y_f1;
     }
     x_speed = (x_end > 65535u) ? 65535u : (uint16_t)((x_end == 0u) ? 1u : x_end);
     y_speed = (y_end > 65535u) ? 65535u : (uint16_t)((y_end == 0u) ? 1u : y_end);
     /* 仅 flags 启用且本条确有位移的轴可以把目标零点解释为需要补充找零。 */
-    if ((phase->flags & ROBOT_ARM_PHASE_FLAG_XY_ENABLE) && phase->delta_x != 0)
+    if ((phase->flags & ROBOT_ARM_PHASE_FLAG_XY_ENABLE) && x_steps != 0u)
     {
         post_home_axis_mask |= ROBOT_ARM_AXIS_MASK(ROBOT_AXIS_X);
     }
-    if ((phase->flags & ROBOT_ARM_PHASE_FLAG_XY_ENABLE) && phase->delta_y != 0)
+    if ((phase->flags & ROBOT_ARM_PHASE_FLAG_XY_ENABLE) && y_steps != 0u)
     {
         post_home_axis_mask |= ROBOT_ARM_AXIS_MASK(ROBOT_AXIS_Y);
     }
-    if ((phase->flags & ROBOT_ARM_PHASE_FLAG_Z_ENABLE) && phase->delta_z != 0)
+    if ((phase->flags & ROBOT_ARM_PHASE_FLAG_Z_ENABLE) &&
+        target_z != s_robot_arm.axis[ROBOT_AXIS_Z].current_position)
     {
         post_home_axis_mask |= ROBOT_ARM_AXIS_MASK(ROBOT_AXIS_Z);
     }
@@ -2377,7 +2569,7 @@ RobotArmResult_t RobotArm_StartPhase(const RobotArmPhase_t *phase)
         (int32_t)target_x, (int32_t)target_y, (int32_t)target_z,
         x_speed, y_speed,
         (phase->flags & ROBOT_ARM_PHASE_FLAG_Z_ENABLE) ? phase->z_speed : 1u,
-        ROBOT_MOVE_MOTION_XYZ_SYNC, post_home_axis_mask);
+        ROBOT_MOVE_MOTION_XYZ_SYNC, post_home_axis_mask, 0u);
     if (result != ROBOT_ARM_OK)
     {
         return result;
@@ -2388,7 +2580,7 @@ RobotArmResult_t RobotArm_StartPhase(const RobotArmPhase_t *phase)
     s_robot_arm.phase_start_frequency[ROBOT_AXIS_Y] = y_start;
     s_robot_arm.phase_end_frequency[ROBOT_AXIS_X] = x_end;
     s_robot_arm.phase_end_frequency[ROBOT_AXIS_Y] = y_end;
-    /* XYZ_SYNC 只缩放 X/Y；Phase 的 Z 轴始终保持配置的 zSpeed。 */
+    /* Phase 只缩放 X/Y；Z 轴始终保持配置的 zSpeed。 */
     s_robot_arm.move_to_speed[ROBOT_AXIS_Z] = phase->z_speed;
     return ROBOT_ARM_OK;
 }
@@ -2396,8 +2588,8 @@ RobotArmResult_t RobotArm_StartPhase(const RobotArmPhase_t *phase)
 /**
  * 按指定运动方式启动一次非阻塞普通目标位置任务。
  *
- * 对外公开的同步 MOVE_TO 保持三轴零目标均可补充找零的既有语义；Phase 会通过
- * 内部入口按启用轴缩小找零范围，避免改变 0x34 的协议行为。
+ * 对外公开的并发 MOVE_TO 保持三轴零目标均可补充找零的既有语义，并严格保留各轴请求速度；
+ * Phase 才通过内部入口启用 X/Y 配速，避免改变 0x34 的协议行为。
  *
  * @param x X 轴目标绝对逻辑坐标，单位为步数。
  * @param y Y 轴目标绝对逻辑坐标，单位为步数。
@@ -2405,7 +2597,7 @@ RobotArmResult_t RobotArm_StartPhase(const RobotArmPhase_t *phase)
  * @param x_speed X 轴最大速度，单位为 steps/s；0 表示使用既有默认速度。
  * @param y_speed Y 轴最大速度，单位为 steps/s；0 表示使用既有默认速度。
  * @param z_speed Z 轴最大速度，单位为 steps/s；0 表示使用既有默认速度。
- * @param motion_mode SEQUENTIAL 顺序移动；XYZ_SYNC 对零目标允许从未知坐标直接搜索，均以传感器命中为完成条件。
+ * @param motion_mode SEQUENTIAL 顺序移动；XYZ_SYNC 并发启动各轴且保留各自速度，对零目标允许从未知坐标直接搜索，均以传感器命中为完成条件。
  * @return 已受理返回 ROBOT_ARM_OK；坐标、传感器、安全检查或驱动前置条件失败时返回对应错误码。
  */
 RobotArmResult_t RobotArm_MoveToWithSpeedAndMode(
@@ -2414,7 +2606,105 @@ RobotArmResult_t RobotArm_MoveToWithSpeedAndMode(
 {
     return RobotArm_StartMoveToWithSpeedAndMode(
         x, y, z, x_speed, y_speed, z_speed, motion_mode,
-        ROBOT_ARM_AXIS_MASK_ALL);
+        ROBOT_ARM_AXIS_MASK_ALL, 0u);
+}
+
+/**
+ * 启动 0x40 的独立错峰绝对移动，保留既有单轴绝对坐标和完成步数确认链路。
+ *
+ * 本函数只建立延时计划，实际 DMA 只能由 RobotArm_Task 在各轴到期后启动；因此
+ * ACK 不能被解释为任何一个电机已开始或已完成运动。
+ *
+ * @param x X 轴目标绝对逻辑坐标，单位为步数。
+ * @param y Y 轴目标绝对逻辑坐标，单位为步数。
+ * @param z Z 轴目标绝对逻辑坐标，单位为步数。
+ * @param x_speed X 轴速度，单位为 steps/s，必须非 0。
+ * @param y_speed Y 轴速度，单位为 steps/s，必须非 0。
+ * @param z_speed Z 轴速度，单位为 steps/s，必须非 0。
+ * @param x_delay_100ms X 轴启动延时，单位为 100ms。
+ * @param y_delay_100ms Y 轴启动延时，单位为 100ms。
+ * @param z_delay_100ms Z 轴启动延时，单位为 100ms。
+ * @return 延时计划已受理返回 ROBOT_ARM_OK；前置条件不满足时返回错误码。
+ */
+RobotArmResult_t RobotArm_MoveToWithDelayedStart(
+    int32_t x, int32_t y, int32_t z, uint16_t x_speed, uint16_t y_speed,
+    uint16_t z_speed, uint8_t x_delay_100ms, uint8_t y_delay_100ms,
+    uint8_t z_delay_100ms)
+{
+    int32_t targets[ROBOT_AXIS_COUNT];
+    uint16_t speeds[ROBOT_AXIS_COUNT];
+    uint8_t delays[ROBOT_AXIS_COUNT];
+    uint8_t index;
+    int64_t delta;
+    RobotArmResult_t result;
+
+    if (s_robot_arm.state == ROBOT_ARM_ERROR)
+    {
+        return (RobotArmResult_t)s_robot_arm.error_code;
+    }
+    if (RobotArm_IsBusy())
+    {
+        return ROBOT_ARM_ERR_BUSY;
+    }
+    if (!RobotArmSensor_IsReady())
+    {
+        return ROBOT_ARM_ERR_SENSOR;
+    }
+    targets[ROBOT_AXIS_X] = x; targets[ROBOT_AXIS_Y] = y; targets[ROBOT_AXIS_Z] = z;
+    speeds[ROBOT_AXIS_X] = x_speed; speeds[ROBOT_AXIS_Y] = y_speed; speeds[ROBOT_AXIS_Z] = z_speed;
+    delays[ROBOT_AXIS_X] = x_delay_100ms; delays[ROBOT_AXIS_Y] = y_delay_100ms; delays[ROBOT_AXIS_Z] = z_delay_100ms;
+    for (index = 0u; index < ROBOT_AXIS_COUNT; index++)
+    {
+        if (!s_robot_arm.axis[index].position_valid)
+        {
+            return ROBOT_ARM_ERR_POSITION_UNKNOWN;
+        }
+        result = RobotArm_CheckAxisTarget((RobotAxisId_t)index, targets[index]);
+        if (result != ROBOT_ARM_OK) return result;
+        /* 零目标允许理论到位后继续以有限段数寻找真实 Home，不能在预检查时当作负向越限拒绝。 */
+        if (targets[index] != 0)
+        {
+            result = RobotArm_CheckTargetDirection((RobotAxisId_t)index, targets[index]);
+            if (result != ROBOT_ARM_OK) return result;
+        }
+    }
+    result = RobotArm_CheckPoseSafety(x, y, z);
+    if (result != ROBOT_ARM_OK) return result;
+
+    s_robot_arm.phase_xy_profile = 0u;
+    s_robot_arm.post_home_phase = ROBOT_POST_HOME_NONE;
+    s_robot_arm.post_home_axis_mask = 0u;
+    RobotArm_ResetMoveDebug();
+    for (index = 0u; index < ROBOT_AXIS_COUNT; index++)
+    {
+        delta = (int64_t)targets[index] - s_robot_arm.axis[index].current_position;
+        s_robot_arm.move_to_target[index] = targets[index];
+        s_robot_arm.move_to_speed[index] = speeds[index];
+        s_robot_arm.delayed_start_100ms[index] = delays[index];
+        s_robot_arm.axis[index].target_position = targets[index];
+        /* 零目标即使理论坐标已为零，也必须在本轴延时到期后确认传感器或有限补充找零。 */
+        s_robot_arm.move_axis_progress[index] = (delta == 0 && targets[index] != 0) ?
+            ROBOT_MOVE_AXIS_NOT_REQUIRED : ROBOT_MOVE_AXIS_WAIT_START;
+        s_move_debug.received_current[index] = s_robot_arm.axis[index].current_position;
+        s_move_debug.received_target[index] = targets[index];
+        s_move_debug.received_delta[index] = delta;
+        s_move_debug.axis_progress[index] = s_robot_arm.move_axis_progress[index];
+    }
+    if ((s_robot_arm.move_axis_progress[ROBOT_AXIS_X] == ROBOT_MOVE_AXIS_NOT_REQUIRED) &&
+        (s_robot_arm.move_axis_progress[ROBOT_AXIS_Y] == ROBOT_MOVE_AXIS_NOT_REQUIRED) &&
+        (s_robot_arm.move_axis_progress[ROBOT_AXIS_Z] == ROBOT_MOVE_AXIS_NOT_REQUIRED))
+    {
+        s_robot_arm.last_move_end_reason = ROBOT_MOVE_END_COMPLETED;
+        s_move_debug.finalize_reason = ROBOT_MOVE_FINALIZE_COMPLETED;
+        return ROBOT_ARM_OK;
+    }
+    s_robot_arm.delayed_start_base_ms = millis();
+    s_robot_arm.move_to_state = ROBOT_MOVE_TO_DELAYED_WAIT;
+    s_robot_arm.operation = ROBOT_OP_MOVE_TO;
+    s_robot_arm.state = ROBOT_ARM_MOVING;
+    s_robot_arm.error_code = 0;
+    s_robot_arm.last_move_end_reason = ROBOT_MOVE_END_NONE;
+    return ROBOT_ARM_OK;
 }
 
 /**

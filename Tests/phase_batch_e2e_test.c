@@ -190,11 +190,14 @@ static void TestWriteI24(uint8_t *data, int32_t value)
 static uint16_t TestBuildBatch(uint8_t *raw, uint16_t seq, uint16_t run_id,
                                uint8_t count, uint8_t mixed)
 {
-    uint16_t payload_length = (uint16_t)(4u + (uint16_t)count * 16u);
+    uint16_t payload_length = (uint16_t)(4u + (uint16_t)count * PROTOCOL_V2_PHASE_SIZE);
     uint16_t frame_length = (uint16_t)(payload_length + 10u);
     uint16_t offset;
     uint16_t crc;
     uint8_t index;
+    int32_t x_target = 0;
+    int32_t y_target = 0;
+    int32_t z_target = 0;
     raw[0] = 0xAAu; raw[1] = 0xFEu; raw[2] = 0x39u;
     ProtocolV2_WriteU16LE(&raw[3], seq);
     ProtocolV2_WriteU16LE(&raw[5], payload_length);
@@ -202,26 +205,31 @@ static uint16_t TestBuildBatch(uint8_t *raw, uint16_t seq, uint16_t run_id,
     raw[9] = count; raw[10] = 0u;
     for (index = 0u; index < count; index++)
     {
-        offset = (uint16_t)(11u + (uint16_t)index * 16u);
+        offset = (uint16_t)(11u + (uint16_t)index * PROTOCOL_V2_PHASE_SIZE);
         if (mixed && ((index % 4u) == 1u))
         {
-            TestWriteI24(&raw[offset], 0); TestWriteI24(&raw[offset + 3u], 0);
-            TestWriteI24(&raw[offset + 6u], (int32_t)(5u + index));
-            ProtocolV2_WriteU16LE(&raw[offset + 9u], 0u);
-            ProtocolV2_WriteU16LE(&raw[offset + 11u], 0u);
-            ProtocolV2_WriteU16LE(&raw[offset + 13u], 300u + index);
-            raw[offset + 15u] = ROBOT_ARM_PHASE_FLAG_Z_ENABLE;
+            z_target += (int32_t)(5u + index);
+            TestWriteI24(&raw[offset], x_target); TestWriteI24(&raw[offset + 3u], y_target);
+            TestWriteI24(&raw[offset + 6u], z_target);
+            ProtocolV2_WriteU16LE(&raw[offset + 9u], 0u); ProtocolV2_WriteU16LE(&raw[offset + 11u], 0u);
+            ProtocolV2_WriteU16LE(&raw[offset + 13u], 0u); ProtocolV2_WriteU16LE(&raw[offset + 15u], 0u);
+            ProtocolV2_WriteU16LE(&raw[offset + 17u], 300u + index);
+            raw[offset + 19u] = ROBOT_ARM_PHASE_FLAG_Z_ENABLE;
         }
         else
         {
-            TestWriteI24(&raw[offset], (int32_t)(10u + index));
-            TestWriteI24(&raw[offset + 3u], (int32_t)(20u + index));
-            TestWriteI24(&raw[offset + 6u], (mixed && ((index % 4u) == 2u)) ?
-                         (int32_t)(5u + index) : 0);
+            x_target += (int32_t)(10u + index);
+            y_target += (int32_t)(20u + index);
+            if (mixed && ((index % 4u) == 2u)) z_target += (int32_t)(5u + index);
+            TestWriteI24(&raw[offset], x_target);
+            TestWriteI24(&raw[offset + 3u], y_target);
+            TestWriteI24(&raw[offset + 6u], z_target);
             ProtocolV2_WriteU16LE(&raw[offset + 9u], (index == 0u) ? 0u : 1000u + index);
             ProtocolV2_WriteU16LE(&raw[offset + 11u], 2000u + index);
-            ProtocolV2_WriteU16LE(&raw[offset + 13u], 400u + index);
-            raw[offset + 15u] = (mixed && ((index % 4u) == 2u)) ?
+            ProtocolV2_WriteU16LE(&raw[offset + 13u], (index == 0u) ? 0u : 700u + index);
+            ProtocolV2_WriteU16LE(&raw[offset + 15u], 1500u + index);
+            ProtocolV2_WriteU16LE(&raw[offset + 17u], 400u + index);
+            raw[offset + 19u] = (mixed && ((index % 4u) == 2u)) ?
                                   (ROBOT_ARM_PHASE_FLAG_XY_ENABLE | ROBOT_ARM_PHASE_FLAG_Z_ENABLE |
                                    ROBOT_ARM_PHASE_FLAG_SYNC_END) : ROBOT_ARM_PHASE_FLAG_XY_ENABLE;
         }
@@ -250,14 +258,14 @@ int main(void)
     uint16_t offset;
     uint8_t chunks[] = {1u, 7u, 13u, 2u, 31u, 5u, 64u, 3u, 17u};
 
-    /* Test 1：206B 一次性输入。 */
+    /* Test 1：254B 一次性输入。 */
     TestReset(); guarded.before = 0xA5u; guarded.after = 0x5Au;
     length = TestBuildBatch(guarded.raw, 100u, 0x1234u, 12u, 0u);
     TEST_CHECK(length == 206u); TestFeed(guarded.raw, length, 0u); TestTick();
     TEST_CHECK(TestAckCount() == 1u && s_start_count[ROBOT_AXIS_X] == 1u);
     TEST_CHECK(guarded.before == 0xA5u && guarded.after == 0x5Au);
 
-    /* Test 2：同一 206B 帧每次只进入一个 UART 字节。 */
+    /* Test 2：同一 254B 帧每次只进入一个 UART 字节。 */
     TestReset(); length = TestBuildBatch(guarded.raw, 101u, 0x1234u, 12u, 0u);
     TestFeed(guarded.raw, length, 1u); TestTick();
     TEST_CHECK(TestAckCount() == 1u && s_start_count[ROBOT_AXIS_Y] == 1u);
@@ -272,16 +280,16 @@ int main(void)
     }
     TestTick(); TEST_CHECK(TestAckCount() == 1u && s_start_count[ROBOT_AXIS_X] == 1u);
 
-    /* Test 4：最大 16 Phase / 260B payload / 270B frame 和哨兵边界。 */
+    /* Test 4：最大 16 Phase / 324B payload / 334B frame 和哨兵边界。 */
     TestReset(); guarded.before = 0xA5u; guarded.after = 0x5Au;
     length = TestBuildBatch(guarded.raw, 103u, 0x5678u, 16u, 1u);
-    TEST_CHECK(length == 270u); TestFeed(guarded.raw, length, 1u); TestTick();
+    TEST_CHECK(length == 334u); TestFeed(guarded.raw, length, 1u); TestTick();
     TEST_CHECK(TestAckCount() == 1u && guarded.before == 0xA5u && guarded.after == 0x5Au);
 
     /* Test 5：两帧粘包按 main.c 的 64B 消费节奏处理，B 因 A 活动得到 BUSY。 */
     TestReset(); length = TestBuildBatch(guarded.raw, 104u, 1u, 12u, 0u);
     { uint16_t length2 = TestBuildBatch(raw2, 105u, 2u, 12u, 0u);
-      uint8_t joined[412];
+      uint8_t joined[PROTOCOL_V2_PHASE_BATCH_MAX_FRAME_SIZE * 2u];
       for (index = 0u; index < length; index++) joined[index] = guarded.raw[index];
       for (index = 0u; index < length2; index++) joined[length + index] = raw2[index];
       TestFeedMainCadence(joined, (uint16_t)(length + length2)); }
@@ -320,10 +328,12 @@ int main(void)
 
     /* Test 9：XYZ 的任一轴未完成时，不得越过当前 Phase 启动下一条。 */
     TestReset(); length = TestBuildBatch(guarded.raw, 113u, 1u, 2u, 0u);
-    offset = 11u; guarded.raw[offset + 15u] = (ROBOT_ARM_PHASE_FLAG_XY_ENABLE |
+    offset = 11u; guarded.raw[offset + 19u] = (ROBOT_ARM_PHASE_FLAG_XY_ENABLE |
                                                 ROBOT_ARM_PHASE_FLAG_Z_ENABLE |
                                                 ROBOT_ARM_PHASE_FLAG_SYNC_END);
     TestWriteI24(&guarded.raw[offset + 6u], 5);
+    /* 第二条未启用 Z 时必须显式保持第一条已到达的绝对 Z=5。 */
+    TestWriteI24(&guarded.raw[(uint16_t)(offset + PROTOCOL_V2_PHASE_SIZE + 6u)], 5);
     { uint16_t crc = ProtocolV2_CalculateCrc(guarded.raw, (uint16_t)(length - 2u)); ProtocolV2_WriteU16LE(&guarded.raw[length - 2u], crc); }
     TestFeed(guarded.raw, length, 1u); TestTick();
     TestCompleteAxis(ROBOT_AXIS_X); TestCompleteAxis(ROBOT_AXIS_Y); TestTick();
@@ -334,21 +344,25 @@ int main(void)
 
     /* Test 10：真实三段速度边界数据，经完整 0x39 输入后检查驱动参数。 */
     TestReset(); length = TestBuildBatch(guarded.raw, 114u, 3u, 3u, 0u);
-    /* 建立足够的 Y 正坐标，使真实样例中的三段负向 Y 增量仍通过行程校验。 */
+    /* 建立足够的 Y 正坐标，使三条绝对目标均在合法行程内。 */
     TEST_CHECK(RobotArm_MoveY(20000, 1000u) == ROBOT_ARM_OK);
     TestCompleteAxis(ROBOT_AXIS_Y); TestTick();
     for (index = 0u; index < 3u; index++)
     {
-        offset = (uint16_t)(11u + index * 16u);
-        TestWriteI24(&guarded.raw[offset], (index == 1u) ? 1189 : 201);
-        TestWriteI24(&guarded.raw[offset + 3u], (index == 1u) ? -9855 : -1667);
+        offset = (uint16_t)(11u + index * PROTOCOL_V2_PHASE_SIZE);
+        TestWriteI24(&guarded.raw[offset], (index == 0u) ? 201 :
+                     ((index == 1u) ? 1390 : 1591));
+        TestWriteI24(&guarded.raw[offset + 3u], (index == 0u) ? 18333 :
+                     ((index == 1u) ? 8478 : 6811));
         ProtocolV2_WriteU16LE(&guarded.raw[offset + 9u], (index == 0u) ? 0u : 20000u);
         ProtocolV2_WriteU16LE(&guarded.raw[offset + 11u], (index == 2u) ? 0u : 20000u);
+        ProtocolV2_WriteU16LE(&guarded.raw[offset + 13u], (index == 0u) ? 0u : 15000u);
+        ProtocolV2_WriteU16LE(&guarded.raw[offset + 15u], (index == 2u) ? 0u : 15000u);
     }
     { uint16_t crc = ProtocolV2_CalculateCrc(guarded.raw, (uint16_t)(length - 2u)); ProtocolV2_WriteU16LE(&guarded.raw[length - 2u], crc); }
     TestFeed(guarded.raw, length, 1u); TestTick();
-    TEST_CHECK(s_phase_start[ROBOT_AXIS_X] == 60u && s_phase_start[ROBOT_AXIS_Y] == 500u &&
-               s_phase_end[ROBOT_AXIS_X] == 2411u && s_phase_end[ROBOT_AXIS_Y] == 20000u);
+    TEST_CHECK(s_phase_start[ROBOT_AXIS_X] == 500u && s_phase_start[ROBOT_AXIS_Y] == 500u &&
+               s_phase_end[ROBOT_AXIS_X] == 20000u && s_phase_end[ROBOT_AXIS_Y] == 15000u);
 
     /* Test 11：相同 SEQ 只 ACK，不能二次启动或覆盖活动 Batch。 */
     TestFeed(guarded.raw, length, 1u); TEST_CHECK(TestAckCount() == 2u && s_start_count[ROBOT_AXIS_X] == 1u);
@@ -366,11 +380,19 @@ int main(void)
       length = TestBuildBatch(raw2, 117u, 2u, 1u, 0u); TestFeed(raw2, length, 1u); TestTick();
        TEST_CHECK(s_start_count[ROBOT_AXIS_X] + s_start_count[ROBOT_AXIS_Y] + s_start_count[ROBOT_AXIS_Z] > starts_before); }
 
-    /* Test 13：三条同方向 Phase 的下一条必须由最后一个 DMA TC 直接启动，不调用 TestTick。 */
+    /* Test 13：三条同方向 Phase 的下一条必须由最后一个 DMA TC 直接启动，不调用 TestTick；
+     * 边界频率由下一条独立 X/Y 的起始字段直接生效，不能被距离比例改写。 */
     TestReset(); length = TestBuildBatch(guarded.raw, 119u, 3u, 3u, 0u);
+    ProtocolV2_WriteU16LE(&guarded.raw[40u], 1200u);
+    ProtocolV2_WriteU16LE(&guarded.raw[42u], 2200u);
+    ProtocolV2_WriteU16LE(&guarded.raw[44u], 700u);
+    ProtocolV2_WriteU16LE(&guarded.raw[46u], 1700u);
+    { uint16_t crc = ProtocolV2_CalculateCrc(guarded.raw, (uint16_t)(length - 2u)); ProtocolV2_WriteU16LE(&guarded.raw[length - 2u], crc); }
     TestFeed(guarded.raw, length, 1u); TestTick();
     TestCompleteCurrent();
     TEST_CHECK(s_start_count[ROBOT_AXIS_X] == 2u && s_start_count[ROBOT_AXIS_Y] == 2u);
+    TEST_CHECK(s_phase_start[ROBOT_AXIS_X] == 1200u && s_phase_end[ROBOT_AXIS_X] == 2200u &&
+               s_phase_start[ROBOT_AXIS_Y] == 700u && s_phase_end[ROBOT_AXIS_Y] == 1700u);
     TestCompleteCurrent();
     TEST_CHECK(s_start_count[ROBOT_AXIS_X] == 3u && s_start_count[ROBOT_AXIS_Y] == 3u);
     TestCompleteCurrent(); TestTick();
@@ -379,7 +401,7 @@ int main(void)
 
     /* Test 14：同一轴跨条反向必须在启动前 CONFIG 拒绝，不能先输出首条 STEP。 */
     TestReset(); length = TestBuildBatch(guarded.raw, 121u, 4u, 2u, 0u);
-    TestWriteI24(&guarded.raw[27u], -11); /* Phase1 delta_x 位于固定 Batch payload 的第二条起点。 */
+    TestWriteI24(&guarded.raw[31u], -11); /* Phase1 target_x 位于固定 Batch payload 的第二条起点。 */
     { uint16_t crc = ProtocolV2_CalculateCrc(guarded.raw, (uint16_t)(length - 2u)); ProtocolV2_WriteU16LE(&guarded.raw[length - 2u], crc); }
     TestFeed(guarded.raw, length, 1u);
     TEST_CHECK(s_start_count[ROBOT_AXIS_X] == 0u && TestAckCount() == 1u &&

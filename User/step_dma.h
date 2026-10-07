@@ -29,7 +29,7 @@ void stepdma_pb11_move_trap(uint32_t steps, uint32_t f_start, uint32_t f_max, ui
 /**
  * 按一个 Phase 的起止频率输出 PB11（Y 轴）脉冲。
  *
- * 保留 TIM5/DMA2 通道2路径；协议边界 0Hz 已由上层主导轴映射并缩放。本层保留
+ * 保留 TIM5/DMA2 通道2路径；协议边界 0Hz 已由上层按本轴映射。本层保留
  * 60Hz 等合法短轴频率；误传 0 仅兜底为 1Hz，最后一个脉冲后关闭 DMA/Timer。
  *
  * @param steps 需要输出的 Y 轴 STEP 上升沿数量。
@@ -60,7 +60,7 @@ void stepdma_pb10_move_trap(uint32_t steps, uint32_t f_start, uint32_t f_max, ui
 /**
  * 按一个 Phase 的起止频率输出 PB10（X 轴）脉冲。
  *
- * 保留 TIM6/DMA2 通道3路径；协议边界 0Hz 已由上层主导轴映射并缩放。本层保留
+ * 保留 TIM6/DMA2 通道3路径；协议边界 0Hz 已由上层按本轴映射。本层保留
  * 60Hz 等合法短轴频率；误传 0 仅兜底为 1Hz，最后一个脉冲后关闭 DMA/Timer。
  *
  * @param steps 需要输出的 X 轴 STEP 上升沿数量。

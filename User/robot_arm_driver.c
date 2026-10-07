@@ -237,7 +237,7 @@ uint8_t RobotArmDriver_StartHomeApproach(
 /**
  * 按规划 Phase 的本轴起止频率启动 X/Y DMA。
  *
- * 两个频率均已由上层用 XY 主导轴比例换算。0Hz 是通信层静止边界，底层 DMA 入口
+ * 两个频率均为上层为本轴指定的起止频率。0Hz 是通信层静止边界，底层 DMA 入口
  * 会替换为可生成 ARR 的最小频率；Z 不允许进入该接口，防止误把 XY 频率施加给 Z。
  */
 uint8_t RobotArmDriver_StartPhase(RobotAxisId_t axis, int8_t direction,

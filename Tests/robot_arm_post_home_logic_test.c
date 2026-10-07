@@ -25,14 +25,14 @@ int main(void)
     RobotArm_Task();
     TEST_CHECK(!RobotArm_IsBusy() && RobotArm_IsHomed(ROBOT_AXIS_X) &&
                RobotArm_IsHomed(ROBOT_AXIS_Y) && RobotArm_IsHomed(ROBOT_AXIS_Z));
-    /* 0x01 只让 X/Y 按到位时间配速；Z 的低速不能再拖慢两个旋转轴。 */
+    /* 0x01 三轴并发但各自保持请求速度；距离短的 Y 轴不得被降速。 */
     TestResetAndHomeAll();
     TestSetPose(0, 0, 0);
     TEST_CHECK(RobotArm_MoveToWithSpeedAndMode(1000, 100, 1000,
         10000u, 10000u, 100u, ROBOT_MOVE_MOTION_XYZ_SYNC) == ROBOT_ARM_OK);
     RobotArm_Task();
     TEST_CHECK(s_last_start_speed[ROBOT_AXIS_X] == 10000u &&
-               s_last_start_speed[ROBOT_AXIS_Y] == 1000u &&
+               s_last_start_speed[ROBOT_AXIS_Y] == 10000u &&
                s_last_start_speed[ROBOT_AXIS_Z] == 100u);
     RobotArm_Stop();
     TestResetAndHomeAll();

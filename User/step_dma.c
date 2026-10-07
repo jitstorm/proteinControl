@@ -38,7 +38,7 @@
 #define CHUNK_STEPS 32u
 #define CHUNK_EDGES (CHUNK_STEPS * 2u) /* 每一步输出高、低两个 BSRR 边沿。 */
 
-/* Phase 的协议 0Hz 必须先在 RobotArm 主导轴层完成边界映射；此处仅防止错误直调产生 0 ARR。 */
+/* Phase 的协议 0Hz 必须先在 RobotArm 的本轴边界映射完成；此处仅防止错误直调产生 0 ARR。 */
 #define PHASE_TIMER_MIN_FREQUENCY 1u
 
 /* TIM5 计数时钟（一般 72MHz） */
@@ -696,7 +696,7 @@ void stepdma_pb11_move_home_approach(uint32_t steps, uint32_t f_start,
 /**
  * 按一个规划 Phase 输出 PB11（Y 轴）脉冲。
  *
- * 起止频率已经由上层在主导轴层完成边界映射并按距离比例换算；本函数不再把每轴
+ * 起止频率已经由上层按本轴完成边界映射；本函数不再把每轴
  * 低频抬到 500Hz。误传 0 时仅兜底为 1Hz，避免产生非法 ARR。
  */
 void stepdma_pb11_move_phase(uint32_t steps, uint32_t f_start, uint32_t f_end)
@@ -1418,7 +1418,7 @@ void stepdma_pb10_move_home_approach(uint32_t steps, uint32_t f_start,
 /**
  * 按一个规划 Phase 输出 PB10（X 轴）脉冲，末端频率由 f_end 决定。
  *
- * 起止频率已在主导轴层映射并缩放，60Hz 等合法短轴频率必须原样进入 TIM6；误传
+ * 起止频率已按本轴完成边界映射，60Hz 等合法频率必须原样进入 TIM6；误传
  * 0 时仅兜底为 1Hz，避免产生非法 ARR。
  */
 void stepdma_pb10_move_phase(uint32_t steps, uint32_t f_start, uint32_t f_end)

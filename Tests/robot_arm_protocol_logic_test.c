@@ -47,6 +47,12 @@ void *memset(void *destination, int value, __SIZE_TYPE__ count)
 
 /** 协议测试只验证帧受理和终态转发，机械状态机由夹具直接驱动。 */
 void RobotArm_Task(void) {}
+/** 0x39 的绝对目标方向校验以当前逻辑坐标为起点；本夹具固定从零点开始。 */
+int32_t RobotArm_GetX(void) { return 0; }
+/** 0x39 的绝对目标方向校验以当前逻辑坐标为起点；本夹具固定从零点开始。 */
+int32_t RobotArm_GetY(void) { return 0; }
+/** 0x39 的绝对目标方向校验以当前逻辑坐标为起点；本夹具固定从零点开始。 */
+int32_t RobotArm_GetZ(void) { return 0; }
 
 static void TestClearFrame(ProtocolV2Frame_t *frame, uint8_t cmd, uint16_t seq)
 {
@@ -158,7 +164,7 @@ RobotArmResult_t RobotArm_MoveToWithSpeedAndMode(
     s_last_motion_mode = motion_mode;
     return TestAccept(5u);
 }
-/** 模拟批量 Phase 的执行入口，并记录主导轴边界频率和坐标增量。 */
+/** 模拟批量 Phase 的执行入口，并记录各轴独立边界频率和绝对目标坐标。 */
 RobotArmResult_t RobotArm_StartPhase(const RobotArmPhase_t *phase)
 {
     if (phase == 0)
@@ -373,27 +379,33 @@ int main(void)
         for (clear_index = 0u; clear_index < PROTOCOL_V2_PHASE_BATCH_MAX_PAYLOAD;
              clear_index++) batch.payload[clear_index] = 0u;
         batch.seq = 0x390u;
-        batch.length = 36u;
+        batch.length = 44u;
         ProtocolV2_WriteU16LE(&batch.payload[0], 0x1234u);
         batch.payload[2] = 2u;
         phase_offset = PROTOCOL_V2_PHASE_BATCH_HEADER_SIZE;
         batch.payload[phase_offset] = 201u;
         ProtocolV2_WriteU16LE(&batch.payload[phase_offset + 9u], 0u);
         ProtocolV2_WriteU16LE(&batch.payload[phase_offset + 11u], 20000u);
-        batch.payload[phase_offset + 15u] = ROBOT_ARM_PHASE_FLAG_XY_ENABLE;
+        ProtocolV2_WriteU16LE(&batch.payload[phase_offset + 13u], 0u);
+        ProtocolV2_WriteU16LE(&batch.payload[phase_offset + 15u], 15000u);
+        batch.payload[phase_offset + 19u] = ROBOT_ARM_PHASE_FLAG_XY_ENABLE;
         phase_offset = (uint8_t)(phase_offset + PROTOCOL_V2_PHASE_SIZE);
+        batch.payload[phase_offset] = 201u;
         batch.payload[phase_offset + 3u] = 20u;
         ProtocolV2_WriteU16LE(&batch.payload[phase_offset + 9u], 20000u);
         ProtocolV2_WriteU16LE(&batch.payload[phase_offset + 11u], 0u);
-        batch.payload[phase_offset + 15u] = ROBOT_ARM_PHASE_FLAG_XY_ENABLE;
+        ProtocolV2_WriteU16LE(&batch.payload[phase_offset + 13u], 15000u);
+        ProtocolV2_WriteU16LE(&batch.payload[phase_offset + 15u], 0u);
+        batch.payload[phase_offset + 19u] = ROBOT_ARM_PHASE_FLAG_XY_ENABLE;
         s_next_result = ROBOT_ARM_OK;
         s_status.arm_state = ROBOT_ARM_IDLE;
         phase_before = s_phase_start_count;
         before = s_tx_count;
         RobotArmProtocol_HandlePhaseBatch(&batch);
         TEST_CHECK(s_phase_start_count == (uint8_t)(phase_before + 1u));
-        TEST_CHECK(s_last_phase.delta_x == 201);
-        TEST_CHECK(s_last_phase.f0 == 0u && s_last_phase.f1 == 20000u);
+        TEST_CHECK(s_last_phase.target_x == 201);
+        TEST_CHECK(s_last_phase.x_f0 == 0u && s_last_phase.x_f1 == 20000u);
+        TEST_CHECK(s_last_phase.y_f0 == 0u && s_last_phase.y_f1 == 15000u);
         TEST_CHECK(s_tx_count == (uint8_t)(before + 1u));
         TEST_CHECK(s_tx[before].data[1] == ROBOT_ARM_ACK_ACCEPTED);
 
@@ -417,8 +429,9 @@ int main(void)
         TestSetAsyncResult(ROBOT_MOVE_END_COMPLETED, ROBOT_ARM_OK);
         RobotArmProtocol_Task();
         TEST_CHECK(s_phase_start_count == (uint8_t)(phase_before + 2u));
-        TEST_CHECK(s_last_phase.delta_y == 20);
-        TEST_CHECK(s_last_phase.f0 == 20000u && s_last_phase.f1 == 0u);
+        TEST_CHECK(s_last_phase.target_y == 20);
+        TEST_CHECK(s_last_phase.x_f0 == 20000u && s_last_phase.x_f1 == 0u);
+        TEST_CHECK(s_last_phase.y_f0 == 15000u && s_last_phase.y_f1 == 0u);
 
         /* 首条完成并启动第二条后，当前编号和剩余条数必须同步推进。 */
         TestClearFrame(&request, ROBOT_ARM_CMD_STATUS, 0x393u);

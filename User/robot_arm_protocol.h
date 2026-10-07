@@ -18,6 +18,8 @@ typedef enum
     ROBOT_ARM_CMD_STATUS = 0x38,
     /** 仅请求线使用 LEN 的批量相位命令；回复仍沿用固定 24B V2。 */
     ROBOT_ARM_CMD_PHASE_BATCH = 0x39,
+    /** 变长 LEN 请求：XYZ 按各自 100ms 延时独立启动，不做同步配速。 */
+    ROBOT_ARM_CMD_MOVE_TO_DELAYED = 0x40,
     ROBOT_ARM_CMD_ACK = 0x70,
     ROBOT_ARM_CMD_EVENT = 0x71,
     ROBOT_ARM_CMD_STATUS_RSP = 0x72
@@ -102,6 +104,14 @@ void RobotArmProtocol_HandleFrame(const ProtocolV2Frame_t *request);
  * @param request 已通过长度、尾字节和 CRC 校验的变长请求。
  */
 void RobotArmProtocol_HandlePhaseBatch(const ProtocolV2PhaseBatchFrame_t *request);
+/**
+ * 分发已校验的 0x40 变长错峰移动请求。
+ *
+ * ACK 只表示三轴目标、速度和延时计划已受理；真实完成仍必须读取原 CMD/SEQ 的终态。
+ *
+ * @param request 已通过 LEN、尾字节和 CRC 校验的原始请求。
+ */
+void RobotArmProtocol_HandleDelayedMove(const ProtocolV2DelayedMoveFrame_t *request);
 /**
  * 轮询异步 RobotArm 操作并保存最终 0x71 结果，不主动发送串口。
  *
