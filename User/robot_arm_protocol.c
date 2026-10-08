@@ -1,5 +1,6 @@
 #include "robot_arm_protocol.h"
 #include "robot_arm.h"
+#include "robot_arm_driver.h"
 
 typedef struct
 {
@@ -84,14 +85,14 @@ static uint8_t s_last_phase_seq_valid;
 static uint16_t s_last_phase_seq;
 
 /**
- * 校验一个 Batch 内每根实际轴由绝对目标推导出的非零位移方向是否固定。
+ * 根据相邻绝对目标校验 Batch 运动、XY 终止速度及每根实际轴的方向。
  *
  * 同向连续 Phase 才能避免边界重新换向；若同一轴正负混用，必须在尚未输出 STEP 前拒绝，
- * 不能在运行中依赖 DIR 重写修正。
+ * 不能在运行中依赖 DIR 重写修正；全轴静止没有 DMA 终态；实际运动的 X/Y 必须提供非零终止速度，Z 不能使用零速。
  *
  * @param phase 已完成协议基础校验的 Phase 数组。
  * @param count Phase 条数。
- * @return 所有非零轴方向固定时返回 1，否则返回 0。
+ * @return 每条均可推进且各轴方向固定时返回 1，否则返回 0。
  */
 static uint8_t RobotArmProtocol_HasFixedBatchDirections(
     const RobotArmPhase_t *phase, uint8_t count)
@@ -103,59 +104,57 @@ static uint8_t RobotArmProtocol_HasFixedBatchDirections(
     int32_t target;
     int64_t delta;
     int8_t next_direction;
+    uint8_t moved;
 
     current[ROBOT_AXIS_X] = RobotArm_GetX();
     current[ROBOT_AXIS_Y] = RobotArm_GetY();
     current[ROBOT_AXIS_Z] = RobotArm_GetZ();
     for (index = 0u; index < count; index++)
     {
-        if (((phase[index].flags & ROBOT_ARM_PHASE_FLAG_XY_ENABLE) &&
-             phase[index].target_x == current[ROBOT_AXIS_X] &&
-             phase[index].target_y == current[ROBOT_AXIS_Y]) ||
-            ((phase[index].flags & ROBOT_ARM_PHASE_FLAG_Z_ENABLE) &&
-             phase[index].target_z == current[ROBOT_AXIS_Z]))
-        {
-            return 0u;
-        }
+        moved = 0u;
         for (axis = 0u; axis < ROBOT_AXIS_COUNT; axis++)
         {
             target = (axis == ROBOT_AXIS_X) ? phase[index].target_x :
                      ((axis == ROBOT_AXIS_Y) ? phase[index].target_y :
                                                phase[index].target_z);
-            if (((axis != ROBOT_AXIS_Z) &&
-                 !(phase[index].flags & ROBOT_ARM_PHASE_FLAG_XY_ENABLE)) ||
-                ((axis == ROBOT_AXIS_Z) &&
-                 !(phase[index].flags & ROBOT_ARM_PHASE_FLAG_Z_ENABLE)))
-            {
-                if (target != current[axis])
-                    return 0u;
-                continue;
-            }
             delta = (int64_t)target - current[axis];
             if (delta == 0)
                 continue;
+            /* 加速时间为 0 表示本条直接按终止速度匀速运行，不是非法配置。 */
+            if ((axis == ROBOT_AXIS_X) && (phase[index].x_terminal_speed == 0u))
+                return 0u;
+            if ((axis == ROBOT_AXIS_Y) && (phase[index].y_terminal_speed == 0u))
+                return 0u;
+            if ((axis == ROBOT_AXIS_Z) && (phase[index].z_speed == 0u))
+                return 0u;
+            moved = 1u;
             next_direction = (delta > 0) ? 1 : -1;
             if ((direction[axis] != 0) && (direction[axis] != next_direction))
                 return 0u;
             direction[axis] = next_direction;
             current[axis] = target;
         }
+        /* 全轴静止没有 DMA 完成事件，无法推进下一条 Phase。 */
+        if (!moved)
+            return 0u;
     }
     return 1u;
 }
 
-/** 返回当前 Phase 实际需要等待 DMA 完成的机械轴掩码。 */
+/**
+ * 根据当前逻辑坐标与本条绝对目标确定 DMA 完成屏障中的 X/Y/Z 轴。
+ *
+ * @param phase 正在执行的 Phase；未变化的轴不等待完成事件。
+ * @return 本条实际运动轴的位掩码。
+ */
 static uint8_t RobotArmProtocol_GetPhaseAxisMask(const RobotArmPhase_t *phase)
 {
     uint8_t mask = 0u;
-    if ((phase->flags & ROBOT_ARM_PHASE_FLAG_XY_ENABLE) &&
-        phase->target_x != RobotArm_GetX())
+    if (phase->target_x != RobotArm_GetX())
         mask |= (uint8_t)(1u << ROBOT_AXIS_X);
-    if ((phase->flags & ROBOT_ARM_PHASE_FLAG_XY_ENABLE) &&
-        phase->target_y != RobotArm_GetY())
+    if (phase->target_y != RobotArm_GetY())
         mask |= (uint8_t)(1u << ROBOT_AXIS_Y);
-    if ((phase->flags & ROBOT_ARM_PHASE_FLAG_Z_ENABLE) &&
-        phase->target_z != RobotArm_GetZ())
+    if (phase->target_z != RobotArm_GetZ())
         mask |= (uint8_t)(1u << ROBOT_AXIS_Z);
     return mask;
 }
@@ -823,22 +822,13 @@ void RobotArmProtocol_HandlePhaseBatch(const ProtocolV2PhaseBatchFrame_t *reques
         decoded[index].target_x = ProtocolV2_ReadI24LE(&request->payload[offset]);
         decoded[index].target_y = ProtocolV2_ReadI24LE(&request->payload[offset + 3u]);
         decoded[index].target_z = ProtocolV2_ReadI24LE(&request->payload[offset + 6u]);
-        decoded[index].x_f0 = ProtocolV2_ReadU16LE(&request->payload[offset + 9u]);
-        decoded[index].x_f1 = ProtocolV2_ReadU16LE(&request->payload[offset + 11u]);
-        decoded[index].y_f0 = ProtocolV2_ReadU16LE(&request->payload[offset + 13u]);
-        decoded[index].y_f1 = ProtocolV2_ReadU16LE(&request->payload[offset + 15u]);
+        decoded[index].x_terminal_speed = ProtocolV2_ReadU16LE(&request->payload[offset + 9u]);
+        decoded[index].x_acceleration_time_ms = ProtocolV2_ReadU16LE(&request->payload[offset + 11u]);
+        decoded[index].y_terminal_speed = ProtocolV2_ReadU16LE(&request->payload[offset + 13u]);
+        decoded[index].y_acceleration_time_ms = ProtocolV2_ReadU16LE(&request->payload[offset + 15u]);
         decoded[index].z_speed = ProtocolV2_ReadU16LE(&request->payload[offset + 17u]);
-        decoded[index].flags = request->payload[offset + 19u];
-        if (((decoded[index].flags & (ROBOT_ARM_PHASE_FLAG_XY_ENABLE |
-                                      ROBOT_ARM_PHASE_FLAG_Z_ENABLE)) == 0u) ||
-            ((decoded[index].flags & (uint8_t)~(ROBOT_ARM_PHASE_FLAG_XY_ENABLE |
-                ROBOT_ARM_PHASE_FLAG_Z_ENABLE | ROBOT_ARM_PHASE_FLAG_SYNC_END |
-                ROBOT_ARM_PHASE_FLAG_STOP_AT_END)) != 0u) ||
-            ((decoded[index].flags & ROBOT_ARM_PHASE_FLAG_Z_ENABLE) &&
-             decoded[index].z_speed == 0u) ||
-            ((decoded[index].flags & ROBOT_ARM_PHASE_FLAG_XY_ENABLE) &&
-             (decoded[index].x_f0 > 50000u || decoded[index].x_f1 > 50000u ||
-              decoded[index].y_f0 > 50000u || decoded[index].y_f1 > 50000u)))
+        if ((decoded[index].x_terminal_speed > 50000u ||
+             decoded[index].y_terminal_speed > 50000u))
         {
             RobotArmProtocol_SendAck(ROBOT_ARM_CMD_PHASE_BATCH, request->seq,
                                      ROBOT_ARM_ACK_REJECTED, ROBOT_ARM_ERR_CONFIG);
@@ -850,6 +840,34 @@ void RobotArmProtocol_HandlePhaseBatch(const ProtocolV2PhaseBatchFrame_t *reques
         RobotArmProtocol_SendAck(ROBOT_ARM_CMD_PHASE_BATCH, request->seq,
                                  ROBOT_ARM_ACK_REJECTED, ROBOT_ARM_ERR_CONFIG);
         return;
+    }
+    /*
+     * 0x39 在线上不再携带起始速度。每根轴的首个动作从安全起步频率开始；
+     * 后续真正参与运动的 Phase 自动继承该轴上一条的终止速度。静止条目不改变
+     * 缓存，避免 X/Y 在中间仅执行 Z 轴动作后意外退回低速。
+     */
+    {
+        int32_t previous_x = RobotArm_GetX();
+        int32_t previous_y = RobotArm_GetY();
+        uint16_t previous_x_terminal_speed = 0u;
+        uint16_t previous_y_terminal_speed = 0u;
+        for (index = 0u; index < count; index++)
+        {
+            decoded[index].x_start_speed = 0u;
+            decoded[index].y_start_speed = 0u;
+            if (decoded[index].target_x != previous_x)
+            {
+                decoded[index].x_start_speed = previous_x_terminal_speed;
+                previous_x_terminal_speed = decoded[index].x_terminal_speed;
+                previous_x = decoded[index].target_x;
+            }
+            if (decoded[index].target_y != previous_y)
+            {
+                decoded[index].y_start_speed = previous_y_terminal_speed;
+                previous_y_terminal_speed = decoded[index].y_terminal_speed;
+                previous_y = decoded[index].target_y;
+            }
+        }
     }
     s_phase_batch.run_id = ProtocolV2_ReadU16LE(&request->payload[0]);
     s_phase_batch.count = count;
@@ -1050,15 +1068,17 @@ void RobotArmProtocol_Task(void)
 /**
  * 在最后一个参与轴的 DMA TC 收尾后检查当前 Phase 屏障，并直接启动下一条。
  *
- * TC 中断已使对应 STEP 停在低电平；此处先让既有 RobotArm 完整步数校验收尾当前条，
- * 再在同一中断上下文进入下一条的 XYZ_START，避免经主循环和协议轮询形成毫秒级空洞。
- * STOP、LIMIT 或故障会使 RobotArm 不再处于正常完成态，因此不会续启后续 Phase。
+ * TC 中断已使对应 STEP 停在低电平并停用本 chunk 的 DMA；X/Y 同向续条保留 TIM 时基。
+ * 此处先让既有 RobotArm 完整步数校验提交当前坐标，再在同一中断上下文进入下一条的
+ * XYZ_START。下一条不再使用的轴和最终条仍执行完整停机，STOP、LIMIT 或故障也会立即停机。
  *
  * @param axis 刚刚完成当前 Phase 最后一个 DMA chunk 的机械轴。
  */
 void RobotArmProtocol_OnPhaseAxisDmaCompleted(RobotAxisId_t axis)
 {
     uint8_t expected_mask;
+    uint8_t next_mask;
+    uint8_t index;
     RobotArmStatus_t status;
     RobotArmResult_t result;
 
@@ -1088,7 +1108,27 @@ void RobotArmProtocol_OnPhaseAxisDmaCompleted(RobotAxisId_t axis)
     s_phase_done_mask = 0u;
     if (s_phase_batch.index >= s_phase_batch.count)
     {
+        /* 最后一条不再需要连续时基，逐轴完全关闭 DMA/Timer，避免空转占用硬件资源。 */
+        for (index = 0u; index < ROBOT_AXIS_COUNT; index++)
+        {
+            if ((expected_mask & (uint8_t)(1u << index)) != 0u)
+            {
+                RobotArmDriver_Stop((RobotAxisId_t)index);
+            }
+        }
         return;
+    }
+
+    /* 已完成但下一条不再参与的轴不能保留空转时基；仍参与的 X/Y 将直接续装 DMA。 */
+    next_mask = RobotArmProtocol_GetPhaseAxisMask(
+        &s_phase_batch.phase[s_phase_batch.index]);
+    for (index = 0u; index < ROBOT_AXIS_COUNT; index++)
+    {
+        if (((expected_mask & (uint8_t)(1u << index)) != 0u) &&
+            ((next_mask & (uint8_t)(1u << index)) == 0u))
+        {
+            RobotArmDriver_Stop((RobotAxisId_t)index);
+        }
     }
 
     result = RobotArm_StartPhase(&s_phase_batch.phase[s_phase_batch.index]);

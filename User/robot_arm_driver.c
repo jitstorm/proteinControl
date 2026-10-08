@@ -235,14 +235,24 @@ uint8_t RobotArmDriver_StartHomeApproach(
 }
 
 /**
- * 按规划 Phase 的本轴起止频率启动 X/Y DMA。
+ * 按规划 Phase 的本轴终止速度和加速时间启动 X/Y DMA。
  *
- * 两个频率均为上层为本轴指定的起止频率。0Hz 是通信层静止边界，底层 DMA 入口
- * 会替换为可生成 ARR 的最小频率；Z 不允许进入该接口，防止误把 XY 频率施加给 Z。
+ * 起始速度已由批次层从同轴上一条终止速度继承；首次动作使用安全起步频率。
+ * Z 不允许进入该接口，防止误把 XY 的终止速度曲线施加给 PB13。
+ *
+ * @param axis 目标逻辑轴，只允许 X 或 Y。
+ * @param direction 已按目标增量确定的正负运动方向。
+ * @param steps 本轴需要输出的 STEP 上升沿数量。
+ * @param start_frequency 本条继承的起始速度，单位 steps/s。
+ * @param terminal_frequency 本条目标终止速度，单位 steps/s。
+ * @param acceleration_time_ms 正常距离下从起始速度变化到终止速度的时间，单位毫秒；
+ *                             距离不足时由底层压缩，以保证段尾达到终止速度。
+ * @return DMA 已真实进入运行态返回 1；轴不支持、忙碌或启动失败返回 0。
  */
 uint8_t RobotArmDriver_StartPhase(RobotAxisId_t axis, int8_t direction,
                                   uint32_t steps, uint32_t start_frequency,
-                                  uint32_t end_frequency)
+                                  uint32_t terminal_frequency,
+                                  uint32_t acceleration_time_ms)
 {
     if ((steps == 0u) || RobotArmDriver_IsBusy(axis))
     {
@@ -254,14 +264,15 @@ uint8_t RobotArmDriver_StartPhase(RobotAxisId_t axis, int8_t direction,
         return Stepper2_StartPhase(
             RobotArmDriver_GetDirectionLevel(
                 direction, ROBOT_ARM_X_POSITIVE_DIR_LEVEL), steps,
-            start_frequency, end_frequency);
+            start_frequency, terminal_frequency, acceleration_time_ms);
     }
     if (axis == ROBOT_AXIS_Y)
     {
         s_robot_arm_driver_direction[axis] = direction;
         RobotArmDriver_SetPb11Direction(RobotArmDriver_GetDirectionLevel(
             direction, ROBOT_ARM_Y_POSITIVE_DIR_LEVEL));
-        stepdma_pb11_move_phase(steps, start_frequency, end_frequency);
+        stepdma_pb11_move_phase(steps, start_frequency, terminal_frequency,
+                                acceleration_time_ms);
         return stepdma_pb11_is_running();
     }
     return 0u;

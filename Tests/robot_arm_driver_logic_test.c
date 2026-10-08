@@ -57,11 +57,13 @@ void stepdma_pb11_request_trap(uint32_t steps, uint32_t start,
     s_pb11_running = s_allow_start;
 }
 /** 模拟 PB11 Phase 边界频率启动，验证驱动层未退回旧梯形入口。 */
-void stepdma_pb11_move_phase(uint32_t steps, uint32_t start, uint32_t end)
+void stepdma_pb11_move_phase(uint32_t steps, uint32_t start, uint32_t terminal,
+                             uint32_t acceleration_time_ms)
 {
+    (void)acceleration_time_ms;
     s_pb11_steps = steps;
     s_phase_start_frequency = start;
-    s_phase_end_frequency = end;
+    s_phase_end_frequency = terminal;
     s_pb11_running = s_allow_start;
 }
 
@@ -86,12 +88,14 @@ uint8_t Stepper2_Start(uint8_t direction, uint32_t steps,
 }
 /** 模拟 PB10 Phase 边界频率启动，验证方向和频率原样下传。 */
 uint8_t Stepper2_StartPhase(uint8_t direction, uint32_t steps,
-                            uint32_t start, uint32_t end)
+                            uint32_t start, uint32_t terminal,
+                            uint32_t acceleration_time_ms)
 {
+    (void)acceleration_time_ms;
     s_pb10_direction = direction;
     s_pb10_steps = steps;
     s_phase_start_frequency = start;
-    s_phase_end_frequency = end;
+    s_phase_end_frequency = terminal;
     s_pb10_running = s_allow_start;
     return 1u;
 }
@@ -140,16 +144,16 @@ int main(void)
     TEST_CHECK(RobotArmDriver_GetRemainingSteps(ROBOT_AXIS_X) == 1000u);
     RobotArmDriver_Stop(ROBOT_AXIS_X);
 
-    /* Phase 入口只用于 X/Y，必须把不同的起止频率直接交给对应独立 DMA。 */
-    TEST_CHECK(RobotArmDriver_StartPhase(ROBOT_AXIS_X, 1, 201u, 500u, 2412u) == 1u);
+    /* Phase 入口只用于 X/Y，必须把终止速度和加速时间直接交给对应独立 DMA。 */
+    TEST_CHECK(RobotArmDriver_StartPhase(ROBOT_AXIS_X, 1, 201u, 500u, 2412u, 1000u) == 1u);
     TEST_CHECK(s_pb10_steps == 201u && s_phase_start_frequency == 500u &&
                s_phase_end_frequency == 2412u);
     RobotArmDriver_Stop(ROBOT_AXIS_X);
-    TEST_CHECK(RobotArmDriver_StartPhase(ROBOT_AXIS_Y, -1, 1667u, 500u, 20000u) == 1u);
+    TEST_CHECK(RobotArmDriver_StartPhase(ROBOT_AXIS_Y, -1, 1667u, 500u, 20000u, 1000u) == 1u);
     TEST_CHECK(s_pb11_steps == 1667u && s_phase_start_frequency == 500u &&
                s_phase_end_frequency == 20000u);
     RobotArmDriver_Stop(ROBOT_AXIS_Y);
-    TEST_CHECK(RobotArmDriver_StartPhase(ROBOT_AXIS_Z, 1, 100u, 500u, 1000u) == 0u);
+    TEST_CHECK(RobotArmDriver_StartPhase(ROBOT_AXIS_Z, 1, 100u, 500u, 1000u, 1000u) == 0u);
     TEST_CHECK(s_pb10_running == 0u);
 
     /* 现场确认物理 Y 使用 PB11 与 DIR2(Q5)。 */

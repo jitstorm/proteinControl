@@ -222,18 +222,24 @@ static uint32_t trap_get_f(uint32_t step_index)
     if (s_trap.phase_profile)
     {
         uint64_t start_squared = (uint64_t)s_trap.f_start * s_trap.f_start;
-        uint64_t end_squared = (uint64_t)s_trap.f_end * s_trap.f_end;
+        uint64_t terminal_squared = (uint64_t)s_trap.f_end * s_trap.f_end;
+        uint64_t delta_squared = 2ull * (uint64_t)s_trap.accel * done;
         if (done >= total)
         {
             return s_trap.f_end;
         }
-        if (end_squared >= start_squared)
+        /* 加速时间已换算为 steps/s^2；短距离已在启动时提高加速度，段尾仍应达到目标速度。 */
+        if (terminal_squared >= start_squared)
         {
-            v2 = start_squared + ((end_squared - start_squared) * done) / total;
+            v2 = start_squared + delta_squared;
+            if (v2 >= terminal_squared)
+                return s_trap.f_end;
         }
         else
         {
-            v2 = start_squared - ((start_squared - end_squared) * done) / total;
+            if (delta_squared >= (start_squared - terminal_squared))
+                return s_trap.f_end;
+            v2 = start_squared - delta_squared;
         }
         v = isqrt_u64(v2);
         return (v < 1u) ? 1u : v;
@@ -509,6 +515,21 @@ void stepdma_pb11_stop(void)
     GPIO_ResetBits(STEP_GPIO, STEP_MASK);
 }
 
+/**
+ * 结束 PB11 当前 Phase 的脉冲计数，但保留 TIM5 时基以便同向下一 Phase 直接续装 DMA。
+ *
+ * 仅允许 0x39 Phase 的最后一个 DMA chunk 调用。DMA 必须先停止且 STEP 保持低电平，
+ * 这样 RobotArm 仍可提交本段坐标；不关闭 TIM5 可避免下一条重新启动时产生段间空档。
+ */
+static void stepdma_pb11_finish_phase(void)
+{
+    s_running = 0u;
+    s_mode = MODE_IDLE;
+    s_edges_left = 0u;
+    DMA_Cmd(DMA2_Channel2, DISABLE);
+    GPIO_ResetBits(STEP_GPIO, STEP_MASK);
+}
+
 /* =========================
  *  常速：跑 N 步
  * ========================= */
@@ -694,12 +715,71 @@ void stepdma_pb11_move_home_approach(uint32_t steps, uint32_t f_start,
 }
 
 /**
+ * 计算 0x39 单段应使用的恒定加速度。
+ *
+ * 上位机给出的加速时间描述正常距离下的速度变化斜率。若本段位移不足以在该时间内
+ * 从起始速度达到终止速度，则按本段总脉冲数反算更大的加速度，使理论段尾速度严格
+ * 落在终止速度；否则下一段按终止速度续启会形成可感知的速度跳变。
+ *
+ * @param steps 本段需要输出的 STEP 上升沿数量，必须非 0。
+ * @param f_start 本段实际起始速度，单位 steps/s。
+ * @param f_terminal 本段目标终止速度，单位 steps/s。
+ * @param acceleration_time_ms 上位机要求的加速或减速时间，单位毫秒；0 表示匀速。
+ * @return 可直接代入 v^2 = v0^2 + 2as 的加速度，单位 steps/s^2。
+ */
+static uint32_t stepdma_phase_resolve_acceleration(
+    uint32_t steps, uint32_t f_start, uint32_t f_terminal,
+    uint32_t acceleration_time_ms)
+{
+    uint32_t frequency_delta;
+    uint32_t time_acceleration;
+    uint64_t required_steps;
+    uint64_t delta_squared;
+    uint64_t endpoint_acceleration;
+
+    if ((acceleration_time_ms == 0u) || (f_start == f_terminal))
+    {
+        return 1u;
+    }
+
+    frequency_delta = (f_terminal >= f_start) ?
+        (f_terminal - f_start) : (f_start - f_terminal);
+    /* 时间模式下 S_need=(v0+v1)*t/2；向上取整，不让一小段缺口误判为可达。 */
+    required_steps = (((uint64_t)f_start + (uint64_t)f_terminal) *
+                      (uint64_t)acceleration_time_ms + 1999ull) / 2000ull;
+    time_acceleration = (uint32_t)(((uint64_t)frequency_delta * 1000ull +
+                                    acceleration_time_ms - 1u) /
+                                   acceleration_time_ms);
+    if (time_acceleration == 0u)
+    {
+        time_acceleration = 1u;
+    }
+    if ((uint64_t)steps >= required_steps)
+    {
+        return time_acceleration;
+    }
+
+    /* 短距离必须在段尾到达 f_terminal：a=|v1^2-v0^2|/(2*S)，同样向上取整。 */
+    delta_squared = ((uint64_t)f_terminal * (uint64_t)f_terminal >=
+                     (uint64_t)f_start * (uint64_t)f_start) ?
+                    ((uint64_t)f_terminal * (uint64_t)f_terminal -
+                     (uint64_t)f_start * (uint64_t)f_start) :
+                    ((uint64_t)f_start * (uint64_t)f_start -
+                     (uint64_t)f_terminal * (uint64_t)f_terminal);
+    endpoint_acceleration = (delta_squared + 2ull * (uint64_t)steps - 1ull) /
+                            (2ull * (uint64_t)steps);
+    return (endpoint_acceleration == 0ull) ? 1u : (uint32_t)endpoint_acceleration;
+}
+
+/**
  * 按一个规划 Phase 输出 PB11（Y 轴）脉冲。
  *
- * 起止频率已经由上层按本轴完成边界映射；本函数不再把每轴
- * 低频抬到 500Hz。误传 0 时仅兜底为 1Hz，避免产生非法 ARR。
+ * 起始速度由批次上一条终止速度继承；终止速度与加速时间均来自 0x39 当前条。
+ * 距离足够时严格按加速时间换算恒定加速度；距离不足时压缩加速时间，保证段尾
+ * 能达到终止速度，避免下一条按终止速度续启时产生明显跳变。
  */
-void stepdma_pb11_move_phase(uint32_t steps, uint32_t f_start, uint32_t f_end)
+void stepdma_pb11_move_phase(uint32_t steps, uint32_t f_start,
+                             uint32_t f_terminal, uint32_t acceleration_time_ms)
 {
     uint32_t frequency;
     uint32_t chunk_steps;
@@ -708,13 +788,24 @@ void stepdma_pb11_move_phase(uint32_t steps, uint32_t f_start, uint32_t f_end)
         return;
     }
     if (f_start == 0u) f_start = PHASE_TIMER_MIN_FREQUENCY;
-    if (f_end == 0u) f_end = PHASE_TIMER_MIN_FREQUENCY;
+    if (f_terminal == 0u) f_terminal = PHASE_TIMER_MIN_FREQUENCY;
     if (f_start > 50000u) f_start = 50000u;
-    if (f_end > 50000u) f_end = 50000u;
+    if (f_terminal > 50000u) f_terminal = 50000u;
+    /* 0ms 是协议约定的匀速模式：首脉冲即使用本条终止速度，不能参与除以时间的换算。 */
+    if (acceleration_time_ms == 0u)
+    {
+        f_start = f_terminal;
+        s_trap.accel = 1u;
+    }
+    else
+    {
+        s_trap.accel = stepdma_phase_resolve_acceleration(
+            steps, f_start, f_terminal, acceleration_time_ms);
+    }
     s_trap.steps_total = steps;
     s_trap.steps_done = 0u;
     s_trap.f_start = f_start;
-    s_trap.f_end = f_end;
+    s_trap.f_end = f_terminal;
     s_trap.phase_profile = 1u;
     frequency = trap_get_f(0u);
     s_cur_f = frequency;
@@ -915,7 +1006,14 @@ void DMA2_Channel2_IRQHandler(void)
 
         if (s_trap.steps_done >= s_trap.steps_total)
         {
-            stepdma_pb11_stop();
+            if (s_trap.phase_profile)
+            {
+                stepdma_pb11_finish_phase();
+            }
+            else
+            {
+                stepdma_pb11_stop();
+            }
             RobotArmProtocol_OnPhaseAxisDmaCompleted(ROBOT_AXIS_Y);
             return;
         }
@@ -1051,18 +1149,24 @@ static uint32_t trap10_get_f(uint32_t step_index)
     if (s10_trap.phase_profile)
     {
         uint64_t start_squared = (uint64_t)s10_trap.f_start * s10_trap.f_start;
-        uint64_t end_squared = (uint64_t)s10_trap.f_end * s10_trap.f_end;
+        uint64_t terminal_squared = (uint64_t)s10_trap.f_end * s10_trap.f_end;
+        uint64_t delta_squared = 2ull * (uint64_t)s10_trap.accel * done;
         if (done >= total)
         {
             return s10_trap.f_end;
         }
-        if (end_squared >= start_squared)
+        /* 加速时间已换算为 steps/s^2；短距离已在启动时提高加速度，段尾仍应达到目标速度。 */
+        if (terminal_squared >= start_squared)
         {
-            v2 = start_squared + ((end_squared - start_squared) * done) / total;
+            v2 = start_squared + delta_squared;
+            if (v2 >= terminal_squared)
+                return s10_trap.f_end;
         }
         else
         {
-            v2 = start_squared - ((start_squared - end_squared) * done) / total;
+            if (delta_squared >= (start_squared - terminal_squared))
+                return s10_trap.f_end;
+            v2 = start_squared - delta_squared;
         }
         v = isqrt_u64(v2);
         return (v < 1u) ? 1u : v;
@@ -1268,6 +1372,21 @@ void stepdma_pb10_stop(void)
     GPIO_ResetBits(STEP10_GPIO, STEP10_MASK);
 }
 
+/**
+ * 结束 PB10 当前 Phase 的脉冲计数，但保留 TIM6 时基以便同向下一 Phase 直接续装 DMA。
+ *
+ * 仅用于 0x39 Phase 的最后一个 DMA chunk。逻辑 running 必须先清除，以便 RobotArm
+ * 依据已完成步数提交当前坐标；DMA 和 STEP 低电平仍受控，TIM6 仅作为无输出的连续时基保留。
+ */
+static void stepdma_pb10_finish_phase(void)
+{
+    s10_running = 0u;
+    s10_mode = MODE10_IDLE;
+    s10_edges_left = 0u;
+    DMA_Cmd(DMA2_Channel3, DISABLE);
+    GPIO_ResetBits(STEP10_GPIO, STEP10_MASK);
+}
+
 void stepdma_pb10_move_steps(uint32_t steps, uint32_t fstep_hz)
 {
     uint32_t edges_total;
@@ -1416,12 +1535,13 @@ void stepdma_pb10_move_home_approach(uint32_t steps, uint32_t f_start,
 }
 
 /**
- * 按一个规划 Phase 输出 PB10（X 轴）脉冲，末端频率由 f_end 决定。
+ * 按一个规划 Phase 输出 PB10（X 轴）脉冲，终止速度和加速时间由 0x39 当前条决定。
  *
- * 起止频率已按本轴完成边界映射，60Hz 等合法频率必须原样进入 TIM6；误传
- * 0 时仅兜底为 1Hz，避免产生非法 ARR。
+ * 起始速度由批次上一条终止速度继承；60Hz 等合法频率必须原样进入 TIM6。
+ * 距离不足以按给定时间达到终止速度时，压缩实际加速时间以保证段尾速度连续。
  */
-void stepdma_pb10_move_phase(uint32_t steps, uint32_t f_start, uint32_t f_end)
+void stepdma_pb10_move_phase(uint32_t steps, uint32_t f_start,
+                             uint32_t f_terminal, uint32_t acceleration_time_ms)
 {
     uint32_t frequency;
     uint32_t chunk_steps;
@@ -1430,15 +1550,26 @@ void stepdma_pb10_move_phase(uint32_t steps, uint32_t f_start, uint32_t f_end)
         return;
     }
     if (f_start == 0u) f_start = PHASE_TIMER_MIN_FREQUENCY;
-    if (f_end == 0u) f_end = PHASE_TIMER_MIN_FREQUENCY;
+    if (f_terminal == 0u) f_terminal = PHASE_TIMER_MIN_FREQUENCY;
     if (f_start > STEPPER2_MAX_FREQUENCY) f_start = STEPPER2_MAX_FREQUENCY;
-    if (f_end > STEPPER2_MAX_FREQUENCY) f_end = STEPPER2_MAX_FREQUENCY;
+    if (f_terminal > STEPPER2_MAX_FREQUENCY) f_terminal = STEPPER2_MAX_FREQUENCY;
+    /* 0ms 是协议约定的匀速模式：首脉冲即使用本条终止速度，不能参与除以时间的换算。 */
+    if (acceleration_time_ms == 0u)
+    {
+        f_start = f_terminal;
+        s10_trap.accel = 1u;
+    }
+    else
+    {
+        s10_trap.accel = stepdma_phase_resolve_acceleration(
+            steps, f_start, f_terminal, acceleration_time_ms);
+    }
     s10_trap.steps_total = steps;
     s10_trap.steps_done = 0u;
     s10_completed_steps = 0u;
     s10_remaining_steps = steps;
     s10_trap.f_start = f_start;
-    s10_trap.f_end = f_end;
+    s10_trap.f_end = f_terminal;
     s10_trap.phase_profile = 1u;
     frequency = trap10_get_f(0u);
     s10_cur_f = frequency;
@@ -1579,8 +1710,14 @@ void DMA2_Channel3_IRQHandler(void)
 
         if (s10_trap.steps_done >= s10_trap.steps_total)
         {
-
-            stepdma_pb10_stop();
+            if (s10_trap.phase_profile)
+            {
+                stepdma_pb10_finish_phase();
+            }
+            else
+            {
+                stepdma_pb10_stop();
+            }
             RobotArmProtocol_OnPhaseAxisDmaCompleted(ROBOT_AXIS_X);
             return;
         }
@@ -1695,13 +1832,15 @@ uint8_t Stepper2_StartWithAcceleration(uint8_t direction, uint32_t steps,
 }
 
 /**
- * 启动实际 PU1（X 轴）的 Phase 起止频率动作。
+ * 启动实际 PU1（X 轴）的 Phase 终止速度动作。
  *
  * 方向与普通动作采用同一 74HC595 DIR1 映射；仅替换 PB10/TIM6/DMA 的速度曲线，
- * 不建立第二套坐标或限位路径。
+ * 终止速度和加速时间由 0x39 当前条提供，不建立第二套坐标或限位路径。
  */
 uint8_t Stepper2_StartPhase(uint8_t direction, uint32_t steps,
-                             uint32_t start_frequency, uint32_t end_frequency)
+                             uint32_t start_frequency,
+                             uint32_t terminal_frequency,
+                             uint32_t acceleration_time_ms)
 {
     uint8_t direction_changed;
     if (steps == 0u || stepdma_pb10_is_running())
@@ -1709,14 +1848,18 @@ uint8_t Stepper2_StartPhase(uint8_t direction, uint32_t steps,
         return 0u;
     }
     direction_changed = (s10_direction_level != (int8_t)(direction ? 1u : 0u)) ? 1u : 0u;
-    stepdma_pb10_stop();
+    /* 同向 Phase 已由 finish_phase 保留 TIM6；只有确实需要改 DIR1 时才关闭时基。 */
+    if (direction_changed)
+    {
+        stepdma_pb10_stop();
+    }
     Stepper2_SetDirection(direction);
     /* 同一 Batch 已在首条建立 DIR1，续条不重复等待方向建立时间。 */
     if (direction_changed)
     {
         Delay_us(2u);
     }
-    stepdma_pb10_move_phase(steps, start_frequency, end_frequency);
+    stepdma_pb10_move_phase(steps, start_frequency, terminal_frequency, acceleration_time_ms);
     return stepdma_pb10_is_running();
 }
 

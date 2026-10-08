@@ -12,8 +12,12 @@ static uint8_t s_busy[ROBOT_AXIS_COUNT];
 static uint32_t s_remaining[ROBOT_AXIS_COUNT];
 static uint32_t s_completed[ROBOT_AXIS_COUNT];
 static uint32_t s_start_count[ROBOT_AXIS_COUNT];
+/** 记录协议层主动要求底层停机的次数，用于验证同向续段不会调用 STOP。 */
+static uint32_t s_stop_count[ROBOT_AXIS_COUNT];
 static uint32_t s_phase_start[ROBOT_AXIS_COUNT];
 static uint32_t s_phase_end[ROBOT_AXIS_COUNT];
+/** 记录 X/Y 当前 Phase 实际下传的加速时间，单位毫秒；0 表示匀速。 */
+static uint32_t s_phase_acceleration_time_ms[ROBOT_AXIS_COUNT];
 static ProtocolV2Frame_t s_tx[64];
 static uint8_t s_tx_count;
 uint8_t g_robot_arm_logic_test_pose_safety_blocked;
@@ -46,20 +50,63 @@ uint8_t RobotArmDriver_Start(RobotAxisId_t axis, int8_t direction,
     s_start_count[axis]++;
     return 1u;
 }
-/** 模拟 X/Y Phase DMA 启动并记录真正传入的比例频率。 */
+/**
+ * 提供未触发的 Home 驱动桩，保证 Phase 端到端测试可独立链接。
+ *
+ * @param axis 模拟启动的机械轴。
+ * @param direction 模拟运动方向。
+ * @param steps 模拟输出的 STEP 脉冲数。
+ * @param speed 模拟速度，单位 steps/s。
+ * @param acceleration Home 加速度，本测试不模拟加速轮廓。
+ * @return 驱动桩受理结果，与普通启动桩一致。
+ */
+uint8_t RobotArmDriver_StartWithAcceleration(
+    RobotAxisId_t axis, int8_t direction, uint32_t steps, uint32_t speed,
+    uint32_t acceleration)
+{
+    (void)acceleration;
+    return RobotArmDriver_Start(axis, direction, steps, speed);
+}
+/**
+ * 提供未触发的 Home 末段驱动桩，不模拟寻零速度轮廓。
+ *
+ * @param axis 模拟启动的机械轴。
+ * @param direction 模拟运动方向。
+ * @param steps 模拟输出的 STEP 脉冲数。
+ * @param fast_speed 快速段速度，单位 steps/s。
+ * @param slow_speed 慢速段速度，单位 steps/s；本测试不模拟切换。
+ * @param slow_zone_steps 慢速段长度，单位 STEP 脉冲；本测试不模拟切换。
+ * @param acceleration Home 加速度，本测试不模拟加速轮廓。
+ * @return 驱动桩受理结果，与普通启动桩一致。
+ */
+uint8_t RobotArmDriver_StartHomeApproach(
+    RobotAxisId_t axis, int8_t direction, uint32_t steps, uint32_t fast_speed,
+    uint32_t slow_speed, uint32_t slow_zone_steps, uint32_t acceleration)
+{
+    (void)slow_speed; (void)slow_zone_steps; (void)acceleration;
+    return RobotArmDriver_Start(axis, direction, steps, fast_speed);
+}
+/** 模拟 X/Y Phase DMA 启动并记录真正传入的各轴独立频率。 */
 uint8_t RobotArmDriver_StartPhase(RobotAxisId_t axis, int8_t direction,
                                   uint32_t steps, uint32_t start_frequency,
-                                  uint32_t end_frequency)
+                                  uint32_t terminal_frequency,
+                                  uint32_t acceleration_time_ms)
 {
     (void)direction;
     if ((axis == ROBOT_AXIS_Z) || s_busy[axis] || steps == 0u) return 0u;
     s_busy[axis] = 1u; s_remaining[axis] = steps; s_completed[axis] = 0u;
     s_start_count[axis]++;
     s_phase_start[axis] = start_frequency;
-    s_phase_end[axis] = end_frequency;
+    s_phase_end[axis] = terminal_frequency;
+    s_phase_acceleration_time_ms[axis] = acceleration_time_ms;
     return 1u;
 }
-void RobotArmDriver_Stop(RobotAxisId_t axis) { s_busy[axis] = 0u; }
+/** 模拟实际 DMA 停机，并记录是否在同向连续 Phase 的中间边界错误停止。 */
+void RobotArmDriver_Stop(RobotAxisId_t axis)
+{
+    s_stop_count[axis]++;
+    s_busy[axis] = 0u;
+}
 uint8_t RobotArmDriver_IsBusy(RobotAxisId_t axis) { return s_busy[axis]; }
 uint32_t RobotArmDriver_GetRemainingSteps(RobotAxisId_t axis) { return s_remaining[axis]; }
 uint32_t RobotArmDriver_GetCompletedSteps(RobotAxisId_t axis) { return s_completed[axis]; }
@@ -87,7 +134,9 @@ static void TestReset(void)
     for (axis = 0u; axis < ROBOT_AXIS_COUNT; axis++)
     {
         s_busy[axis] = 0u; s_remaining[axis] = 0u; s_completed[axis] = 0u;
-        s_start_count[axis] = 0u; s_phase_start[axis] = 0u; s_phase_end[axis] = 0u;
+        s_start_count[axis] = 0u; s_stop_count[axis] = 0u;
+        s_phase_start[axis] = 0u; s_phase_end[axis] = 0u;
+        s_phase_acceleration_time_ms[axis] = 0u;
     }
     s_now_ms = 0u; s_tx_count = 0u;
     ProtocolV2_Init();
@@ -214,7 +263,6 @@ static uint16_t TestBuildBatch(uint8_t *raw, uint16_t seq, uint16_t run_id,
             ProtocolV2_WriteU16LE(&raw[offset + 9u], 0u); ProtocolV2_WriteU16LE(&raw[offset + 11u], 0u);
             ProtocolV2_WriteU16LE(&raw[offset + 13u], 0u); ProtocolV2_WriteU16LE(&raw[offset + 15u], 0u);
             ProtocolV2_WriteU16LE(&raw[offset + 17u], 300u + index);
-            raw[offset + 19u] = ROBOT_ARM_PHASE_FLAG_Z_ENABLE;
         }
         else
         {
@@ -224,14 +272,11 @@ static uint16_t TestBuildBatch(uint8_t *raw, uint16_t seq, uint16_t run_id,
             TestWriteI24(&raw[offset], x_target);
             TestWriteI24(&raw[offset + 3u], y_target);
             TestWriteI24(&raw[offset + 6u], z_target);
-            ProtocolV2_WriteU16LE(&raw[offset + 9u], (index == 0u) ? 0u : 1000u + index);
-            ProtocolV2_WriteU16LE(&raw[offset + 11u], 2000u + index);
-            ProtocolV2_WriteU16LE(&raw[offset + 13u], (index == 0u) ? 0u : 700u + index);
-            ProtocolV2_WriteU16LE(&raw[offset + 15u], 1500u + index);
+            ProtocolV2_WriteU16LE(&raw[offset + 9u], 2000u + index);
+            ProtocolV2_WriteU16LE(&raw[offset + 11u], 1000u);
+            ProtocolV2_WriteU16LE(&raw[offset + 13u], 1500u + index);
+            ProtocolV2_WriteU16LE(&raw[offset + 15u], 1000u);
             ProtocolV2_WriteU16LE(&raw[offset + 17u], 400u + index);
-            raw[offset + 19u] = (mixed && ((index % 4u) == 2u)) ?
-                                  (ROBOT_ARM_PHASE_FLAG_XY_ENABLE | ROBOT_ARM_PHASE_FLAG_Z_ENABLE |
-                                   ROBOT_ARM_PHASE_FLAG_SYNC_END) : ROBOT_ARM_PHASE_FLAG_XY_ENABLE;
         }
     }
     raw[frame_length - 3u] = 0x55u;
@@ -258,14 +303,14 @@ int main(void)
     uint16_t offset;
     uint8_t chunks[] = {1u, 7u, 13u, 2u, 31u, 5u, 64u, 3u, 17u};
 
-    /* Test 1：254B 一次性输入。 */
+    /* Test 1：242B 一次性输入。 */
     TestReset(); guarded.before = 0xA5u; guarded.after = 0x5Au;
     length = TestBuildBatch(guarded.raw, 100u, 0x1234u, 12u, 0u);
-    TEST_CHECK(length == 206u); TestFeed(guarded.raw, length, 0u); TestTick();
+    TEST_CHECK(length == 242u); TestFeed(guarded.raw, length, 0u); TestTick();
     TEST_CHECK(TestAckCount() == 1u && s_start_count[ROBOT_AXIS_X] == 1u);
     TEST_CHECK(guarded.before == 0xA5u && guarded.after == 0x5Au);
 
-    /* Test 2：同一 254B 帧每次只进入一个 UART 字节。 */
+    /* Test 2：同一 242B 帧每次只进入一个 UART 字节。 */
     TestReset(); length = TestBuildBatch(guarded.raw, 101u, 0x1234u, 12u, 0u);
     TestFeed(guarded.raw, length, 1u); TestTick();
     TEST_CHECK(TestAckCount() == 1u && s_start_count[ROBOT_AXIS_Y] == 1u);
@@ -280,10 +325,10 @@ int main(void)
     }
     TestTick(); TEST_CHECK(TestAckCount() == 1u && s_start_count[ROBOT_AXIS_X] == 1u);
 
-    /* Test 4：最大 16 Phase / 324B payload / 334B frame 和哨兵边界。 */
+    /* Test 4：最大 16 Phase / 308B payload / 318B frame 和哨兵边界。 */
     TestReset(); guarded.before = 0xA5u; guarded.after = 0x5Au;
     length = TestBuildBatch(guarded.raw, 103u, 0x5678u, 16u, 1u);
-    TEST_CHECK(length == 334u); TestFeed(guarded.raw, length, 1u); TestTick();
+    TEST_CHECK(length == 318u); TestFeed(guarded.raw, length, 1u); TestTick();
     TEST_CHECK(TestAckCount() == 1u && guarded.before == 0xA5u && guarded.after == 0x5Au);
 
     /* Test 5：两帧粘包按 main.c 的 64B 消费节奏处理，B 因 A 活动得到 BUSY。 */
@@ -296,7 +341,7 @@ int main(void)
     TestTick();
     TEST_CHECK(TestAckCount() == 2u && s_tx[s_tx_count - 1u].data[2] == ROBOT_ARM_ERR_BUSY);
 
-    /* Test 6：坏 CRC 后的合法 206B 帧必须重新同步并接受。 */
+    /* Test 6：坏 CRC 后的合法 242B 帧必须重新同步并接受。 */
     TestReset(); length = TestBuildBatch(guarded.raw, 106u, 1u, 12u, 0u);
     guarded.raw[length - 1u] ^= 1u; TestFeed(guarded.raw, length, 1u);
     length = TestBuildBatch(raw2, 107u, 2u, 12u, 0u); TestFeed(raw2, length, 1u); TestTick();
@@ -309,16 +354,23 @@ int main(void)
     TestReset(); length = TestBuildBatch(guarded.raw, 109u, 1u, 16u, 0u);
     TestFeed(guarded.raw, 100u, 1u); TEST_CHECK(TestAckCount() == 0u);
     TestReset(); length = TestBuildBatch(guarded.raw, 110u, 1u, 16u, 0u);
-    ProtocolV2_WriteU16LE(&guarded.raw[5], 244u); TestFeed(guarded.raw, length, 1u);
+    guarded.raw[9] = 15u;
+    ProtocolV2_WriteU16LE(&guarded.raw[length - 2u],
+                          ProtocolV2_CalculateCrc(guarded.raw, (uint16_t)(length - 2u)));
+    TestFeed(guarded.raw, length, 1u);
     TEST_CHECK(TestAckCount() == 1u && s_tx[0].data[1] == ROBOT_ARM_ACK_REJECTED);
     TestReset(); length = TestBuildBatch(guarded.raw, 111u, 1u, 16u, 0u);
-    guarded.raw[9] = 17u; TestFeed(guarded.raw, length, 1u);
+    guarded.raw[9] = 17u;
+    ProtocolV2_WriteU16LE(&guarded.raw[length - 2u],
+                          ProtocolV2_CalculateCrc(guarded.raw, (uint16_t)(length - 2u)));
+    TestFeed(guarded.raw, length, 1u);
     TEST_CHECK(TestAckCount() == 1u && s_tx[0].data[1] == ROBOT_ARM_ACK_REJECTED);
 
     /* Test 8：16 条混合 Phase 必须严格顺序执行到最终终态。 */
     TestReset(); length = TestBuildBatch(guarded.raw, 112u, 1u, 16u, 1u);
     TestFeed(guarded.raw, length, 1u); TestTick();
     for (index = 0u; index < 16u; index++) TestCompleteCurrent();
+    TestTick();
     TEST_CHECK(RobotArm_IsBusy() == 0u && s_start_count[ROBOT_AXIS_X] == 12u &&
                s_start_count[ROBOT_AXIS_Y] == 12u && s_start_count[ROBOT_AXIS_Z] == 8u);
     TestBuildStatusPage3(raw2, 118u); TestFeed(raw2, PROTOCOL_V2_FRAME_SIZE, 1u);
@@ -328,11 +380,9 @@ int main(void)
 
     /* Test 9：XYZ 的任一轴未完成时，不得越过当前 Phase 启动下一条。 */
     TestReset(); length = TestBuildBatch(guarded.raw, 113u, 1u, 2u, 0u);
-    offset = 11u; guarded.raw[offset + 19u] = (ROBOT_ARM_PHASE_FLAG_XY_ENABLE |
-                                                ROBOT_ARM_PHASE_FLAG_Z_ENABLE |
-                                                ROBOT_ARM_PHASE_FLAG_SYNC_END);
+    offset = 11u;
     TestWriteI24(&guarded.raw[offset + 6u], 5);
-    /* 第二条未启用 Z 时必须显式保持第一条已到达的绝对 Z=5。 */
+    /* 第二条 Z 目标保持首条终点，自动判定该轴静止。 */
     TestWriteI24(&guarded.raw[(uint16_t)(offset + PROTOCOL_V2_PHASE_SIZE + 6u)], 5);
     { uint16_t crc = ProtocolV2_CalculateCrc(guarded.raw, (uint16_t)(length - 2u)); ProtocolV2_WriteU16LE(&guarded.raw[length - 2u], crc); }
     TestFeed(guarded.raw, length, 1u); TestTick();
@@ -354,20 +404,37 @@ int main(void)
                      ((index == 1u) ? 1390 : 1591));
         TestWriteI24(&guarded.raw[offset + 3u], (index == 0u) ? 18333 :
                      ((index == 1u) ? 8478 : 6811));
-        ProtocolV2_WriteU16LE(&guarded.raw[offset + 9u], (index == 0u) ? 0u : 20000u);
-        ProtocolV2_WriteU16LE(&guarded.raw[offset + 11u], (index == 2u) ? 0u : 20000u);
-        ProtocolV2_WriteU16LE(&guarded.raw[offset + 13u], (index == 0u) ? 0u : 15000u);
-        ProtocolV2_WriteU16LE(&guarded.raw[offset + 15u], (index == 2u) ? 0u : 15000u);
+        ProtocolV2_WriteU16LE(&guarded.raw[offset + 9u], 20000u);
+        ProtocolV2_WriteU16LE(&guarded.raw[offset + 11u], 1000u);
+        ProtocolV2_WriteU16LE(&guarded.raw[offset + 13u], 15000u);
+        ProtocolV2_WriteU16LE(&guarded.raw[offset + 15u], 1000u);
     }
     { uint16_t crc = ProtocolV2_CalculateCrc(guarded.raw, (uint16_t)(length - 2u)); ProtocolV2_WriteU16LE(&guarded.raw[length - 2u], crc); }
     TestFeed(guarded.raw, length, 1u); TestTick();
     TEST_CHECK(s_phase_start[ROBOT_AXIS_X] == 500u && s_phase_start[ROBOT_AXIS_Y] == 500u &&
-               s_phase_end[ROBOT_AXIS_X] == 20000u && s_phase_end[ROBOT_AXIS_Y] == 15000u);
+               s_phase_end[ROBOT_AXIS_X] == 20000u && s_phase_end[ROBOT_AXIS_Y] == 15000u &&
+               s_phase_acceleration_time_ms[ROBOT_AXIS_X] == 1000u &&
+               s_phase_acceleration_time_ms[ROBOT_AXIS_Y] == 1000u);
 
-    /* Test 11：相同 SEQ 只 ACK，不能二次启动或覆盖活动 Batch。 */
+    /* Test 11：0ms 必须直达终止速度匀速运行，而不是退化为 1ms 加速。 */
+    TestReset(); length = TestBuildBatch(guarded.raw, 126u, 9u, 1u, 0u);
+    ProtocolV2_WriteU16LE(&guarded.raw[20u], 3000u);
+    ProtocolV2_WriteU16LE(&guarded.raw[22u], 0u);
+    ProtocolV2_WriteU16LE(&guarded.raw[24u], 2800u);
+    ProtocolV2_WriteU16LE(&guarded.raw[26u], 0u);
+    ProtocolV2_WriteU16LE(&guarded.raw[length - 2u],
+                          ProtocolV2_CalculateCrc(guarded.raw, (uint16_t)(length - 2u)));
+    TestFeed(guarded.raw, length, 1u); TestTick();
+    TEST_CHECK(TestAckCount() == 1u && s_tx[0].data[1] == ROBOT_ARM_ACK_ACCEPTED &&
+               s_phase_start[ROBOT_AXIS_X] == 500u && s_phase_end[ROBOT_AXIS_X] == 3000u &&
+               s_phase_acceleration_time_ms[ROBOT_AXIS_X] == 0u &&
+               s_phase_start[ROBOT_AXIS_Y] == 500u && s_phase_end[ROBOT_AXIS_Y] == 2800u &&
+               s_phase_acceleration_time_ms[ROBOT_AXIS_Y] == 0u);
+
+    /* Test 12：相同 SEQ 只 ACK，不能二次启动或覆盖活动 Batch。 */
     TestFeed(guarded.raw, length, 1u); TEST_CHECK(TestAckCount() == 2u && s_start_count[ROBOT_AXIS_X] == 1u);
 
-    /* Test 12：Phase5 中 STOP 必须停止当前 DMA、废弃后续条目，并允许新的 Batch。 */
+    /* Test 13：Phase5 中 STOP 必须停轴并废弃后续条目；位置失效前不能再启动 Batch。 */
     TestReset(); length = TestBuildBatch(guarded.raw, 115u, 1u, 16u, 1u);
     TestFeed(guarded.raw, length, 1u); TestTick();
     for (index = 0u; index < 5u; index++) TestCompleteCurrent();
@@ -377,35 +444,109 @@ int main(void)
       TEST_CHECK(s_busy[ROBOT_AXIS_X] == 0u && s_busy[ROBOT_AXIS_Y] == 0u && s_busy[ROBOT_AXIS_Z] == 0u);
       TestTick(); TestTick();
       TEST_CHECK((s_start_count[ROBOT_AXIS_X] + s_start_count[ROBOT_AXIS_Y] + s_start_count[ROBOT_AXIS_Z]) == starts_before);
-      length = TestBuildBatch(raw2, 117u, 2u, 1u, 0u); TestFeed(raw2, length, 1u); TestTick();
-       TEST_CHECK(s_start_count[ROBOT_AXIS_X] + s_start_count[ROBOT_AXIS_Y] + s_start_count[ROBOT_AXIS_Z] > starts_before); }
+      /* 先消费原批次 STOPPED 终态，避免新请求覆盖原 CMD/SEQ。 */
+      TestBuildStatusPage3(raw2, 116u); TestFeed(raw2, PROTOCOL_V2_FRAME_SIZE, 1u);
+      length = TestBuildBatch(raw2, 117u, 2u, 1u, 0u);
+      TestWriteI24(&raw2[11u], RobotArm_GetX() + 10);
+      TestWriteI24(&raw2[14u], RobotArm_GetY() + 20);
+      ProtocolV2_WriteU16LE(&raw2[length - 2u],
+                            ProtocolV2_CalculateCrc(raw2, (uint16_t)(length - 2u)));
+      TestFeed(raw2, length, 1u); TestTick();
+       TEST_CHECK((s_start_count[ROBOT_AXIS_X] + s_start_count[ROBOT_AXIS_Y] + s_start_count[ROBOT_AXIS_Z]) == starts_before);
+       TEST_CHECK(s_tx[s_tx_count - 1u].cmd == ROBOT_ARM_CMD_ACK &&
+                  s_tx[s_tx_count - 1u].data[1] == ROBOT_ARM_ACK_REJECTED); }
 
-    /* Test 13：三条同方向 Phase 的下一条必须由最后一个 DMA TC 直接启动，不调用 TestTick；
-     * 边界频率由下一条独立 X/Y 的起始字段直接生效，不能被距离比例改写。 */
+    /* Test 14：三条同方向 Phase 的下一条必须由最后一个 DMA TC 直接启动，不调用 TestTick；
+     * 下一条起始速度必须自动继承上一条终止速度，不能被距离比例改写。 */
     TestReset(); length = TestBuildBatch(guarded.raw, 119u, 3u, 3u, 0u);
-    ProtocolV2_WriteU16LE(&guarded.raw[40u], 1200u);
-    ProtocolV2_WriteU16LE(&guarded.raw[42u], 2200u);
-    ProtocolV2_WriteU16LE(&guarded.raw[44u], 700u);
-    ProtocolV2_WriteU16LE(&guarded.raw[46u], 1700u);
+    ProtocolV2_WriteU16LE(&guarded.raw[39u], 2200u);
+    ProtocolV2_WriteU16LE(&guarded.raw[41u], 1000u);
+    ProtocolV2_WriteU16LE(&guarded.raw[43u], 1700u);
+    ProtocolV2_WriteU16LE(&guarded.raw[45u], 1000u);
     { uint16_t crc = ProtocolV2_CalculateCrc(guarded.raw, (uint16_t)(length - 2u)); ProtocolV2_WriteU16LE(&guarded.raw[length - 2u], crc); }
     TestFeed(guarded.raw, length, 1u); TestTick();
     TestCompleteCurrent();
     TEST_CHECK(s_start_count[ROBOT_AXIS_X] == 2u && s_start_count[ROBOT_AXIS_Y] == 2u);
-    TEST_CHECK(s_phase_start[ROBOT_AXIS_X] == 1200u && s_phase_end[ROBOT_AXIS_X] == 2200u &&
-               s_phase_start[ROBOT_AXIS_Y] == 700u && s_phase_end[ROBOT_AXIS_Y] == 1700u);
+    TEST_CHECK(s_stop_count[ROBOT_AXIS_X] == 0u && s_stop_count[ROBOT_AXIS_Y] == 0u);
+    TEST_CHECK(s_phase_start[ROBOT_AXIS_X] == 2000u && s_phase_end[ROBOT_AXIS_X] == 2200u &&
+               s_phase_start[ROBOT_AXIS_Y] == 1500u && s_phase_end[ROBOT_AXIS_Y] == 1700u);
     TestCompleteCurrent();
     TEST_CHECK(s_start_count[ROBOT_AXIS_X] == 3u && s_start_count[ROBOT_AXIS_Y] == 3u);
+    TEST_CHECK(s_stop_count[ROBOT_AXIS_X] == 0u && s_stop_count[ROBOT_AXIS_Y] == 0u);
     TestCompleteCurrent(); TestTick();
+    TEST_CHECK(s_stop_count[ROBOT_AXIS_X] == 1u && s_stop_count[ROBOT_AXIS_Y] == 1u);
     TestBuildStatusPage3(raw2, 120u); TestFeed(raw2, PROTOCOL_V2_FRAME_SIZE, 1u);
     TEST_CHECK(s_tx[s_tx_count - 1u].data[6] == ROBOT_ARM_EVENT_COMPLETED);
 
-    /* Test 14：同一轴跨条反向必须在启动前 CONFIG 拒绝，不能先输出首条 STEP。 */
+    /* Test 15：同一轴跨条反向必须在启动前 CONFIG 拒绝，不能先输出首条 STEP。 */
     TestReset(); length = TestBuildBatch(guarded.raw, 121u, 4u, 2u, 0u);
-    TestWriteI24(&guarded.raw[31u], -11); /* Phase1 target_x 位于固定 Batch payload 的第二条起点。 */
+    TestWriteI24(&guarded.raw[30u], -11); /* Phase1 target_x 位于固定 Batch payload 的第二条起点。 */
     { uint16_t crc = ProtocolV2_CalculateCrc(guarded.raw, (uint16_t)(length - 2u)); ProtocolV2_WriteU16LE(&guarded.raw[length - 2u], crc); }
     TestFeed(guarded.raw, length, 1u);
     TEST_CHECK(s_start_count[ROBOT_AXIS_X] == 0u && TestAckCount() == 1u &&
                s_tx[0].data[1] == ROBOT_ARM_ACK_REJECTED && s_tx[0].data[2] == ROBOT_ARM_ERR_CONFIG);
+
+    /* Test 16：三轴目标均不变时无 DMA 终态，必须在启动前拒绝。 */
+    TestReset(); length = TestBuildBatch(guarded.raw, 122u, 5u, 1u, 0u);
+    TestWriteI24(&guarded.raw[11u], 0);
+    TestWriteI24(&guarded.raw[14u], 0);
+    ProtocolV2_WriteU16LE(&guarded.raw[length - 2u],
+                          ProtocolV2_CalculateCrc(guarded.raw, (uint16_t)(length - 2u)));
+    TestFeed(guarded.raw, length, 1u);
+    TEST_CHECK(TestAckCount() == 1u && s_tx[0].data[2] == ROBOT_ARM_ERR_CONFIG &&
+               s_start_count[ROBOT_AXIS_X] == 0u);
+
+    /* Test 17：仅 Z 目标变化时自动启动 Z；零速必须拒绝。 */
+    TestReset(); length = TestBuildBatch(guarded.raw, 123u, 6u, 1u, 0u);
+    TestWriteI24(&guarded.raw[11u], 0);
+    TestWriteI24(&guarded.raw[14u], 0);
+    TestWriteI24(&guarded.raw[17u], 5);
+    ProtocolV2_WriteU16LE(&guarded.raw[28u], 0u);
+    ProtocolV2_WriteU16LE(&guarded.raw[length - 2u],
+                          ProtocolV2_CalculateCrc(guarded.raw, (uint16_t)(length - 2u)));
+    TestFeed(guarded.raw, length, 1u);
+    TEST_CHECK(TestAckCount() == 1u && s_tx[0].data[2] == ROBOT_ARM_ERR_CONFIG &&
+               s_start_count[ROBOT_AXIS_Z] == 0u);
+    TestReset(); length = TestBuildBatch(guarded.raw, 124u, 7u, 1u, 0u);
+    TestWriteI24(&guarded.raw[11u], 0);
+    TestWriteI24(&guarded.raw[14u], 0);
+    TestWriteI24(&guarded.raw[17u], 5);
+    ProtocolV2_WriteU16LE(&guarded.raw[length - 2u],
+                          ProtocolV2_CalculateCrc(guarded.raw, (uint16_t)(length - 2u)));
+    TestFeed(guarded.raw, length, 1u); TestTick();
+    TEST_CHECK(TestAckCount() == 1u && s_tx[0].data[1] == ROBOT_ARM_ACK_ACCEPTED &&
+               s_start_count[ROBOT_AXIS_X] == 0u && s_start_count[ROBOT_AXIS_Y] == 0u &&
+               s_start_count[ROBOT_AXIS_Z] == 1u);
+
+    /* Test 18：实际运动的 X/Y 终止速度为 0 必须在输出 STEP 前拒绝。 */
+    TestReset(); length = TestBuildBatch(guarded.raw, 127u, 10u, 1u, 0u);
+    ProtocolV2_WriteU16LE(&guarded.raw[20u], 0u);
+    ProtocolV2_WriteU16LE(&guarded.raw[length - 2u],
+                          ProtocolV2_CalculateCrc(guarded.raw, (uint16_t)(length - 2u)));
+    TestFeed(guarded.raw, length, 1u);
+    TEST_CHECK(TestAckCount() == 1u && s_tx[0].data[1] == ROBOT_ARM_ACK_REJECTED &&
+               s_tx[0].data[2] == ROBOT_ARM_ERR_CONFIG && s_start_count[ROBOT_AXIS_X] == 0u);
+
+    /* Test 19：超过 PB10/PB11 50000 steps/s 上限的终止速度必须拒绝。 */
+    TestReset(); length = TestBuildBatch(guarded.raw, 128u, 11u, 1u, 0u);
+    ProtocolV2_WriteU16LE(&guarded.raw[20u], 50001u);
+    ProtocolV2_WriteU16LE(&guarded.raw[length - 2u],
+                          ProtocolV2_CalculateCrc(guarded.raw, (uint16_t)(length - 2u)));
+    TestFeed(guarded.raw, length, 1u);
+    TEST_CHECK(TestAckCount() == 1u && s_tx[0].data[1] == ROBOT_ARM_ACK_REJECTED &&
+               s_tx[0].data[2] == ROBOT_ARM_ERR_CONFIG && s_start_count[ROBOT_AXIS_X] == 0u);
+
+    /* Test 20：旧版 20 字节 Phase 即使 CRC 正确，也因长度不匹配拒绝。 */
+    TestReset(); length = TestBuildBatch(guarded.raw, 125u, 8u, 1u, 0u);
+    ProtocolV2_WriteU16LE(&guarded.raw[5u], 24u);
+    guarded.raw[30u] = 0x01u;
+    guarded.raw[31u] = 0x55u;
+    length++;
+    ProtocolV2_WriteU16LE(&guarded.raw[length - 2u],
+                          ProtocolV2_CalculateCrc(guarded.raw, (uint16_t)(length - 2u)));
+    TestFeed(guarded.raw, length, 1u);
+    TEST_CHECK(TestAckCount() == 1u && s_tx[0].data[1] == ROBOT_ARM_ACK_REJECTED &&
+               s_start_count[ROBOT_AXIS_X] == 0u);
 
     return s_failure;
 }

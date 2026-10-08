@@ -145,13 +145,13 @@ int main(void)
     TestFeed(phase_raw, phase_length);
     TEST_CHECK(ProtocolV2_TakeFrame(&frame) == 0u);
     TEST_CHECK(ProtocolV2_TakePhaseBatchFrame(&phase_frame) == 1u);
-    TEST_CHECK(phase_frame.seq == 77u && phase_frame.length == 20u);
+    TEST_CHECK(phase_frame.seq == 77u && phase_frame.length == 23u);
     TEST_CHECK(phase_frame.payload[0] == 0x34u && phase_frame.payload[1] == 0x12u);
     phase_length = TestBuildPhaseBatch(phase_raw, 78u, 16u);
     ProtocolV2_Init();
     TestFeed(phase_raw, phase_length);
     TEST_CHECK(ProtocolV2_TakePhaseBatchFrame(&phase_frame) == 1u);
-    TEST_CHECK(phase_frame.seq == 78u && phase_frame.length == 260u);
+    TEST_CHECK(phase_frame.seq == 78u && phase_frame.length == 308u);
     /* CRC、尾字节和异常 LEN 必须丢弃，不可占用批量队列。 */
     phase_raw[phase_length - 1u] ^= 0x01u;
     ProtocolV2_Init();

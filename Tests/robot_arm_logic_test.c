@@ -96,15 +96,17 @@ uint8_t RobotArmDriver_StartHomeApproach(
     return 1u;
 }
 
-/** 模拟 X/Y Phase 专用 DMA 启动，并保存比例缩放后的边界频率。 */
+/** 模拟 X/Y Phase 专用 DMA 启动，并保存各轴独立的边界频率。 */
 uint8_t RobotArmDriver_StartPhase(RobotAxisId_t axis, int8_t direction,
                                   uint32_t steps, uint32_t start_frequency,
-                                  uint32_t end_frequency)
+                                  uint32_t terminal_frequency,
+                                  uint32_t acceleration_time_ms)
 {
+    (void)acceleration_time_ms;
     if ((axis == ROBOT_AXIS_Z) || s_busy[axis] || (steps == 0u)) return 0u;
     s_direction[axis] = direction;
     s_last_phase_start[axis] = start_frequency;
-    s_last_phase_end[axis] = end_frequency;
+    s_last_phase_end[axis] = terminal_frequency;
     s_start_count[axis]++;
     if (!s_start_enters_busy[axis]) return 1u;
     s_busy[axis] = 1u;
@@ -619,16 +621,15 @@ int main(void)
     RobotArm_Task();
     TEST_CHECK(RobotArm_GetState() == ROBOT_ARM_IDLE);
 
-    /* Phase 的 X/Y 分别使用自身频率，0Hz 只保留为协议起步语义并交由 DMA 安全低速处理。 */
+    /* Phase 的 X/Y 分别使用自身终止速度和加速时间；首段起始速度由 0 值表示安全起步频率。 */
     {
         RobotArmPhase_t phase;
         phase.target_x = 235;
         phase.target_y = 710;
         phase.target_z = 50;
-        phase.x_f0 = 0u; phase.x_f1 = 20000u;
-        phase.y_f0 = 0u; phase.y_f1 = 20000u;
+        phase.x_start_speed = 0u; phase.x_terminal_speed = 20000u; phase.x_acceleration_time_ms = 1000u;
+        phase.y_start_speed = 0u; phase.y_terminal_speed = 20000u; phase.y_acceleration_time_ms = 1000u;
         phase.z_speed = 0u;
-        phase.flags = ROBOT_ARM_PHASE_FLAG_XY_ENABLE;
         x_starts = s_start_count[ROBOT_AXIS_X];
         y_starts = s_start_count[ROBOT_AXIS_Y];
         z_starts = s_start_count[ROBOT_AXIS_Z];
@@ -654,10 +655,9 @@ int main(void)
         phase.target_x = 301;
         phase.target_y = 767;
         phase.target_z = 0;
-        phase.x_f0 = 500u; phase.x_f1 = 2000u;
-        phase.y_f0 = 500u; phase.y_f1 = 2000u;
+        phase.x_start_speed = 500u; phase.x_terminal_speed = 2000u; phase.x_acceleration_time_ms = 1000u;
+        phase.y_start_speed = 500u; phase.y_terminal_speed = 2000u; phase.y_acceleration_time_ms = 1000u;
         phase.z_speed = 0u;
-        phase.flags = ROBOT_ARM_PHASE_FLAG_XY_ENABLE;
         z_starts = s_start_count[ROBOT_AXIS_Z];
         TEST_CHECK(RobotArm_StartPhase(&phase) == ROBOT_ARM_OK);
         RobotArm_Task();
@@ -670,17 +670,16 @@ int main(void)
                    s_busy[ROBOT_AXIS_Z] == 0u);
     }
 
-    /* XY_ENABLE 不代表两个轴都实际参与；X 无位移且坐标为 0 时不得误入 X Home。 */
+    /* X 目标不变时自动静止；即使坐标为 0，也不得误入 X Home。 */
     {
         RobotArmPhase_t phase;
         TestSetPose(0, 100, 0);
         phase.target_x = 0;
         phase.target_y = 301;
         phase.target_z = 0;
-        phase.x_f0 = 500u; phase.x_f1 = 2000u;
-        phase.y_f0 = 500u; phase.y_f1 = 2000u;
+        phase.x_start_speed = 500u; phase.x_terminal_speed = 2000u; phase.x_acceleration_time_ms = 1000u;
+        phase.y_start_speed = 500u; phase.y_terminal_speed = 2000u; phase.y_acceleration_time_ms = 1000u;
         phase.z_speed = 0u;
-        phase.flags = ROBOT_ARM_PHASE_FLAG_XY_ENABLE;
         x_starts = s_start_count[ROBOT_AXIS_X];
         z_starts = s_start_count[ROBOT_AXIS_Z];
         TEST_CHECK(RobotArm_StartPhase(&phase) == ROBOT_ARM_OK);
@@ -700,10 +699,9 @@ int main(void)
         phase.target_x = 301;
         phase.target_y = 0;
         phase.target_z = 0;
-        phase.x_f0 = 500u; phase.x_f1 = 2000u;
-        phase.y_f0 = 500u; phase.y_f1 = 2000u;
+        phase.x_start_speed = 500u; phase.x_terminal_speed = 2000u; phase.x_acceleration_time_ms = 1000u;
+        phase.y_start_speed = 500u; phase.y_terminal_speed = 2000u; phase.y_acceleration_time_ms = 1000u;
         phase.z_speed = 0u;
-        phase.flags = ROBOT_ARM_PHASE_FLAG_XY_ENABLE;
         y_starts = s_start_count[ROBOT_AXIS_Y];
         z_starts = s_start_count[ROBOT_AXIS_Z];
         TEST_CHECK(RobotArm_StartPhase(&phase) == ROBOT_ARM_OK);
@@ -723,10 +721,9 @@ int main(void)
         phase.target_x = 502;
         phase.target_y = 1667;
         phase.target_z = 0;
-        phase.x_f0 = 0u; phase.x_f1 = 20000u;
-        phase.y_f0 = 0u; phase.y_f1 = 20000u;
+        phase.x_start_speed = 0u; phase.x_terminal_speed = 20000u; phase.x_acceleration_time_ms = 1000u;
+        phase.y_start_speed = 0u; phase.y_terminal_speed = 20000u; phase.y_acceleration_time_ms = 1000u;
         phase.z_speed = 0u;
-        phase.flags = ROBOT_ARM_PHASE_FLAG_XY_ENABLE;
         TEST_CHECK(RobotArm_StartPhase(&phase) == ROBOT_ARM_OK);
         RobotArm_Task();
         TEST_CHECK(s_last_phase_start[ROBOT_AXIS_X] == 500u);
@@ -744,10 +741,9 @@ int main(void)
         phase.target_x = 2168;
         phase.target_y = 1868;
         phase.target_z = 0;
-        phase.x_f0 = 0u; phase.x_f1 = 20000u;
-        phase.y_f0 = 0u; phase.y_f1 = 20000u;
+        phase.x_start_speed = 0u; phase.x_terminal_speed = 20000u; phase.x_acceleration_time_ms = 1000u;
+        phase.y_start_speed = 0u; phase.y_terminal_speed = 20000u; phase.y_acceleration_time_ms = 1000u;
         phase.z_speed = 0u;
-        phase.flags = ROBOT_ARM_PHASE_FLAG_XY_ENABLE;
         TEST_CHECK(RobotArm_StartPhase(&phase) == ROBOT_ARM_OK);
         RobotArm_Task();
         TEST_CHECK(s_last_phase_start[ROBOT_AXIS_X] == 500u);
@@ -763,10 +759,9 @@ int main(void)
         phase.target_x = 1967;
         phase.target_y = 201;
         phase.target_z = 0;
-        phase.x_f0 = 1000u; phase.x_f1 = 2000u;
-        phase.y_f0 = 1000u; phase.y_f1 = 2000u;
+        phase.x_start_speed = 1000u; phase.x_terminal_speed = 2000u; phase.x_acceleration_time_ms = 1000u;
+        phase.y_start_speed = 1000u; phase.y_terminal_speed = 2000u; phase.y_acceleration_time_ms = 1000u;
         phase.z_speed = 0u;
-        phase.flags = ROBOT_ARM_PHASE_FLAG_XY_ENABLE;
         TEST_CHECK(RobotArm_StartPhase(&phase) == ROBOT_ARM_OK);
         RobotArm_Task();
         TEST_CHECK(s_last_phase_start[ROBOT_AXIS_X] == 1000u);
@@ -778,16 +773,15 @@ int main(void)
         RobotArm_Task();
     }
 
-    /* X/Y 结束频率为 0 时分别映射为停靠频率，最后仍由 DMA 在末脉冲后停止。 */
+    /* X/Y 终止速度必须非零；500 steps/s 可作为低速终止速度并在末脉冲后停止。 */
     {
         RobotArmPhase_t phase;
         phase.target_x = 2168;
         phase.target_y = 1868;
         phase.target_z = 0;
-        phase.x_f0 = 20000u; phase.x_f1 = 0u;
-        phase.y_f0 = 20000u; phase.y_f1 = 0u;
+        phase.x_start_speed = 20000u; phase.x_terminal_speed = 500u; phase.x_acceleration_time_ms = 1000u;
+        phase.y_start_speed = 20000u; phase.y_terminal_speed = 500u; phase.y_acceleration_time_ms = 1000u;
         phase.z_speed = 0u;
-        phase.flags = ROBOT_ARM_PHASE_FLAG_XY_ENABLE;
         TEST_CHECK(RobotArm_StartPhase(&phase) == ROBOT_ARM_OK);
         RobotArm_Task();
         TEST_CHECK(s_last_phase_end[ROBOT_AXIS_X] == 500u);

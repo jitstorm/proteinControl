@@ -164,6 +164,30 @@ RobotArmResult_t RobotArm_MoveToWithSpeedAndMode(
     s_last_motion_mode = motion_mode;
     return TestAccept(5u);
 }
+/**
+ * 为协议测试提供未执行的错峰移动入口，保持链接完整。
+ *
+ * @param x X 轴绝对目标，单位 STEP 脉冲。
+ * @param y Y 轴绝对目标，单位 STEP 脉冲。
+ * @param z Z 轴绝对目标，单位 STEP 脉冲。
+ * @param x_speed X 轴速度，单位 steps/s。
+ * @param y_speed Y 轴速度，单位 steps/s。
+ * @param z_speed Z 轴速度，单位 steps/s。
+ * @param x_delay_100ms X 轴启动延时，单位 100ms。
+ * @param y_delay_100ms Y 轴启动延时，单位 100ms。
+ * @param z_delay_100ms Z 轴启动延时，单位 100ms。
+ * @return 测试预设的受理结果；不启动实际机械运动。
+ */
+RobotArmResult_t RobotArm_MoveToWithDelayedStart(
+    int32_t x, int32_t y, int32_t z, uint16_t x_speed, uint16_t y_speed,
+    uint16_t z_speed, uint8_t x_delay_100ms, uint8_t y_delay_100ms,
+    uint8_t z_delay_100ms)
+{
+    (void)x; (void)y; (void)z;
+    (void)x_speed; (void)y_speed; (void)z_speed;
+    (void)x_delay_100ms; (void)y_delay_100ms; (void)z_delay_100ms;
+    return TestAccept(5u);
+}
 /** 模拟批量 Phase 的执行入口，并记录各轴独立边界频率和绝对目标坐标。 */
 RobotArmResult_t RobotArm_StartPhase(const RobotArmPhase_t *phase)
 {
@@ -370,7 +394,7 @@ int main(void)
     TEST_CHECK(s_tx[before].data[1] == ROBOT_ARM_ACK_REJECTED);
     TEST_CHECK(s_tx[before].data[2] == ROBOT_ARM_ERR_CONFIG);
 
-    /* 0x39 必须一次接收全部 Phase；每轴完成后只启动下一条，不重新发旧 MOVE_TO。 */
+    /* 0x39 必须一次接收全部 Phase；加速时间为 0 仍应作为匀速条目受理，每轴完成后只启动下一条。 */
     {
         ProtocolV2PhaseBatchFrame_t batch;
         uint8_t phase_offset;
@@ -379,16 +403,15 @@ int main(void)
         for (clear_index = 0u; clear_index < PROTOCOL_V2_PHASE_BATCH_MAX_PAYLOAD;
              clear_index++) batch.payload[clear_index] = 0u;
         batch.seq = 0x390u;
-        batch.length = 44u;
+        batch.length = 42u;
         ProtocolV2_WriteU16LE(&batch.payload[0], 0x1234u);
         batch.payload[2] = 2u;
         phase_offset = PROTOCOL_V2_PHASE_BATCH_HEADER_SIZE;
         batch.payload[phase_offset] = 201u;
-        ProtocolV2_WriteU16LE(&batch.payload[phase_offset + 9u], 0u);
-        ProtocolV2_WriteU16LE(&batch.payload[phase_offset + 11u], 20000u);
-        ProtocolV2_WriteU16LE(&batch.payload[phase_offset + 13u], 0u);
-        ProtocolV2_WriteU16LE(&batch.payload[phase_offset + 15u], 15000u);
-        batch.payload[phase_offset + 19u] = ROBOT_ARM_PHASE_FLAG_XY_ENABLE;
+        ProtocolV2_WriteU16LE(&batch.payload[phase_offset + 9u], 20000u);
+        ProtocolV2_WriteU16LE(&batch.payload[phase_offset + 11u], 0u);
+        ProtocolV2_WriteU16LE(&batch.payload[phase_offset + 13u], 15000u);
+        ProtocolV2_WriteU16LE(&batch.payload[phase_offset + 15u], 0u);
         phase_offset = (uint8_t)(phase_offset + PROTOCOL_V2_PHASE_SIZE);
         batch.payload[phase_offset] = 201u;
         batch.payload[phase_offset + 3u] = 20u;
@@ -396,7 +419,6 @@ int main(void)
         ProtocolV2_WriteU16LE(&batch.payload[phase_offset + 11u], 0u);
         ProtocolV2_WriteU16LE(&batch.payload[phase_offset + 13u], 15000u);
         ProtocolV2_WriteU16LE(&batch.payload[phase_offset + 15u], 0u);
-        batch.payload[phase_offset + 19u] = ROBOT_ARM_PHASE_FLAG_XY_ENABLE;
         s_next_result = ROBOT_ARM_OK;
         s_status.arm_state = ROBOT_ARM_IDLE;
         phase_before = s_phase_start_count;
@@ -404,8 +426,12 @@ int main(void)
         RobotArmProtocol_HandlePhaseBatch(&batch);
         TEST_CHECK(s_phase_start_count == (uint8_t)(phase_before + 1u));
         TEST_CHECK(s_last_phase.target_x == 201);
-        TEST_CHECK(s_last_phase.x_f0 == 0u && s_last_phase.x_f1 == 20000u);
-        TEST_CHECK(s_last_phase.y_f0 == 0u && s_last_phase.y_f1 == 15000u);
+        TEST_CHECK(s_last_phase.x_start_speed == 0u &&
+                   s_last_phase.x_terminal_speed == 20000u &&
+                   s_last_phase.x_acceleration_time_ms == 0u);
+        TEST_CHECK(s_last_phase.y_start_speed == 0u &&
+                   s_last_phase.y_terminal_speed == 15000u &&
+                   s_last_phase.y_acceleration_time_ms == 0u);
         TEST_CHECK(s_tx_count == (uint8_t)(before + 1u));
         TEST_CHECK(s_tx[before].data[1] == ROBOT_ARM_ACK_ACCEPTED);
 
@@ -427,11 +453,16 @@ int main(void)
         TEST_CHECK(s_phase_start_count == (uint8_t)(phase_before + 1u));
 
         TestSetAsyncResult(ROBOT_MOVE_END_COMPLETED, ROBOT_ARM_OK);
-        RobotArmProtocol_Task();
+        /* 首条只有 X 运动，最后一个 DMA TC 直接续启第二条。 */
+        RobotArmProtocol_OnPhaseAxisDmaCompleted(ROBOT_AXIS_X);
         TEST_CHECK(s_phase_start_count == (uint8_t)(phase_before + 2u));
         TEST_CHECK(s_last_phase.target_y == 20);
-        TEST_CHECK(s_last_phase.x_f0 == 20000u && s_last_phase.x_f1 == 0u);
-        TEST_CHECK(s_last_phase.y_f0 == 15000u && s_last_phase.y_f1 == 0u);
+        TEST_CHECK(s_last_phase.x_start_speed == 0u &&
+                   s_last_phase.x_terminal_speed == 20000u &&
+                   s_last_phase.x_acceleration_time_ms == 0u);
+        TEST_CHECK(s_last_phase.y_start_speed == 15000u &&
+                   s_last_phase.y_terminal_speed == 15000u &&
+                   s_last_phase.y_acceleration_time_ms == 0u);
 
         /* 首条完成并启动第二条后，当前编号和剩余条数必须同步推进。 */
         TestClearFrame(&request, ROBOT_ARM_CMD_STATUS, 0x393u);
@@ -444,6 +475,8 @@ int main(void)
                    s_tx[s_tx_count - 1u].data[6] == 1u);
 
         TestSetAsyncResult(ROBOT_MOVE_END_COMPLETED, ROBOT_ARM_OK);
+        RobotArmProtocol_OnPhaseAxisDmaCompleted(ROBOT_AXIS_X);
+        RobotArmProtocol_OnPhaseAxisDmaCompleted(ROBOT_AXIS_Y);
         RobotArmProtocol_Task();
         TestClearFrame(&request, ROBOT_ARM_CMD_STATUS, 0x391u);
         request.data[0] = 3u;

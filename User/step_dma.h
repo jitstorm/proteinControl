@@ -27,16 +27,19 @@ void stepdma_pb11_move_steps(uint32_t steps, uint32_t fstep_hz);
  */
 void stepdma_pb11_move_trap(uint32_t steps, uint32_t f_start, uint32_t f_max, uint32_t accel);
 /**
- * 按一个 Phase 的起止频率输出 PB11（Y 轴）脉冲。
+ * 按一个 Phase 的终止速度和加速时间输出 PB11（Y 轴）脉冲。
  *
  * 保留 TIM5/DMA2 通道2路径；协议边界 0Hz 已由上层按本轴映射。本层保留
  * 60Hz 等合法短轴频率；误传 0 仅兜底为 1Hz，最后一个脉冲后关闭 DMA/Timer。
  *
  * @param steps 需要输出的 Y 轴 STEP 上升沿数量。
  * @param f_start 起始频率，单位 steps/s。
- * @param f_end 结束频率，单位 steps/s。
+ * @param f_terminal 目标终止速度，单位 steps/s。
+ * @param acceleration_time_ms 正常距离下从起始速度变化到目标速度的时间，单位毫秒；
+ *                             距离不足时驱动会压缩该时间，以保证段尾达到目标速度。
  */
-void stepdma_pb11_move_phase(uint32_t steps, uint32_t f_start, uint32_t f_end);
+void stepdma_pb11_move_phase(uint32_t steps, uint32_t f_start,
+                             uint32_t f_terminal, uint32_t acceleration_time_ms);
 void stepdma_pb11_request_trap(uint32_t steps, uint32_t f_start, uint32_t f_max, uint32_t accel);
 /** 连续执行 Y/PB11 Home 的高速、平滑减速和末段低速，不改变普通 MOVE 轮廓。 */
 void stepdma_pb11_move_home_approach(uint32_t steps, uint32_t f_start, uint32_t f_fast,
@@ -58,16 +61,19 @@ uint8_t stepdma_pb10_is_running(void);
 void stepdma_pb10_move_steps(uint32_t steps, uint32_t fstep_hz);
 void stepdma_pb10_move_trap(uint32_t steps, uint32_t f_start, uint32_t f_max, uint32_t accel);
 /**
- * 按一个 Phase 的起止频率输出 PB10（X 轴）脉冲。
+ * 按一个 Phase 的终止速度和加速时间输出 PB10（X 轴）脉冲。
  *
  * 保留 TIM6/DMA2 通道3路径；协议边界 0Hz 已由上层按本轴映射。本层保留
  * 60Hz 等合法短轴频率；误传 0 仅兜底为 1Hz，最后一个脉冲后关闭 DMA/Timer。
  *
  * @param steps 需要输出的 X 轴 STEP 上升沿数量。
  * @param f_start 起始频率，单位 steps/s。
- * @param f_end 结束频率，单位 steps/s。
+ * @param f_terminal 目标终止速度，单位 steps/s。
+ * @param acceleration_time_ms 正常距离下从起始速度变化到目标速度的时间，单位毫秒；
+ *                             距离不足时驱动会压缩该时间，以保证段尾达到目标速度。
  */
-void stepdma_pb10_move_phase(uint32_t steps, uint32_t f_start, uint32_t f_end);
+void stepdma_pb10_move_phase(uint32_t steps, uint32_t f_start,
+                             uint32_t f_terminal, uint32_t acceleration_time_ms);
 void stepdma_pb10_request_trap(uint32_t steps, uint32_t f_start, uint32_t f_max, uint32_t accel);
 /** 连续执行 X/PB10 Home 的高速、平滑减速和末段低速，不改变普通 MOVE 轮廓。 */
 void stepdma_pb10_move_home_approach(uint32_t steps, uint32_t f_start, uint32_t f_fast,
@@ -95,7 +101,7 @@ uint8_t Stepper2_StartWithAcceleration(uint8_t direction, uint32_t steps,
                                        uint32_t target_frequency,
                                        uint32_t acceleration);
 /**
- * 启动实际 PU1（PB10/X 轴）的 Phase 频率运动。
+ * 启动实际 PU1（PB10/X 轴）的 Phase 终止速度运动。
  *
  * 建立 DIR1 后装载 TIM6/DMA2 通道3；正在运行或 steps 为 0 时拒绝，防止覆盖
  * 仍在输出的脉冲序列。
@@ -103,11 +109,15 @@ uint8_t Stepper2_StartWithAcceleration(uint8_t direction, uint32_t steps,
  * @param direction 已转换为实际 DIR1 电平的方向值。
  * @param steps 需要输出的 STEP 上升沿数量。
  * @param start_frequency 起始频率，单位 steps/s。
- * @param end_frequency 结束频率，单位 steps/s。
+ * @param terminal_frequency 目标终止速度，单位 steps/s。
+ * @param acceleration_time_ms 正常距离下从起始速度变化到目标速度的时间，单位毫秒；
+ *                             距离不足时驱动会压缩该时间，以保证段尾达到目标速度。
  * @return DMA 已开始输出返回 1，否则返回 0。
  */
 uint8_t Stepper2_StartPhase(uint8_t direction, uint32_t steps,
-                            uint32_t start_frequency, uint32_t end_frequency);
+                            uint32_t start_frequency,
+                            uint32_t terminal_frequency,
+                            uint32_t acceleration_time_ms);
 /** 立即停止第二轴，并将 PB10 保持为低电平。 */
 void Stepper2_Stop(void);
 /** 查询第二轴是否正在运行。 */

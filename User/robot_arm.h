@@ -37,39 +37,34 @@ typedef enum
 /**
  * 批量 Phase 的一条已解码运动记录。
  *
- * target 为绝对逻辑坐标、单位为实际 STEP 脉冲；X/Y 各自携带起止频率，
- * 不按两轴位移比例换算，Z 始终使用独立 z_speed。
+ * target 为绝对逻辑坐标、单位为实际 STEP 脉冲；X/Y 各自携带终止速度和
+ * 加速时间。起始速度由批次执行层从同轴上一条实际终止速度继承，首个动作轴
+ * 使用安全起步频率；Z 始终使用独立 z_speed。
+ * 每条与上一条终点比较来判定运动轴；首条与接收批次时的当前坐标比较。
  */
 typedef struct
 {
-    /** X 轴本 Phase 的绝对目标逻辑坐标；未启用 XY 时必须等于当前 X 坐标。 */
+    /** X 轴绝对目标逻辑坐标；与上一条终点不同才运动。 */
     int32_t target_x;
-    /** Y 轴本 Phase 的绝对目标逻辑坐标；未启用 XY 时必须等于当前 Y 坐标。 */
+    /** Y 轴绝对目标逻辑坐标；与上一条终点不同才运动。 */
     int32_t target_y;
-    /** Z 轴本 Phase 的绝对目标逻辑坐标；未启用 Z 时必须等于当前 Z 坐标。 */
+    /** Z 轴绝对目标逻辑坐标；与上一条终点不同才运动。 */
     int32_t target_z;
-    /** X 轴起始频率，单位 steps/s；0 表示协议层起步语义。 */
-    uint16_t x_f0;
-    /** X 轴结束频率，单位 steps/s；0 表示协议层停止语义。 */
-    uint16_t x_f1;
-    /** Y 轴起始频率，单位 steps/s；0 表示协议层起步语义。 */
-    uint16_t y_f0;
-    /** Y 轴结束频率，单位 steps/s；0 表示协议层停止语义。 */
-    uint16_t y_f1;
-    /** Z 轴独立运行速度，单位 steps/s；不参与 X/Y 起止频率规划。 */
+    /** X 轴本条起始速度，单位 steps/s；仅 MCU 内部使用，0 表示安全起步频率。 */
+    uint16_t x_start_speed;
+    /** X 轴本条结束时的目标速度，单位 steps/s；X 运动时必须非 0。 */
+    uint16_t x_terminal_speed;
+    /** X 轴从起始速度变化到目标速度的加速时间，单位毫秒；0 表示直接按终止速度匀速运行。 */
+    uint16_t x_acceleration_time_ms;
+    /** Y 轴本条起始速度，单位 steps/s；仅 MCU 内部使用，0 表示安全起步频率。 */
+    uint16_t y_start_speed;
+    /** Y 轴本条结束时的目标速度，单位 steps/s；Y 运动时必须非 0。 */
+    uint16_t y_terminal_speed;
+    /** Y 轴从起始速度变化到目标速度的加速时间，单位毫秒；0 表示直接按终止速度匀速运行。 */
+    uint16_t y_acceleration_time_ms;
+    /** Z 轴独立运行速度，单位 steps/s；Z 运动时不得为零。 */
     uint16_t z_speed;
-    /** XY/Z 启用及边界控制标志，未知位必须在协议层拒绝。 */
-    uint8_t flags;
 } RobotArmPhase_t;
-
-/** 本 Phase 启用 X/Y 独立 DMA 路径。 */
-#define ROBOT_ARM_PHASE_FLAG_XY_ENABLE 0x01u
-/** 本 Phase 启用 Z 轴独立 DMA 路径。 */
-#define ROBOT_ARM_PHASE_FLAG_Z_ENABLE 0x02u
-/** 保留的同步完成语义；当前所有启用轴均完成才切换下一 Phase。 */
-#define ROBOT_ARM_PHASE_FLAG_SYNC_END 0x04u
-/** 保留的末端停止语义；当前 DMA 在本 Phase 最后一个脉冲后关闭。 */
-#define ROBOT_ARM_PHASE_FLAG_STOP_AT_END 0x08u
 
 typedef enum
 {
@@ -229,9 +224,9 @@ void RobotArm_Init(void);
 /** 在主循环中推进 Home、单轴和 MoveTo 状态机。 */
 void RobotArm_Task(void);
 /**
- * 启动一条已校验的 Phase；X/Y 各自使用请求的起止频率，Z 保持 z_speed。
+ * 启动一条已校验的 Phase；X/Y 从批次继承的起始速度按指定时间变化至终止速度，Z 保持 z_speed。
  *
- * @param phase 本次绝对目标坐标、X/Y 各自起止频率、Z 独立速度及启用轴标志。
+ * @param phase 本次绝对目标坐标、X/Y 终止速度及加速时间、Z 独立速度和内部起始速度。
  * @return 仅受理成功时返回 OK；坐标、限位、传感器、速度或驱动条件不满足时返回错误。
  */
 RobotArmResult_t RobotArm_StartPhase(const RobotArmPhase_t *phase);
