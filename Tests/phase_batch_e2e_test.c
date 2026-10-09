@@ -273,9 +273,10 @@ static uint16_t TestBuildBatch(uint8_t *raw, uint16_t seq, uint16_t run_id,
             TestWriteI24(&raw[offset + 3u], y_target);
             TestWriteI24(&raw[offset + 6u], z_target);
             ProtocolV2_WriteU16LE(&raw[offset + 9u], 2000u + index);
-            ProtocolV2_WriteU16LE(&raw[offset + 11u], 1000u);
+            /* 线上加速时间单位为 10ms：100 表示执行层使用的 1000ms。 */
+            ProtocolV2_WriteU16LE(&raw[offset + 11u], 100u);
             ProtocolV2_WriteU16LE(&raw[offset + 13u], 1500u + index);
-            ProtocolV2_WriteU16LE(&raw[offset + 15u], 1000u);
+            ProtocolV2_WriteU16LE(&raw[offset + 15u], 100u);
             ProtocolV2_WriteU16LE(&raw[offset + 17u], 400u + index);
         }
     }
@@ -405,9 +406,9 @@ int main(void)
         TestWriteI24(&guarded.raw[offset + 3u], (index == 0u) ? 18333 :
                      ((index == 1u) ? 8478 : 6811));
         ProtocolV2_WriteU16LE(&guarded.raw[offset + 9u], 20000u);
-        ProtocolV2_WriteU16LE(&guarded.raw[offset + 11u], 1000u);
+        ProtocolV2_WriteU16LE(&guarded.raw[offset + 11u], 100u);
         ProtocolV2_WriteU16LE(&guarded.raw[offset + 13u], 15000u);
-        ProtocolV2_WriteU16LE(&guarded.raw[offset + 15u], 1000u);
+        ProtocolV2_WriteU16LE(&guarded.raw[offset + 15u], 100u);
     }
     { uint16_t crc = ProtocolV2_CalculateCrc(guarded.raw, (uint16_t)(length - 2u)); ProtocolV2_WriteU16LE(&guarded.raw[length - 2u], crc); }
     TestFeed(guarded.raw, length, 1u); TestTick();
