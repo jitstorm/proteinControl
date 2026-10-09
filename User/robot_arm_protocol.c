@@ -823,9 +823,12 @@ void RobotArmProtocol_HandlePhaseBatch(const ProtocolV2PhaseBatchFrame_t *reques
         decoded[index].target_y = ProtocolV2_ReadI24LE(&request->payload[offset + 3u]);
         decoded[index].target_z = ProtocolV2_ReadI24LE(&request->payload[offset + 6u]);
         decoded[index].x_terminal_speed = ProtocolV2_ReadU16LE(&request->payload[offset + 9u]);
-        decoded[index].x_acceleration_time_ms = ProtocolV2_ReadU16LE(&request->payload[offset + 11u]);
+        /* 线上字段以 10ms 为单位；执行层仍统一使用毫秒，避免改变既有 DMA 加速度公式。 */
+        decoded[index].x_acceleration_time_ms =
+            (uint32_t)ProtocolV2_ReadU16LE(&request->payload[offset + 11u]) * 10u;
         decoded[index].y_terminal_speed = ProtocolV2_ReadU16LE(&request->payload[offset + 13u]);
-        decoded[index].y_acceleration_time_ms = ProtocolV2_ReadU16LE(&request->payload[offset + 15u]);
+        decoded[index].y_acceleration_time_ms =
+            (uint32_t)ProtocolV2_ReadU16LE(&request->payload[offset + 15u]) * 10u;
         decoded[index].z_speed = ProtocolV2_ReadU16LE(&request->payload[offset + 17u]);
         if ((decoded[index].x_terminal_speed > 50000u ||
              decoded[index].y_terminal_speed > 50000u))

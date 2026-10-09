@@ -54,14 +54,14 @@ typedef struct
     uint16_t x_start_speed;
     /** X 轴本条结束时的目标速度，单位 steps/s；X 运动时必须非 0。 */
     uint16_t x_terminal_speed;
-    /** X 轴从起始速度变化到目标速度的加速时间，单位毫秒；0 表示直接按终止速度匀速运行。 */
-    uint16_t x_acceleration_time_ms;
+    /** X 轴从起始速度变化到目标速度的内部加速时间，单位毫秒；由 0x39 的 10ms 字段换算，0 表示直接按终止速度匀速运行。 */
+    uint32_t x_acceleration_time_ms;
     /** Y 轴本条起始速度，单位 steps/s；仅 MCU 内部使用，0 表示安全起步频率。 */
     uint16_t y_start_speed;
     /** Y 轴本条结束时的目标速度，单位 steps/s；Y 运动时必须非 0。 */
     uint16_t y_terminal_speed;
-    /** Y 轴从起始速度变化到目标速度的加速时间，单位毫秒；0 表示直接按终止速度匀速运行。 */
-    uint16_t y_acceleration_time_ms;
+    /** Y 轴从起始速度变化到目标速度的内部加速时间，单位毫秒；由 0x39 的 10ms 字段换算，0 表示直接按终止速度匀速运行。 */
+    uint32_t y_acceleration_time_ms;
     /** Z 轴独立运行速度，单位 steps/s；Z 运动时不得为零。 */
     uint16_t z_speed;
 } RobotArmPhase_t;
